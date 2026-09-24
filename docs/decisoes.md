@@ -23,11 +23,25 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 10. **Protótipo definitivo primeiro, código depois.** Next.js sobre Supabase, schema `teste`.
 11. **Sistema visual:** cor só para estado, assuntos e etapas sem cor. Detalhe em `design/sistema-visual.md`.
 
+## 24/09/2026 — cadastro da SSA
+
+12. **O endereço decide o cliente.** Um app só na Vercel (plano Pro, uso comercial). O domínio acessado escolhe o Supabase do cliente; as chaves de cada cliente ficam em variáveis de ambiente. Padrão: subdomínio da Planee, `painel.<cliente>.planeelabia.com`, cadastrado um a um (sem curinga). Cliente que quiser domínio próprio aponta um CNAME para a Vercel. Cada endereço entra nas URLs de redirecionamento do Auth do Supabase daquele cliente. SSA: `painel.ssa.planeelabia.com`. O esqueleto do app (tarefa 0.2) já nasce lendo o domínio.
+13. **Contato pode ser empresa.** A ligação entre os funis aceita CPF ou CNPJ, e o nome do contato é configurável ("paciente" ou "cliente"). Resolver no mapeamento (tarefa 0.3).
+14. **Solicitação aberta recebe a mensagem.** Mensagem do mesmo contato (ou da mesma empresa já identificada) e do mesmo assunto entra na solicitação aberta, que volta como não lida; não abre cartão novo. Assunto diferente abre cartão novo. Não existe assunto "Acompanhamento".
+15. **Cliente com contrato não vira oportunidade.** Pedido de quem já tem contrato (na SSA, locação) é atendimento e não entra no funil comercial.
+16. **Gatilho automático só com sinal explícito.** Etapa cujo evento a automação não registra de forma estruturada fica "Manual (equipe)". Na SSA: orçamento enviado; aprovado, até existir o sinal de pedido confirmado (entra na tarefa 3.2, registrado pelo painel, não pelo card do Trello); follow up e recusado, até o follow-up ser ligado.
+17. **O painel reaproveita o que o banco do cliente já tem.** Banco da SSA, conferido em 24/09:
+    - Logs que existem: `n8n_workflow_logs`, `notificacoes`, `followup_log`, `gemini_custos_config`. Faltam: `log_requisicoes`, `log_agendamentos`, `precos_modelo`, `cotacao_usd`. A tela Interno Planee da SSA depende disso; ver se `gemini_custos_config` cobre `precos_modelo` antes de criar tabela.
+    - `crm_estado` (estado por conversa) equivale a `conversa_estado`. `clientes_conhecidos` (ficha por telefone, com empresa e CNPJ) e `clientes_legado` são reaproveitadas.
+    - `profiles` + `user_roles` (papéis `admin` e `staff`, vazias) ficam como estão. O painel usa `painel_usuarios`.
+    - `pacientes_telefone` existe vazia (sobra do modelo da clínica).
+    - RLS ligado nas tabelas com dado de cliente. O n8n entra pelo pooler como `postgres`, que ignora o RLS; ligar RLS não afeta a automação.
+18. **Com a SSA no painel, o Trello sai.** O quadro de atendimento do painel substitui o Trello. Até lá, o Trello segue sozinho; nada roda nos dois ao mesmo tempo.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).
 - Colunas reais de `mensagens_gemini_cliente` e `usuarios_cliente` (tarefa 0.1 do PLANO).
-- O banco da SSA tem as tabelas de log?
 - Visto azul: enviar quando a IA responde, ou só quando um humano abre?
 - A Meta exige abrir o app WhatsApp Business de tempos em tempos na coexistência? (a confirmar)
 - Lista final de assuntos do quadro de atendimento com a clínica.
