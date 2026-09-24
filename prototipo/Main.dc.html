@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; }
+.pl { font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+.pl * { box-sizing: border-box; }
+.pl button, .pl input, .pl select, .pl textarea { font-family: inherit; color: inherit; }
+.pl button { cursor: pointer; white-space: nowrap; }
+.pl button:disabled { cursor: not-allowed; opacity: .4; }
+.pl :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pl input, .pl select, .pl textarea { background: var(--field); border: 1px solid var(--line-strong); border-radius: 10px; }
+.pl input::placeholder, .pl textarea::placeholder { color: var(--ink-3); }
+.pl .mono { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; }
+.t { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease; }
+.hov:hover { background: var(--hover) !important; }
+.card:hover { border-color: var(--line-strong) !important; box-shadow: var(--shadow-2) !important; }
+.pri:hover { background: var(--ink-hover) !important; }
+.scroll { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+a { color: var(--eq-ink); } a:hover { color: var(--ink); }
+.pl-claro {
+  color-scheme: light;
+  --bg: #f5f5f3; --side: #efefec; --surface: #ffffff; --surface-2: #f7f7f5; --surface-3: #ebebe7; --field: #ffffff;
+  --hover: #efefeb; --sel: #ebebe7; --line: #e6e5e0; --line-strong: #d3d1ca;
+  --ink: #17171a; --ink-hover: #34343a; --ink-2: #55544f; --ink-3: #6f6d66; --inv: #ffffff; --focus: #1f5fbf;
+  --shadow-1: 0 1px 2px rgba(20,20,20,.05); --shadow-2: 0 6px 20px rgba(20,20,20,.08);
+  --ia: #0f9a7a; --ia-ink: #0b6650; --ia-bg: rgba(15,154,122,.10);
+  --ag: #d18f00; --ag-ink: #7f5200; --ag-bg: rgba(209,143,0,.13);
+  --eq: #1f5fbf; --eq-ink: #174a96; --eq-bg: rgba(31,95,191,.10);
+  --rs: #d13438; --rs-ink: #a3232a; --rs-bg: rgba(209,52,56,.10);
+  --pd: #a35be6; --pd-ink: #6f35ad; --pd-bg: rgba(163,91,230,.12);
+  --fn: #8a8880; --fn-ink: #4f4e49; --fn-bg: rgba(120,118,110,.12);
+}
+.pl-escuro {
+  color-scheme: dark;
+  --bg: #0e0e10; --side: #121215; --surface: #17171a; --surface-2: #1c1c20; --surface-3: #26262b; --field: #1c1c20;
+  --hover: #222227; --sel: #26262b; --line: #29292e; --line-strong: #3a3a41;
+  --ink: #f3f3f1; --ink-hover: #d9d9d6; --ink-2: #b4b3ad; --ink-3: #8f8e88; --inv: #121215; --focus: #86bdf7;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 8px 24px rgba(0,0,0,.45);
+  --ia: #1b9676; --ia-ink: #62d3b0; --ia-bg: rgba(27,150,118,.18);
+  --ag: #b98300; --ag-ink: #f2c262; --ag-bg: rgba(185,131,0,.20);
+  --eq: #2d8ae0; --eq-ink: #86bdf7; --eq-bg: rgba(45,138,224,.18);
+  --rs: #cf3d46; --rs-ink: #f39297; --rs-bg: rgba(207,61,70,.18);
+  --pd: #bb5fc9; --pd-ink: #e2a6ec; --pd-bg: rgba(187,95,201,.20);
+  --fn: #7d7c77; --fn-ink: #c4c3bd; --fn-bg: rgba(255,255,255,.07);
+}
+</style>
+</helmet>
+<div class="{{temaClass}}" style="width: 100%; height: 100vh; min-width: 1200px; min-height: 760px; display: flex; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.45;">
+
+<nav aria-label="Principal" style="width: 236px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: 18px 12px 14px; background: var(--side); border-right: 1px solid var(--line);">
+<div style="display: flex; align-items: center; gap: 10px; padding: 2px 8px 16px;">
+<div style="width: 32px; height: 32px; border-radius: 10px; background: var(--ink); color: var(--inv); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;">P</div>
+<div style="min-width: 0;">
+<div style="font-weight: 650; font-size: 15px; letter-spacing: -0.01em;">Painel Planee</div>
+<div style="font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Instituto Neuro Essentia</div>
+</div>
+</div>
+<sc-for list="{{nav}}" as="n" hint-placeholder-count="5">
+<button class="hov t" onClick="{{n.go}}" style="{{n.style}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+<span style="flex-grow: 1; text-align: left;">{{n.label}}</span>
+<span style="{{n.badgeStyle}}">{{n.badge}}</span>
+</button>
+</sc-for>
+<div style="flex-grow: 1;"></div>
+<div style="padding: 12px 10px; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 7px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Legenda</div>
+<sc-for list="{{legenda}}" as="l" hint-placeholder-count="6">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);">
+<span style="{{l.chip}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{l.icon}}"></path></svg></span>
+<span>{{l.nome}}</span>
+</div>
+</sc-for>
+</div>
+<button class="hov t" onClick="{{alternarTema}}" style="display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: none; font-size: 13.5px; font-weight: 500; color: var(--ink-2);">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{temaIcone}}"></path></svg>
+<span>{{temaRotulo}}</span>
+</button>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 8px 0; margin-top: 6px; border-top: 1px solid var(--line);">
+<div style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: var(--surface-3); color: var(--ink-2); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">{{userIni}}</div>
+<div style="flex-grow: 1; min-width: 0;">
+<div style="font-size: 13px; font-weight: 600;">{{userName}}</div>
+<label for="papel" style="position: absolute; left: -9999px;">Ver como</label>
+<select id="papel" value="{{role}}" onChange="{{onRole}}" style="width: 100%; height: 28px; padding: 0 6px; font-size: 12px; border-radius: 7px; color: var(--ink-2);">
+<option value="secretaria">Ver como secretária</option>
+<option value="gestor">Ver como gestor</option>
+<option value="planee">Ver como Planee</option>
+</select>
+</div>
+</div>
+</nav>
+
+<sc-if value="{{isInbox}}" hint-placeholder-val="{{true}}">
+<section aria-label="Conversas" style="width: 340px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--line);">
+<div style="padding: 18px 16px 10px; display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between;">
+<h1 style="margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.02em;">Conversas</h1>
+<span style="font-size: 12.5px; color: var(--ink-3);">{{totalConversas}}</span>
+</div>
+<div style="position: relative;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 12px; top: 12px; color: var(--ink-3);"><path d="{{ic.busca}}"></path></svg>
+<label for="busca" style="position: absolute; left: -9999px;">Buscar conversa</label>
+<input id="busca" type="search" value="{{busca}}" onChange="{{onBusca}}" placeholder="Nome, telefone, texto ou final do CPF" style="width: 100%; height: 40px; padding: 0 12px 0 36px; font-size: 13.5px;">
+</div>
+<div role="tablist" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 3px; background: var(--surface-3); border-radius: 10px;">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<button role="tab" aria-selected="{{t.on}}" class="t" onClick="{{t.go}}" style="{{t.style}}"><span>{{t.label}}</span><span style="{{t.nStyle}}">{{t.n}}</span></button>
+</sc-for>
+</div>
+</div>
+<div class="scroll" style="flex-grow: 1; overflow-y: auto; min-height: 0; padding: 0 8px 8px;">
+<sc-for list="{{lista}}" as="c" hint-placeholder-count="6">
+<button class="hov t" onClick="{{c.abrir}}" style="{{c.rowStyle}}">
+<div style="{{c.avatarStyle}}">{{c.iniciais}}</div>
+<div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+<div style="display: flex; justify-content: space-between; gap: 8px; align-items: baseline;">
+<span style="{{c.nameStyle}}">{{c.nome}}</span>
+<span style="flex-shrink: 0; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums;">{{c.hora}}</span>
+</div>
+<div style="display: flex; justify-content: space-between; gap: 8px; align-items: center;">
+<span style="font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;">{{c.previa}}</span>
+<span style="{{c.unreadStyle}}">{{c.badge}}</span>
+</div>
+<div style="display: flex; gap: 8px; align-items: center; min-width: 0;">
+<span style="{{c.pillStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{c.stIcon}}"></path></svg>{{c.estado}}</span>
+<span style="font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{c.motivo}}</span>
+</div>
+</div>
+</button>
+</sc-for>
+<sc-if value="{{listaVazia}}" hint-placeholder-val="{{false}}">
+<div style="padding: 40px 20px; text-align: center; color: var(--ink-3);">Nenhuma conversa aqui.</div>
+</sc-if>
+</div>
+<div style="padding: 10px 12px; border-top: 1px solid var(--line);">
+<button class="hov t" onClick="{{simular}}" style="width: 100%; height: 36px; border: 1px dashed var(--line-strong); border-radius: 10px; background: none; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Demonstração: simular mensagem recebida</button>
+</div>
+</section>
+
+<sc-if value="{{semSel}}" hint-placeholder-val="{{false}}">
+<main style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3);">
+<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.inbox}}"></path></svg>
+<div style="font-size: 15px;">Escolha uma conversa na lista</div>
+</main>
+</sc-if>
+
+<sc-if value="{{temSel}}" hint-placeholder-val="{{true}}">
+<main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg);">
+<header style="flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line);">
+<div style="{{selAvatar}}">{{selIni}}</div>
+<div style="flex-grow: 1; min-width: 0;">
+<div style="font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{sel.nome}}</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 3px; min-width: 0;">
+<span style="{{selPill}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{selIcon}}"></path></svg>{{selEstado}}</span>
+<span class="mono" style="font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{sel.tel}}</span>
+</div>
+</div>
+<button class="hov t" onClick="{{marcarNaoLida}}" style="height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px;">
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.naoLida}}"></path></svg>Não lida</button>
+<sc-if value="{{podeAssumir}}" hint-placeholder-val="{{true}}">
+<button class="pri t" onClick="{{assumir}}" style="height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: var(--inv); font-size: 13px; font-weight: 600;">Assumir conversa</button>
+</sc-if>
+<sc-if value="{{podeMover}}" hint-placeholder-val="{{false}}">
+<button class="hov t" onClick="{{paraPendente}}" style="height: 38px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--pd);"></span>{{rotPendente}}</button>
+<button class="pri t" onClick="{{finalizar}}" style="height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: var(--inv); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px;">
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.check}}"></path></svg>Finalizar</button>
+</sc-if>
+</header>
+
+<div style="{{bannerStyle}}">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="{{bannerIcon}}"></path></svg>
+<strong style="font-weight: 600; white-space: nowrap;">{{bannerTitulo}}</strong>
+<span style="color: var(--ink-2);">{{bannerTexto}}</span>
+</div>
+
+<div class="scroll" style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 22px 28px; display: flex; flex-direction: column; gap: 12px;">
+<sc-for list="{{msgs}}" as="m" hint-placeholder-count="5">
+<div style="{{m.wrapStyle}}">
+<div style="{{m.autorStyle}}">{{m.autor}}</div>
+<div style="{{m.bubbleStyle}}">{{m.texto}}</div>
+<div style="font-size: 11px; color: var(--ink-3); margin-top: 4px; font-variant-numeric: tabular-nums;">{{m.meta}}</div>
+</div>
+</sc-for>
+</div>
+
+<footer style="flex-shrink: 0; padding: 12px 22px 18px; display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; gap: 6px; flex-wrap: wrap;">
+<sc-for list="{{rapidas}}" as="r" hint-placeholder-count="3">
+<button class="hov t" onClick="{{r.usar}}" style="height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; color: var(--ink-2);">{{r.rotulo}}</button>
+</sc-for>
+</div>
+<div style="{{compStyle}}">
+<label for="msg" style="position: absolute; left: -9999px;">Mensagem</label>
+<textarea id="msg" value="{{rascunho}}" onChange="{{onRascunho}}" onKeyDown="{{onTecla}}" placeholder="{{placeholder}}" style="width: 100%; height: 64px; resize: none; border: 0; background: transparent; padding: 12px 14px 4px; font-size: 14px; outline: none;"></textarea>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px 10px;">
+<button class="t" onClick="{{alternarNota}}" aria-pressed="{{nota}}" style="{{notaBtnStyle}}">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.nota}}"></path></svg>Nota interna</button>
+<span style="flex-grow: 1; min-width: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{dicaComp}}</span>
+<button class="pri t" onClick="{{enviar}}" style="height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--ink); color: var(--inv); font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.enviar}}"></path></svg>{{enviarRotulo}}</button>
+</div>
+</div>
+</footer>
+</main>
+
+<aside aria-label="Ficha do contato" class="scroll" style="width: 276px; flex-shrink: 0; overflow-y: auto; padding: 20px 18px; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 20px; font-size: 13px;">
+<div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+<div style="font-size: 15px; font-weight: 650;">{{sel.nome}}</div>
+<div class="mono" style="font-size: 12px; color: var(--ink-3);">{{sel.tel}}</div>
+<button class="hov t" onClick="{{abrirFicha}}" style="margin-top: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 12.5px; font-weight: 500;">Abrir ficha completa</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Pacientes neste telefone</div>
+<sc-for list="{{selPacs}}" as="a" hint-placeholder-count="2"><div style="padding: 8px 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line);">{{a.t}}</div></sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Próximo agendamento</div>
+<div style="font-weight: 550;">{{sel.agenda}}</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Funil comercial</div>
+<sc-for list="{{selOps}}" as="a" hint-placeholder-count="2"><div style="color: var(--ink-2);">{{a.t}}</div></sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Atendimento</div>
+<sc-for list="{{selSols}}" as="a" hint-placeholder-count="2">
+<div style="display: flex; gap: 8px; align-items: flex-start;"><span style="{{a.dot}}"></span><span style="color: var(--ink-2);">{{a.t}}</span></div>
+</sc-for>
+</div>
+</aside>
+</sc-if>
+</sc-if>
+<sc-if value="{{isCrm}}" hint-placeholder-val="{{false}}">
+<main style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0;">
+<header style="flex-shrink: 0; padding: 20px 28px 14px; display: flex; align-items: center; gap: 16px;">
+<div style="flex-grow: 1;">
+<h1 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;">CRM</h1>
+<div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">{{crmSub}}</div>
+</div>
+<div role="tablist" style="display: flex; gap: 2px; padding: 3px; background: var(--surface-3); border-radius: 10px;">
+<sc-for list="{{crmTabs}}" as="t" hint-placeholder-count="3"><button role="tab" aria-selected="{{t.on}}" class="t" onClick="{{t.go}}" style="{{t.style}}">{{t.label}}</button></sc-for>
+</div>
+<div style="position: relative;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 12px; top: 12px; color: var(--ink-3);"><path d="{{ic.busca}}"></path></svg>
+<label for="q" style="position: absolute; left: -9999px;">Buscar</label>
+<input id="q" type="search" value="{{busca}}" onChange="{{onBusca}}" placeholder="Nome, telefone ou final do CPF" style="width: 280px; height: 40px; padding: 0 12px 0 36px; font-size: 13.5px;">
+</div>
+<sc-if value="{{podeConfigCrm}}" hint-placeholder-val="{{false}}">
+<button class="hov t" onClick="{{irConfigCrm}}" title="Configurar o CRM deste projeto" style="height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px;">
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.config}}"></path></svg>Configurar</button>
+</sc-if>
+</header>
+
+<sc-if value="{{crmAtendimento}}" hint-placeholder-val="{{false}}">
+<div style="flex-shrink: 0; padding: 0 28px 10px; display: flex; align-items: center; gap: 14px;">
+<div style="display: flex; gap: 14px; flex-wrap: wrap; flex-grow: 1;">
+<sc-for list="{{resumoAt}}" as="r" hint-placeholder-count="4">
+<span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2);"><span style="{{r.chip}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{r.icon}}"></path></svg></span>{{r.nome}} <strong style="color: var(--ink); font-variant-numeric: tabular-nums;">{{r.n}}</strong></span>
+</sc-for>
+</div>
+<button class="hov t" onClick="{{alternarFinal}}" aria-pressed="{{verFinal}}" style="{{finalBtnStyle}}">{{finalRotulo}}</button>
+</div>
+<div class="scroll" style="flex-grow: 1; min-height: 0; overflow: auto; padding: 4px 28px 24px; display: flex; gap: 14px; align-items: flex-start;">
+<sc-for list="{{colsAt}}" as="col" hint-placeholder-count="6">
+<section style="{{col.secStyle}}">
+<div style="display: flex; align-items: center; gap: 9px; padding: 4px 4px 2px;">
+<span style="width: 28px; height: 28px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--ink-2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{col.icon}}"></path></svg></span>
+<span style="flex-grow: 1; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{col.titulo}}">{{col.titulo}}</span>
+<span style="min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--surface-3); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; color: var(--ink-2);">{{col.n}}</span>
+</div>
+<sc-for list="{{col.cards}}" as="k" hint-placeholder-count="2">
+<article class="card t" style="{{k.cardStyle}}">
+<span style="{{k.pillStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{k.stIcon}}"></path></svg>{{k.etapa}}</span>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<button onClick="{{k.abrir}}" title="Abrir a conversa" style="padding: 0; border: 0; background: none; text-align: left; white-space: normal; font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em;">{{k.nome}}</button>
+<div style="font-size: 13px; color: var(--ink-2);">{{k.motivo}}</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12.5px;">
+<div style="display: flex; gap: 8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-3);"><path d="{{ic.relogio}}"></path></svg><span><span style="color: var(--ink-3);">Aberto</span> {{k.aberto}}</span></div>
+<sc-if value="{{k.showResp}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-3);"><path d="{{ic.pessoa}}"></path></svg><span><span style="color: var(--ink-3);">Responsável</span> {{k.resp}}</span></div>
+</sc-if>
+<sc-if value="{{k.showVistas}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-3);"><path d="{{ic.olho}}"></path></svg>
+<span style="display: flex; flex-direction: column; gap: 2px;"><span style="color: var(--ink-3);">Visto por</span><sc-for list="{{k.vistas}}" as="w" hint-placeholder-count="1"><span class="mono" style="font-size: 12px;">{{w.t}}</span></sc-for></span></div>
+</sc-if>
+<sc-if value="{{k.temFim}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; gap: 8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-3);"><path d="{{ic.check}}"></path></svg><span><span style="color: var(--ink-3);">Finalizado</span> {{k.fim}}</span></div>
+</sc-if>
+</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap;">
+<span style="{{k.cpfStyle}}">{{k.cpf}}</span>
+<span style="{{k.seloStyle}}">{{k.selo}}</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+<sc-for list="{{k.acoes}}" as="a" hint-placeholder-count="2"><button class="{{a.cls}}" onClick="{{a.fazer}}" style="{{a.style}}">{{a.rotulo}}</button></sc-for>
+</div>
+</article>
+</sc-for>
+<sc-if value="{{col.vazia}}" hint-placeholder-val="{{false}}">
+<div style="padding: 18px 12px; border: 1px dashed var(--line-strong); border-radius: 12px; text-align: center; font-size: 12.5px; color: var(--ink-3);">Nada aberto</div>
+</sc-if>
+</section>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{crmComercial}}" hint-placeholder-val="{{false}}">
+<div style="flex-shrink: 0; padding: 0 28px 10px; display: flex; align-items: center; gap: 12px;">
+<span style="flex-grow: 1; font-size: 13px; color: var(--ink-3);">Um cartão por oportunidade de consulta. Quem move é a IA; a equipe acompanha.</span>
+<button class="hov t" onClick="{{simularIA}}" style="height: 36px; padding: 0 12px; border: 1px dashed var(--line-strong); border-radius: 10px; background: none; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Demonstração: IA avança um lead</button>
+</div>
+<div class="scroll" style="flex-grow: 1; min-height: 0; overflow: auto; padding: 4px 28px 24px; display: flex; gap: 12px; align-items: flex-start;">
+<sc-for list="{{colsCom}}" as="col" hint-placeholder-count="7">
+<section style="flex: 1 0 184px; display: flex; flex-direction: column; gap: 10px;">
+<div style="display: flex; flex-direction: column; gap: 7px; padding: 4px 4px 2px;">
+<div style="display: flex; align-items: center; gap: 8px; min-height: 34px;">
+<span style="{{col.marcaStyle}}">{{col.marca}}</span>
+<span style="flex-grow: 1; font-size: 13px; font-weight: 600; line-height: 1.25;">{{col.titulo}}</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums;">{{col.n}}</span>
+</div>
+<div style="height: 3px; border-radius: 3px; background: var(--surface-3);"><div style="{{col.barra}}"></div></div>
+</div>
+<sc-for list="{{col.cards}}" as="k" hint-placeholder-count="2">
+<button class="card t" onClick="{{k.abrir}}" style="white-space: normal; display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-1); font-size: 13px;">
+<span style="font-weight: 650; font-size: 13.5px;">{{k.nome}}</span>
+<span style="color: var(--ink-2);">{{k.sub}}</span>
+<span style="font-size: 12px; color: var(--ink-3);">{{k.tempo}}</span>
+<span style="display: flex; gap: 5px; flex-wrap: wrap;"><span style="{{k.cpfStyle}}">{{k.cpf}}</span><span style="{{k.seloStyle}}">{{k.selo}}</span></span>
+</button>
+</sc-for>
+<sc-if value="{{col.vazia}}" hint-placeholder-val="{{false}}">
+<div style="padding: 14px 10px; border: 1px dashed var(--line-strong); border-radius: 12px; text-align: center; font-size: 12px; color: var(--ink-3);">Vazio</div>
+</sc-if>
+</section>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{crmContatos}}" hint-placeholder-val="{{false}}">
+<div style="flex-grow: 1; min-height: 0; display: flex; gap: 0; padding: 0 28px 24px;">
+<section aria-label="Lista de contatos" class="scroll" style="width: 400px; flex-shrink: 0; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px 0 0 14px;">
+<sc-for list="{{contatos}}" as="r" hint-placeholder-count="8">
+<button class="hov t" onClick="{{r.ver}}" style="{{r.style}}">
+<div style="{{r.avatarStyle}}">{{r.iniciais}}</div>
+<span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;"><span style="font-weight: 600;">{{r.nome}}</span><span class="mono" style="font-size: 11.5px; color: var(--ink-3);">{{r.tel}}</span></span>
+<span style="font-size: 12px; color: var(--ink-2); text-align: right; max-width: 150px; white-space: normal; line-height: 1.35;">{{r.resumo}}</span>
+</button>
+</sc-for>
+</section>
+<div class="scroll" style="flex-grow: 1; min-width: 0; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; background: var(--surface-2); border: 1px solid var(--line); border-left: 0; border-radius: 0 14px 14px 0;">
+<div style="display: flex; align-items: center; gap: 14px;">
+<div style="{{ctAvatar}}">{{ctIni}}</div>
+<div style="flex-grow: 1;">
+<h2 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;">{{ct.nome}}</h2>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span class="mono" style="font-size: 12.5px; color: var(--ink-3);">{{ct.tel}}</span><span style="{{ctPill}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ctIcon}}"></path></svg>{{ctEstado}}</span></div>
+</div>
+<button class="pri t" onClick="{{abrirConversa}}" style="height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--ink); color: var(--inv); font-weight: 600; font-size: 13px;">Abrir conversa</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Pacientes neste telefone</div>
+<sc-for list="{{ctPacs}}" as="a" hint-placeholder-count="2"><div>{{a.t}}</div></sc-for>
+</div>
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Próximo agendamento</div>
+<div style="font-weight: 600;">{{ct.agenda}}</div>
+</div>
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Funil comercial</div>
+<sc-for list="{{ctOps}}" as="a" hint-placeholder-count="2"><div style="padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--ink-2);">{{a.t}}</div></sc-for>
+</div>
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);">Atendimento</div>
+<sc-for list="{{ctSols}}" as="a" hint-placeholder-count="2"><div style="display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line);"><span style="{{a.dot}}"></span><span style="color: var(--ink-2);">{{a.t}}</span></div></sc-for>
+</div>
+</div>
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; align-items: center; gap: 14px;">
+<div style="flex-grow: 1;">
+<div style="font-weight: 600;">IA neste contato</div>
+<div style="font-size: 12.5px; color: var(--ink-3);">Desligada, toda mensagem deste número vai direto para a equipe.</div>
+</div>
+<button class="t" onClick="{{alternarIA}}" role="switch" aria-checked="{{iaLigada}}" aria-label="IA neste contato" style="{{iaSwitch}}"><span style="{{iaKnob}}"></span></button>
+</div>
+</div>
+</div>
+</sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{isDash}}" hint-placeholder-val="{{false}}">
+<main class="scroll" style="flex-grow: 1; min-width: 0; overflow-y: auto; padding: 24px 32px 32px; display: flex; flex-direction: column; gap: 18px;">
+<header style="display: flex; align-items: flex-end; gap: 16px;">
+<div style="flex-grow: 1;">
+<h1 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;">Resultados da clínica</h1>
+<div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">01 a 08/09/2026 · medido no banco</div>
+</div>
+<div style="display: flex; gap: 2px; padding: 3px; background: var(--surface-3); border-radius: 10px;">
+<button class="t" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-1); font-size: 12.5px; font-weight: 600;">8 dias</button>
+<button class="t" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">30 dias</button>
+<button class="t" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Mês</button>
+</div>
+</header>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
+<sc-for list="{{kpisCliente}}" as="k" hint-placeholder-count="4">
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 6px;">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--ink-2);"><span style="{{k.chip}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{k.icon}}"></path></svg></span>{{k.rotulo}}</div>
+<div style="font-size: 36px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1;">{{k.valor}}</div>
+<div style="font-size: 12.5px; color: var(--ink-3);">{{k.nota}}</div>
+</div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Conversas atendidas pela IA, por dia</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">telefones distintos em log_requisicoes</div>
+</div>
+<div style="height: 240px; display: flex; align-items: flex-end; gap: 16px; border-bottom: 1px solid var(--line-strong); padding-top: 10px;">
+<sc-for list="{{diasConv}}" as="d" hint-placeholder-count="7">
+<div title="{{d.dica}}" style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%;">
+<div style="font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;">{{d.t}}</div>
+<div style="{{d.bar}}"></div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 16px;"><sc-for list="{{diasConv}}" as="d" hint-placeholder-count="7"><div style="flex: 1 1 0; text-align: center; font-size: 11.5px; color: var(--ink-3);">{{d.l}}</div></sc-for></div>
+</section>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Quanto o paciente espera pela equipe</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">parcela das 1.589 respostas da equipe acima de cada limite, 30 dias</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px; padding: 6px 0;">
+<sc-for list="{{espera}}" as="e" hint-placeholder-count="6">
+<div title="{{e.dica}}" style="display: grid; grid-template-columns: 104px 1fr 52px; align-items: center; gap: 12px;">
+<span style="font-size: 12.5px; color: var(--ink-2);">{{e.l}}</span>
+<div style="height: 14px; background: var(--surface-3); border-radius: 4px;"><div style="{{e.bar}}"></div></div>
+<span style="font-size: 12.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums;">{{e.t}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--ag-bg); color: var(--ag-ink); font-size: 13px;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.aguardando}}"></path></svg>Em pleno expediente, 21,6% esperam mais de 1 hora.</div>
+</section>
+</div>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Atendimento da equipe por assunto, hoje</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">ao vivo, lido do quadro de atendimento deste protótipo</div>
+</div>
+<div style="display: grid; grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr)); gap: 0; font-size: 13px;">
+<span style="padding: 8px 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line);">Assunto</span>
+<sc-for list="{{colsTabela}}" as="h" hint-placeholder-count="4"><span style="padding: 8px 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 6px;"><span style="{{h.dot}}"></span>{{h.nome}}</span></sc-for>
+<sc-for list="{{tabelaAssuntos}}" as="r" hint-placeholder-count="6">
+<span style="padding: 9px 0; border-bottom: 1px solid var(--line); font-weight: 500;">{{r.nome}}</span>
+<sc-for list="{{r.vals}}" as="v" hint-placeholder-count="4"><span style="padding: 9px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; color: var(--ink-2);">{{v.t}}</span></sc-for>
+</sc-for>
+</div>
+</section>
+</main>
+</sc-if>
+
+<sc-if value="{{isConfig}}" hint-placeholder-val="{{false}}">
+<main class="scroll" style="flex-grow: 1; min-width: 0; overflow-y: auto; padding: 24px 32px 32px; display: flex; flex-direction: column; gap: 18px;">
+<header style="display: flex; align-items: center; gap: 14px;">
+<div style="flex-grow: 1;">
+<h1 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;">Configurações</h1>
+<div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">Instituto Neuro Essentia · cada projeto tem a sua</div>
+</div>
+<div style="{{iaStatusStyle}}"><span style="{{iaStatusDot}}"></span>{{iaStatusTexto}}</div>
+<button class="hov t" onClick="{{alternarPausa}}" style="height: 40px; padding: 0 14px; border: 1px solid var(--rs); border-radius: 10px; background: var(--surface); color: var(--rs-ink); font-weight: 600; font-size: 13px;">{{pausaRotulo}}</button>
+</header>
+<div role="tablist" style="display: flex; gap: 4px; border-bottom: 1px solid var(--line);">
+<sc-for list="{{cfgTabs}}" as="t" hint-placeholder-count="5"><button role="tab" aria-selected="{{t.on}}" class="t" onClick="{{t.go}}" style="{{t.style}}">{{t.label}}</button></sc-for>
+</div>
+
+<sc-if value="{{tabCrm}}" hint-placeholder-val="{{false}}">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; gap: 16px;">
+<div style="flex-grow: 1;">
+<div style="font-weight: 600;">Modelo de partida</div>
+<div style="font-size: 12.5px; color: var(--ink-3);">Preenche etapas e assuntos para o tipo de negócio. Depois ajuste à vontade. Cartões existentes são redistribuídos pela posição.</div>
+</div>
+<div style="display: flex; gap: 2px; padding: 3px; background: var(--surface-3); border-radius: 10px;">
+<sc-for list="{{modelosLista}}" as="m" hint-placeholder-count="3"><button class="t" onClick="{{m.aplicar}}" aria-pressed="{{m.on}}" style="{{m.style}}">{{m.nome}}</button></sc-for>
+</div>
+</section>
+
+<div style="display: flex; flex-direction: column; gap: 14px;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Funil comercial</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">Colunas do funil, na ordem. O gatilho é o que faz a IA mover o cartão para a etapa.</div>
+</div>
+<div style="display: grid; grid-template-columns: 24px minmax(0, 1.4fr) 170px minmax(0, 1.4fr) 104px; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);"><span>#</span><span>Etapa</span><span>Tipo</span><span>Gatilho da IA</span><span></span></div>
+<sc-for list="{{cfgFunil}}" as="f" hint-placeholder-count="7">
+<div style="display: grid; grid-template-columns: 24px minmax(0, 1.4fr) 170px minmax(0, 1.4fr) 104px; gap: 8px; align-items: center;">
+<span style="font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums;">{{f.pos}}</span>
+<input aria-label="Nome da etapa" value="{{f.nome}}" onChange="{{f.onNome}}" style="height: 36px; padding: 0 10px; font-size: 13px;">
+<select aria-label="Tipo" value="{{f.tipo}}" onChange="{{f.onTipo}}" style="height: 36px; padding: 0 6px; font-size: 12.5px;"><option value="aberta">Em andamento</option><option value="ganho">Ganho</option><option value="perdido">Perdido</option></select>
+<select aria-label="Gatilho" value="{{f.gatilho}}" onChange="{{f.onGatilho}}" style="height: 36px; padding: 0 6px; font-size: 12.5px;"><sc-for list="{{gatilhos}}" as="g" hint-placeholder-count="4"><option value="{{g.v}}">{{g.v}}</option></sc-for></select>
+<span style="display: flex; gap: 2px; justify-content: flex-end;">
+<button class="hov t" onClick="{{f.subir}}" disabled="{{f.primeiro}}" aria-label="Subir" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.cima}}"></path></svg></button>
+<button class="hov t" onClick="{{f.descer}}" disabled="{{f.ultimo}}" aria-label="Descer" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.baixo}}"></path></svg></button>
+<button class="hov t" onClick="{{f.remover}}" disabled="{{f.fixo}}" aria-label="Remover etapa" title="{{f.dicaRemover}}" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--rs-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.lixo}}"></path></svg></button>
+</span>
+</div>
+</sc-for>
+<button class="hov t" onClick="{{addEtapa}}" style="align-self: flex-start; height: 36px; padding: 0 12px; border: 1px dashed var(--line-strong); border-radius: 9px; background: none; font-size: 13px; font-weight: 500; color: var(--ink-2);">+ Adicionar etapa</button>
+</section>
+
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Quadro de atendimento · assuntos</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">Cada assunto é uma coluna. As palavras ajudam a IA a escolher o assunto ao abrir a solicitação.</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+<sc-for list="{{cfgTopicos}}" as="t" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: 36px 128px minmax(0, 1fr) 100px; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2);">
+<span style="width: 36px; height: 36px; border-radius: 9px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--ink-2);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.icon}}"></path></svg></span>
+<select aria-label="Ícone" value="{{t.icone}}" onChange="{{t.onIcone}}" style="height: 36px; padding: 0 6px; font-size: 12.5px;"><sc-for list="{{iconesTopico}}" as="i" hint-placeholder-count="6"><option value="{{i.v}}">{{i.nome}}</option></sc-for></select>
+<span style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+<input aria-label="Nome do assunto" value="{{t.nome}}" onChange="{{t.onNome}}" style="height: 32px; padding: 0 10px; font-size: 13px; font-weight: 600;">
+<input aria-label="Palavras que levam a este assunto" value="{{t.motivos}}" onChange="{{t.onMotivos}}" style="height: 30px; padding: 0 10px; font-size: 12px; color: var(--ink-2);">
+</span>
+<span style="display: flex; gap: 2px; justify-content: flex-end;">
+<button class="hov t" onClick="{{t.subir}}" disabled="{{t.primeiro}}" aria-label="Subir" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.cima}}"></path></svg></button>
+<button class="hov t" onClick="{{t.descer}}" disabled="{{t.ultimo}}" aria-label="Descer" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.baixo}}"></path></svg></button>
+<button class="hov t" onClick="{{t.remover}}" disabled="{{t.fixo}}" aria-label="Remover assunto" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--rs-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ic.lixo}}"></path></svg></button>
+</span>
+</div>
+</sc-for>
+</div>
+<button class="hov t" onClick="{{addTopico}}" style="align-self: flex-start; height: 36px; padding: 0 12px; border: 1px dashed var(--line-strong); border-radius: 9px; background: none; font-size: 13px; font-weight: 500; color: var(--ink-2);">+ Adicionar assunto</button>
+</section>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Etapas do atendimento</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">São do sistema: decidem quando a IA fica calada. Dá para renomear, não para remover. A cor é fixa em todos os projetos.</div>
+</div>
+<sc-for list="{{cfgEtapas}}" as="e" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; align-items: center;">
+<span style="{{e.pill}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{e.icon}}"></path></svg>{{e.padrao}}</span>
+<input aria-label="Nome exibido" value="{{e.nome}}" onChange="{{e.onNome}}" style="height: 36px; padding: 0 10px; font-size: 13px;">
+</div>
+</sc-for>
+</section>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Campos do cartão</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">O que aparece no cartão do quadro de atendimento.</div>
+</div>
+<sc-for list="{{cfgCampos}}" as="c" hint-placeholder-count="4">
+<label style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer;">
+<input type="checkbox" checked="{{c.on}}" onChange="{{c.alternar}}" style="width: 18px; height: 18px; accent-color: var(--ink);">
+<span style="flex-grow: 1;"><span style="font-weight: 550;">{{c.nome}}</span><span style="display: block; font-size: 12px; color: var(--ink-3);">{{c.dica}}</span></span>
+</label>
+</sc-for>
+</section>
+</div>
+<div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2);">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><path d="{{ic.info}}"></path></svg>
+<span>Neste protótipo as mudanças valem na hora; confira no CRM. No produto, salvar grava em <span class="mono">crm_etapas</span>, <span class="mono">crm_topicos</span> e <span class="mono">crm_config</span> do banco deste projeto, e o robô do CRM e o <span class="mono">notificar_equipe</span> passam a ler de lá.</span>
+</div>
+</sc-if>
+
+<sc-if value="{{tabNegocio}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Identidade e horário</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+<label style="display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Nome da agente<input defaultValue="Sara" onChange="{{sujar}}" style="height: 38px; padding: 0 12px; font-size: 14px; color: var(--ink);"></label>
+<label style="display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Expediente da equipe<input defaultValue="Seg a sex, 8h às 18h" onChange="{{sujar}}" style="height: 38px; padding: 0 12px; font-size: 14px; color: var(--ink);"></label>
+</div>
+<label style="display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Frase quando o pedido depende de decisão<textarea defaultValue="A equipe vai avaliar sua solicitação e entra em contato assim que possível." onChange="{{sujar}}" style="height: 70px; resize: none; padding: 10px 12px; font-size: 14px; color: var(--ink);"></textarea></label>
+</section>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Passagem para a equipe</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+<label style="display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">IA volta em modo restrito após (min)<input type="number" defaultValue="60" onChange="{{sujar}}" style="height: 38px; padding: 0 12px; font-size: 14px; color: var(--ink);"></label>
+<label style="display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);">Resumo por WhatsApp<input defaultValue="8h, 11h, 16h · dias úteis" onChange="{{sujar}}" style="height: 38px; padding: 0 12px; font-size: 14px; color: var(--ink);"></label>
+</div>
+<label style="display: flex; align-items: center; gap: 12px; font-size: 13.5px;"><input type="checkbox" defaultChecked="{{true}}" onChange="{{sujar}}" style="width: 18px; height: 18px; accent-color: var(--ink);">Passar para a equipe após comprovante de Pix</label>
+<label style="display: flex; align-items: center; gap: 12px; font-size: 13.5px;"><input type="checkbox" defaultChecked="{{true}}" onChange="{{sujar}}" style="width: 18px; height: 18px; accent-color: var(--ink);">Follow-up de lead ligado</label>
+</section>
+</div>
+<div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
+<span style="font-size: 13px; color: var(--ink-3);">{{salvarTexto}}</span>
+<button class="pri t" onClick="{{publicar}}" disabled="{{naoPodeSalvar}}" style="height: 40px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--ink); color: var(--inv); font-weight: 600; font-size: 13px;">Salvar e publicar</button>
+</div>
+</sc-if>
+
+<sc-if value="{{tabPrompt}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; align-items: start;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Prompt como molde</h2>
+<pre class="mono" style="margin: 0; white-space: pre-wrap; font-size: 12.5px; line-height: 1.7; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; color: var(--ink);">Você é {{nome_agente}}, secretária da {{nome_clinica}}.
+Expediente da equipe: {{expediente}}.
+
+Regra 14. Pedido que depende de decisão:
+responda somente "{{frase_escalada}}"
+e chame notificar_equipe. Nunca presuma o desfecho.
+
+[blocos de teste.prompt_blocos, por especialista]</pre>
+<div style="font-size: 12.5px; color: var(--ink-3);">Só a Planee edita. As variáveis vêm de teste.negocio.</div>
+</section>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;">
+<h2 style="margin: 0 0 6px; font-size: 15px; font-weight: 600;">Versões</h2>
+<sc-for list="{{versoes}}" as="v" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line);">
+<div style="flex-grow: 1;"><div style="font-weight: 600;">{{v.nome}}</div><div style="font-size: 12px; color: var(--ink-3);">{{v.nota}}</div></div>
+<sc-if value="{{v.podeReverter}}" hint-placeholder-val="{{false}}"><button class="hov t" onClick="{{v.reverter}}" style="height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 500;">Reverter</button></sc-if>
+<sc-if value="{{v.atual}}" hint-placeholder-val="{{false}}"><span style="padding: 3px 10px; border-radius: 999px; background: var(--ia-bg); color: var(--ia-ink); font-size: 12px; font-weight: 600;">no ar</span></sc-if>
+</div>
+</sc-for>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{tabTecnico}}" hint-placeholder-val="{{false}}">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 20px;">
+<sc-for list="{{tecnico}}" as="t" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 260px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line);"><span style="color: var(--ink-3);">{{t.k}}</span><span class="mono" style="font-size: 13px;">{{t.v}}</span></div></sc-for>
+<div style="padding: 14px 0 10px; font-size: 13px; color: var(--ag-ink);">Token da Feegow vence em 14/12/2026. Credenciais não são editadas no painel.</div>
+</section>
+</sc-if>
+
+<sc-if value="{{tabEquipe}}" hint-placeholder-val="{{false}}">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 20px 16px;">
+<div style="display: grid; grid-template-columns: 1fr 1fr 2fr 120px; gap: 12px; padding: 10px 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--line);"><span>Pessoa</span><span>Papel</span><span>Recebe</span><span>IA responde</span></div>
+<sc-for list="{{equipe}}" as="p" hint-placeholder-count="4"><div style="display: grid; grid-template-columns: 1fr 1fr 2fr 120px; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line);"><span style="font-weight: 600;">{{p.n}}</span><span style="color: var(--ink-2);">{{p.p}}</span><span style="color: var(--ink-2);">{{p.r}}</span><span style="color: var(--ink-3);">não</span></div></sc-for>
+<div style="padding-top: 12px; font-size: 12.5px; color: var(--ink-3);">Esta lista substitui as regras fixas do Switch4 no buffer.</div>
+</section>
+</sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{isInterno}}" hint-placeholder-val="{{false}}">
+<main class="scroll" style="flex-grow: 1; min-width: 0; overflow-y: auto; padding: 24px 32px 32px; display: flex; flex-direction: column; gap: 18px;">
+<header>
+<h1 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;">Operação · visão interna</h1>
+<div style="font-size: 13px; color: var(--ink-3); margin-top: 2px;">Neuro Essentia · 01 a 07/09/2026 · custo do modelo é piso, sem WhatsApp nem infraestrutura</div>
+</header>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;">
+<sc-for list="{{kpisInterno}}" as="k" hint-placeholder-count="4">
+<div style="{{k.box}}">
+<div style="font-size: 13px; font-weight: 500; color: var(--ink-2);">{{k.rotulo}}</div>
+<div style="{{k.valorStyle}}">{{k.valor}}</div>
+<div style="font-size: 12.5px; color: var(--ink-3);">{{k.nota}}</div>
+</div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px;">
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+<div>
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Custo do modelo por dia, em R$</h2>
+<div style="font-size: 12.5px; color: var(--ink-3);">log_requisicoes × precos_modelo × cotacao_usd (R$ 5,40, fixo)</div>
+</div>
+<div style="height: 240px; display: flex; align-items: flex-end; gap: 16px; border-bottom: 1px solid var(--line-strong); padding-top: 10px;">
+<sc-for list="{{diasCusto}}" as="d" hint-placeholder-count="7">
+<div title="{{d.dica}}" style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%;">
+<div style="font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;">{{d.t}}</div>
+<div style="{{d.bar}}"></div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 16px;"><sc-for list="{{diasCusto}}" as="d" hint-placeholder-count="7"><div style="flex: 1 1 0; text-align: center; font-size: 11.5px; color: var(--ink-3);">{{d.l}}</div></sc-for></div>
+</section>
+<section style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Alertas</h2>
+<sc-for list="{{alertas}}" as="a" hint-placeholder-count="4">
+<div style="{{a.box}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><path d="{{a.icon}}"></path></svg><span><strong style="font-weight: 600;">{{a.titulo}}</strong> <span style="color: var(--ink-2);">{{a.texto}}</span></span></div>
+</sc-for>
+<h2 style="margin: 10px 0 0; font-size: 15px; font-weight: 600;">Projetos</h2>
+<sc-for list="{{projetos}}" as="p" hint-placeholder-count="3">
+<div style="display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px;"><span style="font-weight: 600;">{{p.n}}</span><span style="color: var(--ink-2); font-variant-numeric: tabular-nums;">{{p.c}}</span><span style="color: var(--ink-2);">{{p.s}}</span></div>
+</sc-for>
+</section>
+</div>
+</main>
+</sc-if>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+icones() {
+return {
+inbox: 'M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z',
+crm: 'M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v13h-4z',
+dash: 'M5 20V11M12 20V5M19 20v-7M3 20h18',
+config: 'M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4',
+interno: 'M3 12h4l3-7 4 14 3-7h4',
+sol: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+lua: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+busca: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4',
+enviar: 'M4 12l16-8-6 16-2-7z',
+nota: 'M5 4h14v11l-5 5H5zM14 20v-5h5',
+check: 'M5 12l5 5L20 7',
+relogio: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 7v5l3 2',
+olho: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
+pessoa: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 20a8 8 0 0 1 16 0',
+naoLida: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14z',
+cima: 'M6 15l6-6 6 6',
+baixo: 'M6 9l6 6 6-6',
+lixo: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 11v5M12 8v.5',
+ia: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z',
+aguardando: 'M7 3h10M7 21h10M8 3v4l4 5 4-5V3M8 21v-4l4-5 4 5v4',
+equipe: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 20a8 8 0 0 1 16 0',
+restrita: 'M12 3l10 18H2zM12 10v5M12 18v.5',
+pendente: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM10 9v6M14 9v6',
+finalizado: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM8 12l3 3 5-6',
+receita: 'M9 3h6v4H9zM6 7h12v14H6zM12 11v6M9 14h6',
+doc: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
+exame: 'M9 3h6M10 3v6l-5 10h14l-5-10V3M7.5 15h9',
+valor: 'M3 6h18v12H3zM3 10h18M7 15h3',
+agenda: 'M4 5h16v16H4zM4 9h16M8 3v4M16 3v4',
+outros: 'M5 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M17 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
+os: 'M15 4a5 5 0 0 0-4 7l-7 7 2 2 7-7a5 5 0 0 0 7-4l-3 1-2-2z',
+garantia: 'M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z',
+caixa: 'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
+recibo: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
+predio: 'M4 21V5h10v16M14 9h6v12M8 9h2M8 13h2M8 17h2M3 21h18',
+alerta: 'M12 3l10 18H2zM12 10v5M12 18v.5'
+};
+}
+modelos() {
+return {
+clinica: { nome: 'Clínica',
+funil: [['novo','Novo lead','aberta','Primeira mensagem'],['contato','Contato realizado','aberta','IA respondeu'],['interesse','Interesse identificado','aberta','Pediu preço ou informou o motivo'],['oferecido','Agendamento oferecido','aberta','Horários enviados'],['followup','Follow up','aberta','Follow-up enviado'],['confirmado','Agendamento confirmado','ganho','Agendamento criado no sistema'],['perdido','Perdido','perdido','Follow-up sem resposta']],
+topicos: [['receita','Receita','receita','receita, renovação'],['docs','Notas fiscais e documentos','doc','nota fiscal, laudo, atestado'],['exames','Exames','exame','pedido de exame, resultado'],['valores','Valores e pagamento','valor','desconto, Pix, comprovante'],['agenda','Agenda e encaixe','agenda','encaixe, paciente chegou'],['outros','Outros','outros','o que não se encaixar']] },
+assistencia: { nome: 'Assistência técnica',
+funil: [['a1','Novo contato','aberta','Primeira mensagem'],['a2','Diagnóstico','aberta','Pediu preço ou informou o motivo'],['a3','Orçamento enviado','aberta','Orçamento enviado'],['a4','Follow up','aberta','Follow-up enviado'],['a5','Aprovado','ganho','Cliente aprovou'],['a6','Recusado','perdido','Follow-up sem resposta']],
+topicos: [['t1','Ordem de serviço','os','abertura, andamento da OS'],['t2','Garantia','garantia','defeito, garantia'],['t3','Peças e orçamento','caixa','peça, orçamento'],['t4','Entrega e retirada','agenda','retirada, entrega'],['t5','Financeiro','valor','pagamento, nota fiscal'],['t6','Outros','outros','o que não se encaixar']] },
+contabilidade: { nome: 'Contabilidade',
+funil: [['c1','Novo lead','aberta','Primeira mensagem'],['c2','Reunião agendada','aberta','Reunião marcada'],['c3','Proposta enviada','aberta','Proposta enviada'],['c4','Follow up','aberta','Follow-up enviado'],['c5','Contrato fechado','ganho','Contrato assinado'],['c6','Perdido','perdido','Follow-up sem resposta']],
+topicos: [['k1','Documentos do mês','doc','extratos, notas'],['k2','Impostos e guias','recibo','DAS, guia, imposto'],['k3','Folha de pagamento','pessoa','folha, admissão'],['k4','Abertura e alterações','predio','abertura, contrato social'],['k5','Financeiro','valor','honorários, boleto'],['k6','Outros','outros','o que não se encaixar']] }
+};
+}
+montaCfg(m) {
+var d = this.modelos()[m];
+return { modelo: m, seq: 1,
+funil: d.funil.map(function(f){ return { id:f[0], nome:f[1], tipo:f[2], gatilho:f[3] }; }),
+topicos: d.topicos.map(function(t){ return { id:t[0], nome:t[1], icone:t[2], motivos:t[3] }; }),
+etapasAt: { aguardando:'Aguardando equipe', atendimento:'Em atendimento', pendente:'Pendente interno', finalizado:'Finalizado' },
+campos: { resp:true, vistas:true, cpf:true, lead:true } };
+}
+seed() {
+var frase = 'A equipe vai avaliar sua solicitação e entra em contato assim que possível.';
+function c(id, nome, tel, pacs, naoLidas, hora, agenda, restrita, msgs) {
+return { id:id, nome:nome, tel:tel, pacs:pacs.map(function(p){ return { nome:p[0], fim:p[1], vinculo:p[2] }; }), naoLidas:naoLidas, marcada:false, hora:hora, agenda:agenda, restrita:restrita, iaDesligada:false,
+msgs:msgs.map(function(m){ return { k:m[0], autor:m[1], texto:m[2], meta:m[3] }; }) };
+}
+var convs = [
+c(1,'Marina Lopes','+55 47 9XXXX-0142',[['Marina Lopes','42','titular'],['Theo Lopes','17','filho']],2,'14:02','15/10 · 10:00 · Retorno presencial · Dr. Amilton',false,[
+['in','Paciente','Oi, boa tarde. Preciso renovar a receita, consegue ver pra mim?','13:47'],
+['ia','Sara · IA','Boa tarde, Marina! '+frase,'13:47 · lida'],
+['tool','Ferramenta','notificar_equipe { motivo: "receita" } → solicitação aberta','13:47'],
+['sys','Sistema','IA abriu solicitação · assunto: Receita','13:47'],
+['in','Paciente','É que o remédio acaba amanhã','14:01'],
+['in','Paciente','Consegue hoje ainda?','14:02']]),
+c(2,'Sem nome','+55 47 9XXXX-7781',[],1,'13:20','Hoje · 13:30 · Consulta presencial · Dr. Amilton',false,[
+['in','Paciente','Cheguei, estou na recepção','13:20'],
+['sys','Sistema','IA abriu solicitação · assunto: Agenda e encaixe','13:20']]),
+c(3,'Paulo Henrique','+55 47 9XXXX-3318',[],3,'12:41','Sem agendamento',true,[
+['in','Paciente','Vocês fazem algum valor para família? Somos três','11:22'],
+['ia','Sara · IA',frase,'11:22 · lida'],
+['sys','Sistema','IA abriu solicitação · assunto: Valores e pagamento · ligada à oportunidade','11:22'],
+['sys','Sistema','60 min sem resposta humana · IA voltou em modo restrito','12:22'],
+['in','Paciente','Ainda não tive retorno sobre o valor','12:41']]),
+c(4,'Carla Menezes','+55 47 9XXXX-9920',[['Carla Menezes','08','titular']],0,'11:58','22/09 · 15:00 · Retorno · Dr. Amilton',false,[
+['in','Paciente','Preciso do laudo para o trabalho','11:40'],
+['eq','Amanda · equipe','Oi Carla, o Dr. Amilton assina hoje à tarde e eu te envio.','11:55 · lida'],
+['in','Paciente','Obrigada, vou aguardar então','11:58']]),
+c(5,'Rafael Antunes','+55 48 9XXXX-4471',[['Rafael Antunes','63','titular']],0,'11:30','Sem agendamento',false,[
+['in','Paciente','Enviei o comprovante do Pix','11:30'],
+['sys','Sistema','Pix recebido · solicitação aberta e ligada à oportunidade','11:30'],
+['sys','Sistema','Amanda assumiu a conversa','11:32']]),
+c(6,'Juliana Prado','+55 47 9XXXX-2204',[],0,'10:12','Sem agendamento',false,[
+['ia','Sara · IA','Oi Juliana, ficou alguma dúvida sobre os valores que te passei ontem?','08:00 · entregue'],
+['in','Paciente','Vou ver com meu marido e te aviso','10:12'],
+['ia','Sara · IA','Combinado. Fico por aqui.','10:12 · lida']]),
+c(7,'Beatriz Nunes','+55 47 9XXXX-8832',[['Beatriz Nunes','90','titular']],0,'09:41','29/09 · 09:30 · Consulta presencial · Dr. Amilton',false,[
+['in','Paciente','Quero marcar uma consulta','09:30'],
+['tool','Ferramenta','verificar_disponibilidade → 6 horários · criar_agendamento → verificado','09:40'],
+['ia','Sara · IA','Prontinho, Beatriz. Sua consulta ficou para 29/09 às 09:30, presencial.','09:41 · lida'],
+['in','Paciente','O doutor pode me passar o pedido do exame antes da consulta?','09:50'],
+['sys','Sistema','IA abriu solicitação · assunto: Exames','09:50'],
+['sys','Sistema','Amanda moveu para Pendente interno · aguardando o Dr. Amilton','10:20']]),
+c(8,'Sérgio Almeida','+55 49 9XXXX-6150',[],0,'ontem','Sem agendamento',false,[
+['ia','Sara · IA','Oi Sérgio, ainda posso te ajudar com o agendamento?','ontem · entregue']]),
+c(9,'Sem nome','+55 47 9XXXX-5523',[],0,'13:50','Sem agendamento',false,[
+['in','Paciente','Boa tarde, vocês atendem enxaqueca?','13:50'],
+['ia','Sara · IA','Boa tarde! Atendemos sim. Posso te explicar como funciona a consulta?','13:50 · entregue']]),
+c(10,'Lucas Ferraz','+55 47 9XXXX-1096',[],0,'13:22','Sem agendamento',false,[
+['in','Paciente','Oi, queria saber como funciona a consulta','13:20'],
+['ia','Sara · IA','Oi, Lucas! A primeira consulta pode ser presencial ou por teleconsulta. Qual fica melhor pra você?','13:22 · lida']])
+];
+function o(id, convId, pac, interesse, estagio, tempo){ return { id:id, convId:convId, pac:pac, interesse:interesse, estagio:estagio, tempo:tempo }; }
+var ops = [
+o(1,1,'Marina Lopes','Retorno presencial','confirmado','15/10 · 10:00'),
+o(2,1,'Theo Lopes','Consulta presencial','oferecido','há 2 h nesta etapa'),
+o(3,2,'','Consulta presencial','confirmado','hoje · 13:30'),
+o(4,3,'','Consulta para 3 pessoas','interesse','há 3 h nesta etapa'),
+o(5,4,'Carla Menezes','Retorno','confirmado','22/09 · 15:00'),
+o(6,5,'Rafael Antunes','Consulta presencial','oferecido','há 1 h nesta etapa'),
+o(7,6,'','Consulta presencial','followup','há 6 h nesta etapa'),
+o(8,7,'Beatriz Nunes','Consulta presencial','confirmado','29/09 · 09:30'),
+o(9,8,'','Teleconsulta','perdido','sem resposta ao follow-up'),
+o(10,9,'','A identificar','novo','há 12 min nesta etapa'),
+o(11,10,'','Primeira consulta','contato','há 40 min nesta etapa')];
+function t(id, convId, topico, motivo, estagio, opId, pac, hoje, aberto, por, resp, respEm, vistas, fim){ return { id:id, convId:convId, topico:topico, motivo:motivo, estagio:estagio, opId:opId, pac:pac, hoje:hoje, abertoEm:aberto, abertoPor:por, resp:resp||'', respEm:respEm||'', fimEm:fim||'', vistas:(vistas||[]).map(function(v){ return { quem:v[0], quando:v[1] }; }) }; }
+var sols = [
+t(1,1,'receita','Renovação de receita','aguardando',null,'Marina Lopes',true,'17/09 13:47','IA'),
+t(2,2,'agenda','Paciente chegou','aguardando',null,'',true,'17/09 13:20','IA'),
+t(3,3,'valores','Valor para família','aguardando',4,'',true,'17/09 11:22','IA','','',[['Dr. Amilton','17/09 12:05']]),
+t(4,4,'docs','Laudo para o trabalho','atendimento',null,'Carla Menezes',true,'17/09 11:40','IA','Amanda','17/09 11:55',[['Amanda','17/09 11:52']]),
+t(5,5,'valores','Comprovante de Pix','atendimento',6,'Rafael Antunes',true,'17/09 11:30','IA · Pix recebido','Amanda','17/09 11:32',[['Amanda','17/09 11:31']]),
+t(8,7,'exames','Pedido de exame','pendente',null,'Beatriz Nunes',true,'17/09 09:50','IA','Amanda','17/09 10:02',[['Amanda','17/09 10:00'],['Dr. Amilton','17/09 10:40']]),
+t(9,6,'docs','Nota fiscal da consulta','finalizado',null,'',true,'17/09 08:30','IA','Amanda','17/09 08:41',[['Amanda','17/09 08:40']],'17/09 09:05'),
+t(6,1,'valores','Desconto','finalizado',null,'Marina Lopes',false,'02/09 10:10','IA','Amanda','02/09 10:31',[],'02/09 10:48'),
+t(7,1,'docs','Laudo','finalizado',null,'Marina Lopes',false,'18/08 09:00','IA','Amanda','18/08 09:40',[],'18/08 11:05')];
+return { convs:convs, ops:ops, sols:sols };
+}
+st() {
+if (!this.state || !this.state.convs) {
+var d = this.seed(), escuro = false;
+try { escuro = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) {}
+this.state = { convs:d.convs, ops:d.ops, sols:d.sols, cfg:this.montaCfg('clinica'), tema: escuro ? 'escuro' : 'claro',
+screen:'inbox', tab:'precisa', selId:1, ctId:1, crmTab:'atendimento', cfgTab:'crm', role:'planee', rascunho:'', nota:false, busca:'',
+pausada:false, sujo:false, versao:3, simN:0, simOp:0, nextId:100, relogio:850, verFinal:false };
+}
+return this.state;
+}
+donoDe(c, sols) {
+var abertas = sols.filter(function(x){ return x.convId===c.id; });
+if (abertas.some(function(x){ return x.estagio==='atendimento'; })) return 'humano';
+if (abertas.some(function(x){ return x.estagio==='aguardando'; })) return c.restrita ? 'restrita' : 'aguardando';
+return 'ia';
+}
+mut(fn, extra) {
+var s = this.st();
+var d = JSON.parse(JSON.stringify({ convs:s.convs, ops:s.ops, sols:s.sols }));
+d.nextId = s.nextId;
+fn(d);
+d.relogio = s.relogio + 2;
+this.setState(Object.assign(d, extra || {}));
+}
+cfgMut(fn) {
+var s = this.st();
+var cfg = JSON.parse(JSON.stringify(s.cfg));
+var d = JSON.parse(JSON.stringify({ ops:s.ops, sols:s.sols }));
+fn(cfg, d);
+this.setState({ cfg:cfg, ops:d.ops, sols:d.sols });
+}
+agora() { var r = this.st().relogio; return ('0'+Math.floor(r/60)).slice(-2)+':'+('0'+(r%60)).slice(-2); }
+ver(d, convId, eu) { var q = '17/09 '+this.agora(); d.sols.filter(function(x){ return x.convId===convId && x.estagio!=='finalizado'; }).forEach(function(x){ if (!x.vistas.some(function(v){ return v.quem===eu; })) x.vistas.push({ quem:eu, quando:q }); }); }
+assumirEm(d, convId, eu) {
+var h = this.agora(), c = d.convs.filter(function(x){ return x.id===convId; })[0];
+if (this.donoDe(c, d.sols)==='humano') return;
+var esperando = d.sols.filter(function(x){ return x.convId===convId && x.estagio==='aguardando'; });
+if (!esperando.length) esperando = d.sols.filter(function(x){ return x.convId===convId && x.estagio==='pendente'; });
+if (!esperando.length) { var tps = this.st().cfg.topicos; d.nextId += 1; esperando = [{ id:d.nextId, convId:convId, topico:tps[tps.length-1].id, motivo:'Equipe assumiu', estagio:'aguardando', opId:null, pac: c.pacs.length===1 ? c.pacs[0].nome : '', hoje:true, abertoEm:'17/09 '+h, abertoPor:eu, resp:'', respEm:'', fimEm:'', vistas:[] }]; d.sols.push(esperando[0]); }
+esperando.forEach(function(x){ x.estagio='atendimento'; x.resp=eu; x.respEm='17/09 '+h; if (!x.vistas.some(function(v){ return v.quem===eu; })) x.vistas.push({ quem:eu, quando:'17/09 '+h }); });
+c.restrita = false;
+c.msgs.push({ k:'sys', autor:'Sistema', texto:eu+' assumiu a conversa', meta:h });
+}
+moverEm(d, solId, para, eu) {
+var h = this.agora(), x = d.sols.filter(function(y){ return y.id===solId; })[0], c = d.convs.filter(function(y){ return y.id===x.convId; })[0];
+var antes = this.donoDe(c, d.sols), nomes = this.st().cfg.etapasAt;
+x.estagio = para; x.hoje = true;
+if (!x.vistas.some(function(v){ return v.quem===eu; })) x.vistas.push({ quem:eu, quando:'17/09 '+h });
+if (para==='atendimento') { c.restrita=false; x.resp=eu; x.respEm='17/09 '+h; x.fimEm=''; }
+if (para==='finalizado') { x.fimEm='17/09 '+h; if (!x.resp) { x.resp=eu; x.respEm='17/09 '+h; } }
+c.msgs.push({ k:'sys', autor:'Sistema', texto:'"'+x.motivo+'" movida para '+nomes[para]+' por '+eu, meta:h });
+var depois = this.donoDe(c, d.sols);
+if (antes!=='ia' && depois==='ia') {
+c.restrita = false;
+c.msgs.push({ k:'sys', autor:'Sistema', texto:'Conversa devolvida à IA', meta:h });
+var ult = c.msgs.filter(function(m){ return m.k==='in'||m.k==='ia'||m.k==='eq'; }).slice(-1)[0];
+if (ult && ult.k==='in') c.msgs.push({ k:'sys', autor:'Sistema', texto:'Última mensagem era do paciente · IA acionada para responder', meta:h });
+}
+}
+renderVals() {
+var self = this, s = this.st(), ic = this.icones(), cfg = s.cfg;
+var nomes = { secretaria:'Amanda', gestor:'Dr. Amilton', planee:'Mateus' };
+var eu = nomes[s.role];
+function ini(n){ var p = n.replace(/[^A-Za-zÀ-ÿ ]/g,'').trim().split(/\s+/); return p.length && p[0] ? (p[0][0] + (p.length>1 ? p[p.length-1][0] : '')).toUpperCase() : '#'; }
+function avatar(sz){ return 'width:'+sz+'px;height:'+sz+'px;flex-shrink:0;border-radius:50%;background:var(--surface-3);color:var(--ink-2);display:flex;align-items:center;justify-content:center;font-size:'+Math.round(sz*0.36)+'px;font-weight:600;'; }
+function dono(c){ return self.donoDe(c, s.sols); }
+function solsDe(c, abertas){ return s.sols.filter(function(x){ return x.convId===c.id && (!abertas || x.estagio!=='finalizado'); }); }
+var topNome = {}; cfg.topicos.forEach(function(t){ topNome[t.id] = t.nome; });
+function topicoDe(x){ return topNome[x.topico] ? x.topico : cfg.topicos[cfg.topicos.length-1].id; }
+function motivoDe(c){ return solsDe(c, true).filter(function(x){ return x.estagio!=='pendente'; }).map(function(x){ return topNome[topicoDe(x)]; }).join(' · '); }
+function precisa(c){ var d = dono(c); return d==='aguardando' || d==='restrita' || (d==='humano' && (c.naoLidas>0 || c.marcada)); }
+var precisaN = s.convs.filter(precisa).length;
+function cpfTxt(fim){ return s.role==='planee' ? 'CPF ***.***.***-'+fim : 'CPF final '+fim; }
+
+var EST = {
+ia:{ k:'ia', nome:'IA atendendo', icon:ic.ia },
+aguardando:{ k:'ag', nome:'Aguardando equipe', icon:ic.aguardando },
+humano:{ k:'eq', nome:'Com a equipe', icon:ic.equipe },
+restrita:{ k:'rs', nome:'IA em modo restrito', icon:ic.restrita } };
+var ETP = {
+aguardando:{ k:'ag', icon:ic.aguardando }, atendimento:{ k:'eq', icon:ic.equipe }, pendente:{ k:'pd', icon:ic.pendente }, finalizado:{ k:'fn', icon:ic.finalizado } };
+function pill(k){ return 'display:inline-flex;align-items:center;gap:5px;flex-shrink:0;height:22px;padding:0 8px 0 7px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--'+k+'-bg);color:var(--'+k+'-ink);'; }
+function chip(k){ return 'width:20px;height:20px;flex-shrink:0;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:var(--'+k+'-bg);color:var(--'+k+');'; }
+function dot(k){ return 'width:8px;height:8px;flex-shrink:0;margin-top:6px;border-radius:50%;background:var(--'+k+');'; }
+var neutro = 'display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:500;background:var(--surface-3);color:var(--ink-2);';
+
+var telas = [['inbox','Inbox',ic.inbox,['secretaria','gestor','planee']],['contatos','CRM',ic.crm,['secretaria','gestor','planee']],['dash','Resultados',ic.dash,['gestor','planee']],['config','Configurações',ic.config,['gestor','planee']],['interno','Interno Planee',ic.interno,['planee']]];
+var nav = telas.filter(function(t){ return t[3].indexOf(s.role) >= 0; }).map(function(t){
+var on = s.screen===t[0], badge = t[0]==='inbox' && precisaN ? String(precisaN) : '';
+return { label:t[1], icon:t[2], badge:badge, go:function(){ self.setState({ screen:t[0], busca:'' }); },
+style:'display:flex;align-items:center;gap:10px;width:100%;height:40px;padding:0 10px;border:0;border-radius:10px;font-size:14px;font-weight:'+(on?'600':'500')+';'+(on?'background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);':'background:none;color:var(--ink-2);'),
+badgeStyle: badge ? 'min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--ag);color:#17171a;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;' : 'display:none;' }; });
+var legenda = [['ia','IA atendendo',ic.ia],['ag','Aguardando equipe',ic.aguardando],['eq','Com a equipe',ic.equipe],['rs','IA em modo restrito',ic.restrita],['pd','Pendente interno',ic.pendente],['fn','Finalizado',ic.finalizado]].map(function(l){ return { nome:l[1], icon:l[2], chip:chip(l[0]) }; });
+
+var filtros = { precisa:precisa, atend:function(c){ return dono(c)==='humano' && !precisa(c); }, ia:function(c){ return dono(c)==='ia'; }, todas:function(){ return true; } };
+function seg(on){ return 'height:32px;padding:0 8px;border:0;border-radius:8px;font-size:12.5px;font-weight:'+(on?'600':'500')+';display:flex;align-items:center;justify-content:center;gap:5px;'+(on?'background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);':'background:none;color:var(--ink-2);'); }
+var tabs = [['precisa','Você'],['atend','Equipe'],['ia','IA'],['todas','Todas']].map(function(t){
+var n = s.convs.filter(filtros[t[0]]).length, on = s.tab===t[0];
+return { label:t[1], n:String(n), on:on, go:function(){ self.setState({ tab:t[0] }); }, style:seg(on),
+nStyle:'font-size:11px;font-weight:600;color:'+(on && t[0]==='precisa' && n ? 'var(--ag-ink)' : 'var(--ink-3)')+';' }; });
+
+var q = s.busca.toLowerCase().trim();
+function casa(c){ return !q || c.nome.toLowerCase().indexOf(q)>=0 || c.tel.indexOf(q)>=0 || c.pacs.some(function(p){ return p.nome.toLowerCase().indexOf(q)>=0 || p.fim===q; }) || c.msgs.some(function(m){ return m.texto.toLowerCase().indexOf(q)>=0; }); }
+function abrirConv(c, extra){ self.mut(function(d){ var x = d.convs.filter(function(y){ return y.id===c.id; })[0]; x.naoLidas=0; x.marcada=false; self.ver(d, c.id, eu); }, Object.assign({ selId:c.id, rascunho:'', nota:false }, extra || {})); }
+function nomeExib(c){ return c.nome==='Sem nome' ? c.tel.slice(-9) : c.nome; }
+var lista = s.convs.filter(filtros[s.tab]).filter(casa).map(function(c){
+var ativo = c.id===s.selId, n = c.naoLidas, mostra = n>0 || c.marcada, e = EST[dono(c)];
+var ult = c.msgs.filter(function(m){ return m.k==='in'||m.k==='ia'||m.k==='eq'; }).slice(-1)[0];
+return { nome:nomeExib(c), hora:c.hora, previa: ult ? (ult.k==='in' ? '' : (ult.k==='ia' ? 'Sara: ' : 'Equipe: ')) + ult.texto : '', badge: n>0 ? String(n) : '', estado:e.nome, stIcon:e.icon, motivo:motivoDe(c), iniciais: c.nome==='Sem nome' ? '#' : ini(c.nome),
+abrir:function(){ abrirConv(c); }, avatarStyle:avatar(40),
+rowStyle:'display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;padding:12px 10px;margin-bottom:2px;border:0;border-radius:12px;'+(ativo?'background:var(--sel);':'background:none;'),
+nameStyle:'font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:'+(mostra?'700':'550')+';',
+unreadStyle: mostra ? 'flex-shrink:0;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--ink);color:var(--inv);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;' : 'display:none;',
+pillStyle:pill(e.k) }; });
+
+var sel = s.convs.filter(function(c){ return c.id===s.selId; })[0] || null;
+var selE = EST[sel ? dono(sel) : 'ia'];
+var bub = 'padding:10px 14px;font-size:14px;line-height:1.5;max-width:560px;white-space:pre-wrap;';
+var estilos = {
+'in':'background:var(--surface);border:1px solid var(--line);border-radius:4px 16px 16px 16px;box-shadow:var(--shadow-1);',
+ia:'background:var(--ia-bg);border:1px solid transparent;border-radius:16px 4px 16px 16px;',
+eq:'background:var(--ink);color:var(--inv);border-radius:16px 4px 16px 16px;',
+nota:'background:var(--ag-bg);color:var(--ink);border:1px dashed var(--ag);border-radius:12px;',
+sys:'background:none;color:var(--ink-3);font-size:12px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;',
+tool:'background:var(--surface-3);color:var(--ink-2);font-family:\'Geist Mono\',ui-monospace,monospace;font-size:11.5px;padding:6px 12px;border-radius:8px;' };
+var autorCor = { 'in':'var(--ink-3)', ia:'var(--ia-ink)', eq:'var(--ink-2)', nota:'var(--ag-ink)', sys:'var(--ink-3)', tool:'var(--ink-3)' };
+var msgs = (sel ? sel.msgs : []).filter(function(m){ return m.k!=='tool' || s.role==='planee'; }).map(function(m){
+var al = m.k==='in' ? 'flex-start' : (m.k==='sys'||m.k==='tool') ? 'center' : 'flex-end';
+var mostraAutor = m.k!=='sys' && m.k!=='tool';
+return { autor: mostraAutor ? m.autor : '', texto:m.texto, meta: m.k==='sys' ? '' : m.meta,
+autorStyle: mostraAutor ? 'font-size:11.5px;font-weight:600;margin-bottom:4px;color:'+autorCor[m.k]+';' : 'display:none;',
+wrapStyle:'display:flex;flex-direction:column;flex-shrink:0;align-items:'+al+';', bubbleStyle:bub+estilos[m.k] }; });
+var mot = sel ? motivoDe(sel) : '';
+var pend = sel ? solsDe(sel, true).filter(function(x){ return x.estagio==='pendente'; }).map(function(x){ return topNome[topicoDe(x)]; }).join(' · ') : '';
+var banners = {
+aguardando:['Aguardando equipe', mot+'. A IA está calada até alguém assumir ou até o teto de 60 minutos.'],
+restrita:['IA em modo restrito', mot+'. Ninguém assumiu em 60 minutos; a IA reconhece a demora, sem responder nada clínico.'],
+humano:['Com a equipe', mot+'. Mover o cartão para '+cfg.etapasAt.pendente.toLowerCase()+' ou finalizar devolve a conversa à IA.'],
+ia:['IA atendendo', pend ? cfg.etapasAt.pendente+': '+pend+'. A IA responde o resto e fica calada nesse assunto.' : 'Escrever ou assumir abre um cartão no quadro de atendimento.'] };
+var bKey = sel ? dono(sel) : 'ia', b = banners[bKey];
+
+function moverDaConversa(para){ self.mut(function(d){ d.sols.filter(function(x){ return x.convId===sel.id && x.estagio==='atendimento'; }).forEach(function(x){ self.moverEm(d, x.id, para, eu); }); }); }
+function enviar(){
+if (!sel) return; var t = s.rascunho.trim(); if (!t) return; var h = self.agora();
+self.mut(function(d){ var x = d.convs.filter(function(y){ return y.id===sel.id; })[0];
+if (s.nota) { x.msgs.push({ k:'nota', autor:'Nota interna · '+eu, texto:t, meta:h+' · só a equipe vê' }); return; }
+self.assumirEm(d, sel.id, eu); x.hora = h; x.msgs.push({ k:'eq', autor:eu+' · equipe', texto:t, meta:h+' · enviada' }); }, { rascunho:'', nota:false });
+}
+var rapidas = [['Receita pronta','Sua receita está pronta. Pode retirar na recepção em horário comercial.'],['Dados para Pix','Segue a chave Pix da clínica: [CHAVE PIX]. Assim que pagar, me envie o comprovante por aqui.'],['Já estou vendo','Oi! Já estou vendo isso pra você, um instante.']]
+.map(function(r){ return { rotulo:r[0], usar:function(){ self.setState({ rascunho:r[1], nota:false }); } }; });
+
+// CRM
+var etNome = {}; cfg.funil.forEach(function(f){ etNome[f.id] = f.nome; });
+function estagioDe(o){ if (etNome[o.estagio]) return o.estagio; var ab = cfg.funil.filter(function(f){ return f.tipo==='aberta'; }); return (ab[0] || cfg.funil[0]).id; }
+function convDe(id){ return s.convs.filter(function(c){ return c.id===id; })[0]; }
+function cpfChip(c, pac){ var p = c.pacs.filter(function(y){ return y.nome===pac; })[0]; return p ? [cpfTxt(p.fim), neutro+'color:var(--ink);font-family:\'Geist Mono\',ui-monospace,monospace;font-size:11px;'] : ['sem CPF', neutro+'color:var(--ink-3);']; }
+var abertas = cfg.funil.filter(function(f){ return f.tipo==='aberta'; }).length;
+var colsCom = cfg.funil.map(function(f, i){
+var cards = s.ops.filter(function(o){ return estagioDe(o)===f.id && casa(convDe(o.convId)); }).map(function(o){
+var c = convDe(o.convId), cs = cpfChip(c, o.pac);
+var espera = s.sols.some(function(x){ return x.opId===o.id && x.estagio!=='finalizado'; });
+return { nome: o.pac || nomeExib(c), sub:o.interesse, tempo:o.tempo, cpf:cs[0], cpfStyle:cs[1],
+selo: espera ? 'esperando equipe' : '', seloStyle: espera ? pill('ag') : 'display:none;',
+abrir:function(){ self.setState({ crmTab:'contatos', ctId:c.id, busca:'' }); } }; });
+var marca = f.tipo==='ganho' ? '✓' : f.tipo==='perdido' ? '×' : String(i+1);
+var pos = f.tipo==='aberta' ? (i+1)/Math.max(abertas+1,1) : 1;
+return { titulo:f.nome, n:String(cards.length), cards:cards, vazia:!cards.length, marca:marca,
+marcaStyle:'width:22px;height:22px;flex-shrink:0;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;'+(f.tipo==='ganho'?'background:var(--ink);color:var(--inv);':f.tipo==='perdido'?'background:var(--surface-3);color:var(--ink-3);':'background:var(--surface);border:1px solid var(--line-strong);color:var(--ink-2);'),
+barra:'height:3px;border-radius:3px;width:'+Math.round(pos*100)+'%;background:'+(f.tipo==='perdido'?'var(--line-strong)':'var(--ink)')+';opacity:'+(f.tipo==='aberta'?'0.55':'1')+';' }; });
+
+function mins(q2){ var m = /^17\/09 (\d\d):(\d\d)$/.exec(q2 || ''); return m ? (+m[1])*60 + (+m[2]) : null; }
+function dur(n){ return n < 60 ? n+' min' : Math.floor(n/60)+'h'+('0'+(n%60)).slice(-2); }
+function entre(a, b2){ var x = mins(a), y = mins(b2); return (x===null || y===null || y < x) ? '' : dur(y - x); }
+var agoraQ = '17/09 '+self.agora();
+var nFinal = s.sols.filter(function(x){ return x.estagio==='finalizado' && x.hoje; }).length;
+function acaoBtn(forte){ return 'flex:1 1 auto;height:32px;padding:0 10px;border-radius:8px;font-size:12.5px;font-weight:600;'+(forte?'border:0;background:var(--ink);color:var(--inv);':'border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);'); }
+var colsAt = cfg.topicos.map(function(tp){
+var cards = s.sols.filter(function(x){ return topicoDe(x)===tp.id && x.hoje && (x.estagio!=='finalizado' || s.verFinal) && casa(convDe(x.convId)); }).map(function(x){
+var c = convDe(x.convId), cs = cpfChip(c, x.pac), acoes = [], E = ETP[x.estagio];
+function ac(rot, para, forte){ acoes.push({ rotulo:rot, cls: forte ? 'pri t' : 'hov t', style:acaoBtn(forte), fazer:function(){ self.mut(function(d){ self.moverEm(d, x.id, para, eu); }); } }); }
+if (x.estagio==='aguardando') ac('Assumir','atendimento',true);
+if (x.estagio==='atendimento') { ac(cfg.etapasAt.pendente,'pendente',false); ac('Finalizar','finalizado',true); }
+if (x.estagio==='pendente') { ac('Retomar','atendimento',false); ac('Finalizar','finalizado',true); }
+var ha = entre(x.abertoEm, x.fimEm || agoraQ), ate = entre(x.abertoEm, x.respEm);
+var restrita = x.estagio==='aguardando' && c.restrita;
+var k = restrita ? 'rs' : E.k;
+return { nome: x.pac || nomeExib(c), motivo:x.motivo, cpf:cs[0], cpfStyle: cfg.campos.cpf ? cs[1] : 'display:none;',
+etapa: restrita ? 'IA restrita' : cfg.etapasAt[x.estagio], stIcon: restrita ? ic.restrita : E.icon, pillStyle:pill(k)+'align-self:flex-start;',
+cardStyle:'display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-1);'+(x.estagio==='finalizado'?'opacity:.72;':''),
+aberto:x.abertoEm.slice(6)+' · '+x.abertoPor+(x.fimEm ? '' : (ha ? ' · há '+ha : '')),
+resp: x.resp ? x.resp+' · '+x.respEm.slice(6)+(ate ? ' ('+ate+' após abrir)' : '') : 'ninguém assumiu',
+showResp:!!cfg.campos.resp, showVistas:!!cfg.campos.vistas,
+temFim:!!x.fimEm, fim:x.fimEm.slice(6)+' · total '+ha,
+vistas: x.vistas.length ? x.vistas.map(function(v){ return { t:v.quem+' · '+v.quando.slice(6) }; }) : [{ t:'ninguém abriu' }],
+selo: x.opId && cfg.campos.lead ? 'lead no funil' : '', seloStyle: x.opId && cfg.campos.lead ? neutro : 'display:none;',
+acoes:acoes, abrir:function(){ abrirConv(c, { screen:'inbox', tab:'todas', busca:'' }); } }; });
+return { titulo:tp.nome, icon:ic[tp.icone] || ic.outros, n:String(cards.length), cards:cards, vazia:!cards.length, secStyle:'flex:'+(cards.length?'1 0 240px':'0 0 190px')+';max-width:320px;display:flex;flex-direction:column;gap:10px;' }; });
+var resumoAt = ['aguardando','atendimento','pendente'].map(function(e){ return { nome:cfg.etapasAt[e], icon:ETP[e].icon, chip:chip(ETP[e].k), n:String(s.sols.filter(function(x){ return x.estagio===e; }).length) }; });
+var crmTabs = [['atendimento','Atendimento'],['comercial','Comercial'],['contatos','Contatos']].map(function(t){ var on = s.crmTab===t[0]; return { label:t[1], on:on, go:function(){ self.setState({ crmTab:t[0] }); }, style:seg(on)+'padding:0 14px;' }; });
+
+var ct = s.convs.filter(function(c){ return c.id===s.ctId; })[0] || s.convs[0];
+var ctE = EST[dono(ct)];
+function linhas(a, vazio){ return (a.length ? a : [vazio]).map(function(t2){ return { t:t2 }; }); }
+var contatos = s.convs.filter(casa).map(function(c){
+var ab = s.ops.filter(function(o){ return o.convId===c.id; }).slice(-1)[0], nSol = solsDe(c, true).length;
+return { nome:nomeExib(c), tel:c.tel, iniciais: c.nome==='Sem nome' ? '#' : ini(c.nome), avatarStyle:avatar(34), resumo:(ab ? etNome[estagioDe(ab)] : 'sem oportunidade')+(nSol ? ' · '+nSol+' aberta' : ''), ver:function(){ self.setState({ ctId:c.id }); },
+style:'display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 16px;border:0;border-bottom:1px solid var(--line);font-size:13.5px;'+(c.id===ct.id?'background:var(--sel);':'background:none;') }; });
+function solLinhas(c){ var l = solsDe(c, false).map(function(x){ return { t:cfg.etapasAt[x.estagio]+' · '+topNome[topicoDe(x)]+' · '+x.motivo+(x.opId ? ' · ligada ao lead' : ''), dot:dot(ETP[x.estagio].k) }; }); return l.length ? l : [{ t:'Nenhuma solicitação', dot:'display:none;' }]; }
+
+// Configurações
+var podeTudo = s.role==='planee';
+var cfgTabsDef = [['crm','CRM'],['negocio','Negócio'],['prompt','Prompt e versões'],['tecnico','Técnico'],['equipe','Equipe e avisos']].filter(function(t){ return podeTudo || ['crm','negocio','equipe'].indexOf(t[0])>=0; });
+var cfgTab = cfgTabsDef.some(function(t){ return t[0]===s.cfgTab; }) ? s.cfgTab : 'crm';
+var cfgTabs = cfgTabsDef.map(function(t){ var on = cfgTab===t[0]; return { label:t[1], on:on, go:function(){ self.setState({ cfgTab:t[0] }); }, style:'height:40px;padding:0 14px;border:0;background:none;font-size:14px;font-weight:'+(on?'600':'500')+';border-bottom:2px solid '+(on?'var(--ink)':'transparent')+';color:'+(on?'var(--ink)':'var(--ink-3)')+';margin-bottom:-1px;' }; });
+var mods = this.modelos();
+var modelosLista = Object.keys(mods).map(function(m){ var on = cfg.modelo===m; return { nome:mods[m].nome, on:on, style:seg(on)+'padding:0 14px;',
+aplicar:function(){ if (on) return; self.cfgMut(function(c, d){
+var novo = self.montaCfg(m);
+var velhoAb = c.funil.filter(function(f){ return f.tipo==='aberta'; }).map(function(f){ return f.id; });
+var novoAb = novo.funil.filter(function(f){ return f.tipo==='aberta'; }).map(function(f){ return f.id; });
+var tipoDe = {}; c.funil.forEach(function(f){ tipoDe[f.id] = f.tipo; });
+var ganho = novo.funil.filter(function(f){ return f.tipo==='ganho'; })[0].id, perd = novo.funil.filter(function(f){ return f.tipo==='perdido'; })[0].id;
+d.ops.forEach(function(o){ var tp = tipoDe[o.estagio]; if (tp==='ganho') o.estagio = ganho; else if (tp==='perdido') o.estagio = perd; else { var i = velhoAb.indexOf(o.estagio); o.estagio = novoAb[Math.min(Math.max(i,0), novoAb.length-1)]; } });
+var velhoT = c.topicos.map(function(t2){ return t2.id; });
+d.sols.forEach(function(x){ var i = velhoT.indexOf(x.topico); x.topico = novo.topicos[Math.min(i<0 ? velhoT.length-1 : i, novo.topicos.length-1)].id; });
+novo.etapasAt = c.etapasAt; novo.campos = c.campos; novo.seq = c.seq;
+Object.keys(c).forEach(function(k){ delete c[k]; }); Object.assign(c, novo);
+}); } }; });
+var gatilhosBase = ['Primeira mensagem','IA respondeu','Pediu preço ou informou o motivo','Horários enviados','Orçamento enviado','Proposta enviada','Reunião marcada','Follow-up enviado','Agendamento criado no sistema','Cliente aprovou','Contrato assinado','Follow-up sem resposta','Manual (equipe)'];
+cfg.funil.forEach(function(f){ if (gatilhosBase.indexOf(f.gatilho)<0) gatilhosBase.push(f.gatilho); });
+var gatilhos = gatilhosBase.map(function(g){ return { v:g }; });
+function contaTipo(tp){ return cfg.funil.filter(function(f){ return f.tipo===tp; }).length; }
+var cfgFunil = cfg.funil.map(function(f, i){
+var unico = contaTipo(f.tipo) <= 1;
+function set(campo){ return function(e){ var v = e.target.value; self.cfgMut(function(c){ var alvo = c.funil[i]; if (campo==='tipo' && contaTipo(alvo.tipo) <= 1) return; alvo[campo] = v; }); }; }
+return { pos:String(i+1), nome:f.nome, tipo:f.tipo, gatilho:f.gatilho, primeiro:i===0, ultimo:i===cfg.funil.length-1, fixo:unico,
+dicaRemover: unico ? 'O funil precisa de pelo menos uma etapa deste tipo' : 'Remover; os cartões vão para outra etapa do mesmo tipo',
+onNome:set('nome'), onTipo:set('tipo'), onGatilho:set('gatilho'),
+subir:function(){ self.cfgMut(function(c){ var a = c.funil; var x = a[i]; a[i] = a[i-1]; a[i-1] = x; }); },
+descer:function(){ self.cfgMut(function(c){ var a = c.funil; var x = a[i]; a[i] = a[i+1]; a[i+1] = x; }); },
+remover:function(){ if (unico) return; self.cfgMut(function(c, d){ var alvo = c.funil[i]; c.funil.splice(i,1); var dest = c.funil.filter(function(g){ return g.tipo===alvo.tipo; })[0]; d.ops.forEach(function(o){ if (o.estagio===alvo.id) o.estagio = dest.id; }); }); } }; });
+var iconesTopico = [['receita','Receita'],['doc','Documento'],['exame','Exame'],['valor','Pagamento'],['agenda','Agenda'],['os','Ferramenta'],['garantia','Escudo'],['caixa','Caixa'],['recibo','Recibo'],['pessoa','Pessoa'],['predio','Prédio'],['outros','Outros']].map(function(x){ return { v:x[0], nome:x[1] }; });
+var cfgTopicos = cfg.topicos.map(function(t2, i){
+var unico = cfg.topicos.length <= 1;
+function set(campo){ return function(e){ var v = e.target.value; self.cfgMut(function(c){ c.topicos[i][campo] = v; }); }; }
+return { nome:t2.nome, motivos:t2.motivos, icone:t2.icone, icon:ic[t2.icone] || ic.outros, primeiro:i===0, ultimo:i===cfg.topicos.length-1, fixo:unico,
+onNome:set('nome'), onMotivos:set('motivos'), onIcone:set('icone'),
+subir:function(){ self.cfgMut(function(c){ var a = c.topicos; var x = a[i]; a[i] = a[i-1]; a[i-1] = x; }); },
+descer:function(){ self.cfgMut(function(c){ var a = c.topicos; var x = a[i]; a[i] = a[i+1]; a[i+1] = x; }); },
+remover:function(){ if (unico) return; self.cfgMut(function(c, d){ var alvo = c.topicos[i]; c.topicos.splice(i,1); var dest = c.topicos[c.topicos.length-1]; d.sols.forEach(function(x){ if (x.topico===alvo.id) x.topico = dest.id; }); }); } }; });
+var padraoAt = { aguardando:'Aguardando equipe', atendimento:'Em atendimento', pendente:'Pendente interno', finalizado:'Finalizado' };
+var cfgEtapas = ['aguardando','atendimento','pendente','finalizado'].map(function(e){ return { padrao:padraoAt[e], nome:cfg.etapasAt[e], icon:ETP[e].icon, pill:pill(ETP[e].k)+'justify-self:start;',
+onNome:function(ev){ var v = ev.target.value; self.cfgMut(function(c){ c.etapasAt[e] = v || padraoAt[e]; }); } }; });
+var cfgCampos = [['resp','Responsável','quem assumiu e quanto tempo depois de abrir'],['vistas','Visto por','cada pessoa que abriu, com data e hora'],['cpf','CPF do paciente','final do CPF quando a IA já identificou'],['lead','Ligação com o funil comercial','selo quando a solicitação é de um lead']].map(function(x){ return { nome:x[1], dica:x[2], on:!!cfg.campos[x[0]], alternar:function(){ self.cfgMut(function(c){ c.campos[x[0]] = !c.campos[x[0]]; }); } }; });
+
+var versoes = []; for (var i = s.versao; i >= 1 && i > s.versao-4; i--) { (function(n){ versoes.push({ nome:'Versão '+n, nota:'anterior', atual:n===s.versao, podeReverter:n!==s.versao, reverter:function(){ self.setState({ versao:s.versao+1, sujo:false }); } }); })(i); }
+versoes[0].nota = s.versao===3 ? 'publicada em 14/09 por Mateus' : 'publicada agora · cache recriado';
+
+function barras(d, max, h, cor, fmt, un){ return d.map(function(x){ return { l:x[0], t:fmt(x[1]), dica:x[0]+': '+fmt(x[1])+(un||''), bar:'width:100%;max-width:56px;border-radius:6px 6px 0 0;background:'+cor+';height:'+Math.max(3, Math.round(x[1]/max*h))+'px;' }; }); }
+var colsTabela = ['aguardando','atendimento','pendente','finalizado'].map(function(e){ return { nome:cfg.etapasAt[e], dot:dot(ETP[e].k).replace('margin-top:6px;','') }; });
+var tabelaAssuntos = cfg.topicos.map(function(tp){ return { nome:tp.nome, vals:['aguardando','atendimento','pendente','finalizado'].map(function(e){ var n = s.sols.filter(function(x){ return topicoDe(x)===tp.id && x.hoje && x.estagio===e; }).length; return { t: n ? String(n) : '·' }; }) }; });
+
+return {
+ic:ic, temaClass:'pl pl-'+s.tema, temaIcone: s.tema==='claro' ? ic.lua : ic.sol, temaRotulo: s.tema==='claro' ? 'Tema escuro' : 'Tema claro',
+alternarTema:function(){ self.setState({ tema: s.tema==='claro' ? 'escuro' : 'claro' }); },
+nav:nav, legenda:legenda, role:s.role, userName:eu, userIni:ini(eu),
+onRole:function(e){ var r = e.target.value, ok = telas.filter(function(t){ return t[0]===s.screen; })[0][3].indexOf(r) >= 0; self.setState({ role:r, screen: ok ? s.screen : 'inbox' }); },
+isInbox:s.screen==='inbox', isCrm:s.screen==='contatos', isDash:s.screen==='dash', isConfig:s.screen==='config', isInterno:s.screen==='interno',
+busca:s.busca, onBusca:function(e){ self.setState({ busca:e.target.value }); },
+totalConversas:s.convs.length+' conversas', tabs:tabs, lista:lista, listaVazia:lista.length===0,
+temSel:!!sel, semSel:!sel, sel: sel || { nome:'', tel:'', agenda:'' },
+selIni: sel ? (sel.nome==='Sem nome' ? '#' : ini(sel.nome)) : '', selAvatar:avatar(40), selPill:pill(selE.k), selIcon:selE.icon, selEstado:selE.nome,
+msgs:msgs,
+selPacs:linhas(sel ? sel.pacs.map(function(p){ return p.nome+' · '+p.vinculo+' · '+cpfTxt(p.fim); }) : [], 'Nenhum paciente identificado'),
+selOps:linhas(sel ? s.ops.filter(function(o){ return o.convId===sel.id; }).map(function(o){ return etNome[estagioDe(o)]+' · '+(o.pac || 'sem paciente')+' · '+o.interesse; }) : [], 'Nenhuma oportunidade'),
+selSols: sel ? solLinhas(sel) : [],
+bannerTitulo:b[0], bannerTexto:b[1], bannerIcon:EST[bKey].icon,
+bannerStyle:'display:flex;gap:10px;align-items:center;flex-shrink:0;padding:10px 22px;font-size:13px;background:var(--'+EST[bKey].k+'-bg);color:var(--'+EST[bKey].k+'-ink);border-bottom:1px solid var(--line);',
+podeAssumir: !!sel && dono(sel)!=='humano', podeMover: !!sel && dono(sel)==='humano', rotPendente:cfg.etapasAt.pendente,
+assumir:function(){ self.mut(function(d){ self.assumirEm(d, sel.id, eu); }); },
+paraPendente:function(){ moverDaConversa('pendente'); },
+finalizar:function(){ moverDaConversa('finalizado'); },
+marcarNaoLida:function(){ self.mut(function(d){ d.convs.filter(function(y){ return y.id===sel.id; })[0].marcada = true; }, { selId:null }); },
+rapidas:rapidas, rascunho:s.rascunho, onRascunho:function(e){ self.setState({ rascunho:e.target.value }); },
+onTecla:function(e){ if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } },
+enviar:enviar, enviarRotulo: s.nota ? 'Salvar nota' : 'Enviar', nota:s.nota,
+alternarNota:function(){ self.setState({ nota:!s.nota }); },
+notaBtnStyle:'height:32px;padding:0 10px;border-radius:8px;font-size:12.5px;font-weight:500;display:inline-flex;align-items:center;gap:6px;border:1px solid '+(s.nota?'var(--ag)':'var(--line)')+';background:'+(s.nota?'var(--ag-bg)':'none')+';color:'+(s.nota?'var(--ag-ink)':'var(--ink-2)')+';',
+compStyle:'position:relative;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-1);border:1px solid '+(s.nota?'var(--ag)':'var(--line-strong)')+';',
+placeholder: s.nota ? 'Nota interna: só a equipe vê, não entra no contexto da IA.' : 'Escrever para o paciente…',
+dicaComp: s.nota ? 'Não vai para o paciente' : 'Enter envia; a conversa passa para você',
+abrirFicha:function(){ self.setState({ screen:'contatos', crmTab:'contatos', ctId:sel.id, busca:'' }); },
+simular:function(){ var alvo = s.convs.filter(function(c){ return c.id!==s.selId; }), c = alvo[s.simN % alvo.length], h = self.agora(), dn = dono(c);
+self.mut(function(d){ var x = d.convs.filter(function(y){ return y.id===c.id; })[0]; x.msgs.push({ k:'in', autor:'Paciente', texto:'Oi, tem alguém aí?', meta:h }); x.naoLidas += 1; x.hora = h;
+if (dn==='ia') x.msgs.push({ k:'ia', autor:'Sara · IA', texto:'Oi! Estou aqui, como posso ajudar?', meta:h+' · simulado' }); }, { simN:s.simN+1 }); },
+
+crmSub: s.crmTab==='atendimento' ? 'Um cartão por solicitação, uma coluna por assunto' : s.crmTab==='comercial' ? 'Funil comercial · '+cfg.funil.length+' etapas' : 'Pessoas e telefones, ligados por CPF',
+crmTabs:crmTabs, crmComercial:s.crmTab==='comercial', crmAtendimento:s.crmTab==='atendimento', crmContatos:s.crmTab==='contatos',
+podeConfigCrm: s.role!=='secretaria', irConfigCrm:function(){ self.setState({ screen:'config', cfgTab:'crm' }); },
+colsCom:colsCom, colsAt:colsAt, resumoAt:resumoAt, verFinal:s.verFinal, alternarFinal:function(){ self.setState({ verFinal:!s.verFinal }); },
+finalRotulo:(s.verFinal ? 'Ocultar' : 'Mostrar')+' finalizados hoje · '+nFinal,
+finalBtnStyle:'height:34px;padding:0 12px;border-radius:9px;font-size:12.5px;font-weight:500;border:1px solid '+(s.verFinal?'var(--ink)':'var(--line-strong)')+';background:var(--surface);color:var(--ink);',
+simularIA:function(){ var ab = cfg.funil.filter(function(f){ return f.tipo==='aberta'; }).map(function(f){ return f.id; }), ganho = cfg.funil.filter(function(f){ return f.tipo==='ganho'; })[0].id;
+var vivos = s.ops.filter(function(o){ return ab.indexOf(estagioDe(o))>=0; }); if (!vivos.length) return;
+var alvo = vivos[s.simOp % vivos.length], h = self.agora();
+self.mut(function(d){ var o = d.ops.filter(function(y){ return y.id===alvo.id; })[0], i2 = ab.indexOf(estagioDe(o)); o.estagio = i2 < ab.length-1 ? ab[i2+1] : ganho; o.tempo = o.estagio===ganho ? '[data marcada pela IA]' : 'agora nesta etapa';
+d.convs.filter(function(y){ return y.id===o.convId; })[0].msgs.push({ k:'sys', autor:'Sistema', texto:'IA moveu a oportunidade para '+etNome[o.estagio]+' · simulado', meta:h }); }, { simOp:s.simOp+1 }); },
+contatos:contatos, ct:ct, ctIni: ct.nome==='Sem nome' ? '#' : ini(ct.nome), ctAvatar:avatar(52), ctEstado:ctE.nome, ctPill:pill(ctE.k), ctIcon:ctE.icon,
+ctPacs:linhas(ct.pacs.map(function(p){ return p.nome+' · '+p.vinculo+' · '+cpfTxt(p.fim); }), 'Nenhum paciente identificado; os cartões estão ligados só pelo telefone'),
+ctOps:linhas(s.ops.filter(function(o){ return o.convId===ct.id; }).map(function(o){ return etNome[estagioDe(o)]+' · '+(o.pac || 'sem paciente')+' · '+o.interesse; }), 'Nenhuma oportunidade'),
+ctSols:solLinhas(ct),
+abrirConversa:function(){ abrirConv(ct, { screen:'inbox', tab:'todas', busca:'' }); },
+iaLigada:!ct.iaDesligada,
+iaSwitch:'position:relative;width:46px;height:26px;flex-shrink:0;border:0;border-radius:999px;padding:0;background:'+(ct.iaDesligada?'var(--line-strong)':'var(--ia)')+';',
+iaKnob:'position:absolute;top:3px;left:'+(ct.iaDesligada?'3':'23')+'px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s ease;',
+alternarIA:function(){ self.mut(function(d){ var x = d.convs.filter(function(y){ return y.id===ct.id; })[0]; x.iaDesligada = !x.iaDesligada; }); },
+
+cfgTabs:cfgTabs, tabCrm:cfgTab==='crm', tabNegocio:cfgTab==='negocio', tabPrompt:cfgTab==='prompt', tabTecnico:cfgTab==='tecnico', tabEquipe:cfgTab==='equipe',
+modelosLista:modelosLista, cfgFunil:cfgFunil, gatilhos:gatilhos, cfgTopicos:cfgTopicos, iconesTopico:iconesTopico, cfgEtapas:cfgEtapas, cfgCampos:cfgCampos,
+addEtapa:function(){ self.cfgMut(function(c){ c.seq += 1; var pos = c.funil.findIndex(function(f){ return f.tipo!=='aberta'; }); if (pos<0) pos = c.funil.length; c.funil.splice(pos, 0, { id:'n'+c.seq, nome:'Nova etapa', tipo:'aberta', gatilho:'Manual (equipe)' }); }); },
+addTopico:function(){ self.cfgMut(function(c){ c.seq += 1; c.topicos.splice(Math.max(c.topicos.length-1,0), 0, { id:'x'+c.seq, nome:'Novo assunto', icone:'doc', motivos:'' }); }); },
+iaStatusTexto: s.pausada ? 'IA pausada em todas as conversas' : 'IA atendendo · versão '+s.versao,
+iaStatusStyle:'display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;font-size:13px;font-weight:600;'+(s.pausada?'background:var(--rs-bg);color:var(--rs-ink);':'background:var(--ia-bg);color:var(--ia-ink);'),
+iaStatusDot:'width:8px;height:8px;border-radius:50%;background:'+(s.pausada?'var(--rs)':'var(--ia)')+';',
+pausaRotulo: s.pausada ? 'Religar IA' : 'Pausar IA',
+alternarPausa:function(){ self.setState({ pausada:!s.pausada }); },
+sujar:function(){ self.setState({ sujo:true }); }, naoPodeSalvar:!s.sujo,
+salvarTexto: s.sujo ? 'Alterações não publicadas. Publicar gera nova versão e recria o cache.' : 'Nada para publicar.',
+publicar:function(){ self.setState({ versao:s.versao+1, sujo:false }); },
+versoes:versoes,
+nome_agente:'{{nome_agente}}', nome_clinica:'{{nome_clinica}}', expediente:'{{expediente}}', frase_escalada:'{{frase_escalada}}',
+tecnico:[['Modelo principal','gemini-3.7-flash · Vertex AI, com cache'],['Fallback','Google AI Studio'],['Guardrail','gemini-3.5-flash-lite · extrator de vazamento'],['Histórico enviado','40 mensagens · 6 recentes intactas · 5.000 caracteres'],['Renovação de cache','de hora em hora'],['Follow-up','gemini-3.7-flash · agente id 2']].map(function(t2){ return { k:t2[0], v:t2[1] }; }),
+equipe:[['Amanda','Secretária','Solicitações novas, paciente chegou, resumo 8h 11h 16h'],['Dr. Amilton','Gestor','Relatório das 17h'],['Dra. Ariane','Biomédica','Solicitações de triagem'],['Mateus','Planee','Falhas técnicas']].map(function(p){ return { n:p[0], p:p[1], r:p[2] }; }),
+
+kpisCliente:[['Consultas marcadas pela IA','15','com id de agendamento na Feegow','ia',ic.check],['Remarcações pela IA','2','4 tentativas de agendar falharam','eq',ic.agenda],['Resposta da equipe, mediana','2,7 min','1 em cada 10 espera mais de 7h30','ag',ic.relogio],['Solicitações abertas agora',String(s.sols.filter(function(x){ return x.estagio!=='finalizado'; }).length),'ao vivo, do quadro de atendimento','pd',ic.pendente]].map(function(k){ return { rotulo:k[0], valor:k[1], nota:k[2], chip:chip(k[3]), icon:k[4] }; }),
+diasConv:barras([['seg 01',30],['ter 02',38],['qua 03',43],['qui 04',35],['sex 05',5],['sáb 06',1],['dom 07',7]], 43, 190, 'var(--ia)', String, ' conversas'),
+espera:[['mais de 7 min',40.6],['mais de 15 min',34.4],['mais de 30 min',30.6],['mais de 1 h',24.4],['mais de 2 h',17.5],['mais de 4 h',13.7]].map(function(e){ var t2 = String(e[1]).replace('.',',')+'%'; return { l:e[0], t:t2, dica:e[0]+': '+t2, bar:'height:14px;border-radius:4px;background:var(--ag);width:'+(e[1]/45*100)+'%;' }; }),
+colsTabela:colsTabela, tabelaAssuntos:tabelaAssuntos,
+kpisInterno:[['Custo do modelo, 7 dias','R$ 47,42','projeção R$ 250 a 350 por mês',false],['Requisições ao modelo','1.589','cerca de 50% com cache',false],['Custo de WhatsApp','R$ 0','823 conversas em 8 dias, todas gratuitas',false],['Margem do contrato','[VALOR]','contrato menos modelo, WhatsApp e rateio',true]].map(function(k){ return { rotulo:k[0], valor:k[1], nota:k[2],
+box:'border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px '+(k[3]?'dashed var(--line-strong)':'solid var(--line)')+';',
+valorStyle:'font-size:'+(k[3]?'26':'32')+'px;font-weight:650;letter-spacing:-0.03em;line-height:1.2;color:'+(k[3]?'var(--ink-3)':'var(--ink)')+';' }; }),
+diasCusto:barras([['seg 01',6.95],['ter 02',9.73],['qua 03',15.84],['qui 04',10.60],['sex 05',1.39],['sáb 06',0.10],['dom 07',2.81]], 15.84, 190, 'var(--ink-2)', function(v){ return v.toFixed(2).replace('.',','); }),
+alertas:[['rs','Feegow fora de 11 a 20/09.','Token vencido; a API devolveu erro sem nenhum workflow falhar.'],['rs','5 dias em fallback, 09 a 14/09.','CRON de cache não recarregado após a migração.'],['ag','Cotação do dólar parada em R$ 5,40.','Nenhum workflow atualiza.'],['ag','Token da Feegow vence em 14/12/2026.','Avisar a partir de 07/12.']].map(function(a){ return { titulo:a[1], texto:a[2], icon:ic.alerta,
+box:'display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:10px;font-size:13px;background:var(--'+a[0]+'-bg);color:var(--'+a[0]+'-ink);' }; }),
+projetos:[['Neuro Essentia','R$ 47,42 em 7 dias','em produção'],['SSA','[a verificar]','a conectar'],['Contabilidade Alfa','[não iniciado]','a conectar']].map(function(p){ return { n:p[0], c:p[1], s:p[2] }; })
+};
+}
+}
+</script>
+</body>
+</html>

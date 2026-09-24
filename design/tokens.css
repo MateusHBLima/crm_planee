@@ -1,0 +1,85 @@
+/*
+ * Painel Planee — tokens de cor e superfície.
+ * Uso: <html data-theme="claro"> ou data-theme="escuro".
+ * Regra: cor só para estado. Assuntos e etapas do funil não têm cor (ícone + nome).
+ * Todo estado aparece com ícone e nome, nunca só a cor (a separação para daltonismo
+ * fica na faixa 6–8 ΔE, que exige essa codificação secundária).
+ *
+ * Prefixos de estado:
+ *   --ia  IA atendendo              --ag  Aguardando equipe
+ *   --eq  Com a equipe / em atend.  --rs  IA em modo restrito
+ *   --pd  Pendente interno          --fn  Finalizado
+ * Cada estado tem três variáveis: base (ícone, ponto, borda),
+ * -ink (texto sobre -bg, contraste >= 5,9:1) e -bg (fundo da pílula).
+ */
+
+:root,
+[data-theme="claro"] {
+  color-scheme: light;
+  --bg: #f5f5f3;
+  --side: #efefec;
+  --surface: #ffffff;
+  --surface-2: #f7f7f5;
+  --surface-3: #ebebe7;
+  --field: #ffffff;
+  --hover: #efefeb;
+  --sel: #ebebe7;
+  --line: #e6e5e0;
+  --line-strong: #d3d1ca;
+  --ink: #17171a;
+  --ink-hover: #34343a;
+  --ink-2: #55544f;
+  --ink-3: #6f6d66;
+  --inv: #ffffff;
+  --focus: #1f5fbf;
+  --shadow-1: 0 1px 2px rgba(20, 20, 20, .05);
+  --shadow-2: 0 6px 20px rgba(20, 20, 20, .08);
+
+  --ia: #0f9a7a;  --ia-ink: #0b6650;  --ia-bg: rgba(15, 154, 122, .10);
+  --ag: #d18f00;  --ag-ink: #7f5200;  --ag-bg: rgba(209, 143, 0, .13);
+  --eq: #1f5fbf;  --eq-ink: #174a96;  --eq-bg: rgba(31, 95, 191, .10);
+  --rs: #d13438;  --rs-ink: #a3232a;  --rs-bg: rgba(209, 52, 56, .10);
+  --pd: #a35be6;  --pd-ink: #6f35ad;  --pd-bg: rgba(163, 91, 230, .12);
+  --fn: #8a8880;  --fn-ink: #4f4e49;  --fn-bg: rgba(120, 118, 110, .12);
+}
+
+[data-theme="escuro"] {
+  color-scheme: dark;
+  --bg: #0e0e10;
+  --side: #121215;
+  --surface: #17171a;
+  --surface-2: #1c1c20;
+  --surface-3: #26262b;
+  --field: #1c1c20;
+  --hover: #222227;
+  --sel: #26262b;
+  --line: #29292e;
+  --line-strong: #3a3a41;
+  --ink: #f3f3f1;
+  --ink-hover: #d9d9d6;
+  --ink-2: #b4b3ad;
+  --ink-3: #8f8e88;
+  --inv: #121215;
+  --focus: #86bdf7;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, .45);
+
+  --ia: #1b9676;  --ia-ink: #62d3b0;  --ia-bg: rgba(27, 150, 118, .18);
+  --ag: #b98300;  --ag-ink: #f2c262;  --ag-bg: rgba(185, 131, 0, .20);
+  --eq: #2d8ae0;  --eq-ink: #86bdf7;  --eq-bg: rgba(45, 138, 224, .18);
+  --rs: #cf3d46;  --rs-ink: #f39297;  --rs-bg: rgba(207, 61, 70, .18);
+  --pd: #bb5fc9;  --pd-ink: #e2a6ec;  --pd-bg: rgba(187, 95, 201, .20);
+  --fn: #7d7c77;  --fn-ink: #c4c3bd;  --fn-bg: rgba(255, 255, 255, .07);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: 'Geist Mono', ui-monospace, Menlo, monospace; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
