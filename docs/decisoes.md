@@ -1,47 +1,64 @@
-# Decisões — Painel Planee
+# PLANO — Painel Planee
 
-Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação divergir, estas valem.
+Ordem de execução. Cada tarefa tem critério de pronto. Marque `[x]` ao concluir e registre como foi verificado.
 
-## 17/09/2026
+As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda a produção, e só depois de validada no ambiente de teste.
 
-1. **App próprio sobre Supabase.** Não Chatwoot, não Twenty, não ClickUp para atendimento.
-2. **A secretária atende só pelo painel.** Lido, não lido e finalizado viram campos nossos. A coexistência com o app WhatsApp Business continua ligada como reserva.
-3. **Multi-cliente desde o início.** Um app, um Supabase por cliente, o subdomínio decide o banco.
-4. **Dois funis de CRM, ligados por telefone e CPF.**
-   - Comercial: cartão = oportunidade. Só a IA move.
-   - Atendimento: cartão = solicitação. Etapas do sistema: aguardando equipe → em atendimento → pendente interno → finalizado. A IA abre; a secretária muda a etapa.
-   - Telefone liga o cartão à conversa (obrigatório). CPF liga à pessoa: `pacientes` + `pacientes_telefone` (N:N; mãe agenda para filho).
-   - Solicitação comercial (desconto, Pix) aponta para a oportunidade.
-5. **A conversa volta para a IA quando o cartão sai de "em atendimento"** (para pendente interno ou finalizado). No assunto pendente a IA segue calada (regra 14 do prompt).
-6. **No quadro de atendimento as colunas são assuntos, não etapas.** A etapa vira etiqueta no cartão.
-7. **O cartão mostra aberto por, visto por (cada pessoa), responsável e finalizado, com data e hora.** Tabela `atendimento_vistas`.
+---
 
-## 24/09/2026
+## Fase 0 — Fundação
 
-8. **O painel é a tela da secretária; o ClickUp sai do plano de atendimento.** O painel usa as tabelas que já existem no schema `teste` (`conversa_estado`, `crm_eventos`, `crm_fatos`, `pacientes`, `pacientes_telefone`) e o robô do CRM. Esses nomes substituem os propostos na especificação onde coincidem.
-9. **O CRM é configurável por projeto.** Tabelas por cliente: `crm_etapas` (ordem, nome, tipo aberta/ganho/perdido, gatilho), `crm_topicos` (ordem, nome, ícone, palavras), `crm_config` (nomes das 4 etapas de atendimento, campos do cartão, modelo). Modelos de partida: Clínica, Assistência técnica, Contabilidade. O robô do CRM e o `notificar_equipe` leem gatilhos e palavras dessas tabelas.
-10. **Protótipo definitivo primeiro, código depois.** Next.js sobre Supabase, schema `teste`.
-11. **Sistema visual:** cor só para estado, assuntos e etapas sem cor. Detalhe em `design/sistema-visual.md`.
+- [ ] **0.1 Ler o banco real.** Gerar os `SELECT` em `information_schema.columns` para o schema `teste` (todas as tabelas) e para `public.mensagens_gemini_cliente`, `public.usuarios_cliente`, `public.log_agendamentos`, `public.log_requisicoes`, `public.notificacoes`. O Mateus roda e cola o resultado. Salvar em `supabase/esquema_atual.md`.
+  *Pronto quando:* o arquivo lista cada tabela com suas colunas e tipos.
+- [ ] **0.2 Esqueleto do app.** Next.js + TypeScript, `design/tokens.css` global, fontes Geist, tema claro/escuro com alternância salva no navegador, cliente Supabase lendo `.env.local`. O app lê o endereço acessado e abre o modo Planee (`adm`) ou o modo cliente (decisões 12 e 19). Publicado na Vercel, no endereço grátis `.vercel.app` (decisão 20).
+- [ ] **0.2b Registro de clientes.** Supabase da Planee com a lista de clientes (nome, apelido, endereço, qual Supabase) e o login da equipe Planee. Chaves de cada cliente só no servidor (variáveis de ambiente).
+  *Pronto quando:* `npm run dev` abre uma página com a barra lateral do protótipo nos dois temas.
+- [ ] **0.3 Mapear nomes.** Comparar `supabase/esquema_atual.md` com `docs/especificacao.md` (seções 6 e 10) e `docs/decisoes.md` (itens 8 e 9). Onde o schema `teste` já tem a tabela (`conversa_estado`, `crm_eventos`, `crm_fatos`, `pacientes`, `pacientes_telefone`), usar a existente. Escrever a lista final em `supabase/modelo.md`.
+  *Pronto quando:* o Mateus aprovar `supabase/modelo.md`.
+- [ ] **0.4 SQL das tabelas novas, em `teste`.** Uma migração por arquivo em `supabase/migrations/`, na ordem:
+  1. `atendimentos` (com `topico`, `aberto_por`, marcas de tempo) e `atendimento_vistas`
+  2. `crm_etapas`, `crm_topicos`, `crm_config`
+  3. `painel_usuarios`, `painel_auditoria`
+  4. `contatos_equipe`, `contato_etiquetas`, `contato_notas`
+  5. colunas de `conversa_estado` que faltarem (dono, não lidas, marcada não lida, `ia_desligada`)
+  *Pronto quando:* cada migração rodou (pelo Mateus) e o `SELECT` de conferência bateu.
+- [ ] **0.5 Gatilhos e funções.** Gatilho de mensagem nova atualiza última mensagem e não lidas; gatilho de `atendimentos` recalcula o dono da conversa; funções `assumir_conversa`, `mover_atendimento`, `marcar_nao_lida`, `registrar_vista`, cada uma gravando quem e quando.
+  *Pronto quando:* um teste em SQL mostra o dono mudando de `aguardando` para `humano` e de volta para `ia`.
+- [ ] **0.6 RLS e login.** Supabase Auth; RLS por papel lido de `painel_usuarios` (`secretaria`, `gestor`); um usuário de cada papel para teste. Login do `adm` com segundo fator (MFA) obrigatório e registro de cada conversa aberta pela Planee.
+  *Pronto quando:* a secretária não consegue ler a tela interna nem por URL direta.
+- [ ] **0.7 Semente do CRM.** Preencher `crm_etapas` e `crm_topicos` com o modelo Clínica (valores no protótipo, função `modelos()`).
 
-## 24/09/2026 — cadastro da SSA
+## Fase 1 — Leitura (nada escreve)
 
-12. **O endereço decide o cliente.** Um app só na Vercel (plano Pro, uso comercial). O domínio acessado escolhe o Supabase do cliente; as chaves de cada cliente ficam em variáveis de ambiente. Padrão: subdomínio da Planee, `painel.<cliente>.planeelabia.com`, cadastrado um a um (sem curinga). Cliente que quiser domínio próprio aponta um CNAME para a Vercel. Cada endereço entra nas URLs de redirecionamento do Auth do Supabase daquele cliente. SSA: `painel.ssa.planeelabia.com`. O esqueleto do app (tarefa 0.2) já nasce lendo o domínio.
-13. **Contato pode ser empresa.** A ligação entre os funis aceita CPF ou CNPJ, e o nome do contato é configurável ("paciente" ou "cliente"). Resolver no mapeamento (tarefa 0.3).
-14. **Solicitação aberta recebe a mensagem.** Mensagem do mesmo contato (ou da mesma empresa já identificada) e do mesmo assunto entra na solicitação aberta, que volta como não lida; não abre cartão novo. Assunto diferente abre cartão novo. Não existe assunto "Acompanhamento".
-15. **Cliente com contrato não vira oportunidade.** Pedido de quem já tem contrato (na SSA, locação) é atendimento e não entra no funil comercial.
-16. **Gatilho automático só com sinal explícito.** Etapa cujo evento a automação não registra de forma estruturada fica "Manual (equipe)". Na SSA: orçamento enviado; aprovado, até existir o sinal de pedido confirmado (entra na tarefa 3.2, registrado pelo painel, não pelo card do Trello); follow up e recusado, até o follow-up ser ligado.
-17. **O painel reaproveita o que o banco do cliente já tem.** Banco da SSA, conferido em 24/09:
-    - Logs que existem: `n8n_workflow_logs`, `notificacoes`, `followup_log`, `gemini_custos_config`. Faltam: `log_requisicoes`, `log_agendamentos`, `precos_modelo`, `cotacao_usd`. A tela Interno Planee da SSA depende disso; ver se `gemini_custos_config` cobre `precos_modelo` antes de criar tabela.
-    - `crm_estado` (estado por conversa) equivale a `conversa_estado`. `clientes_conhecidos` (ficha por telefone, com empresa e CNPJ) e `clientes_legado` são reaproveitadas.
-    - `profiles` + `user_roles` (papéis `admin` e `staff`, vazias) ficam como estão. O painel usa `painel_usuarios`.
-    - `pacientes_telefone` existe vazia (sobra do modelo da clínica).
-    - RLS ligado nas tabelas com dado de cliente. O n8n entra pelo pooler como `postgres`, que ignora o RLS; ligar RLS não afeta a automação.
-18. **Com a SSA no painel, o Trello sai.** O quadro de atendimento do painel substitui o Trello. Até lá, o Trello segue sozinho; nada roda nos dois ao mesmo tempo.
+- [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas.
+- [ ] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
+- [ ] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
+- [ ] **1.4 Interno Planee.** No `adm`, com todos os clientes lado a lado: custo por dia, cache e fallback, falhas, alertas.
+  *Pronto quando (fase):* o Dr. Amilton abre os resultados sozinho e a Planee acompanha conversas sem abrir o Supabase.
 
-## Em aberto
+## Fase 2 — Atendimento (toca o agente, primeiro no ambiente de teste)
 
-- RLS e PostgREST no Supabase do cliente (só o console responde).
-- Colunas reais de `mensagens_gemini_cliente` e `usuarios_cliente` (tarefa 0.1 do PLANO).
-- Visto azul: enviar quando a IA responde, ou só quando um humano abre?
-- A Meta exige abrir o app WhatsApp Business de tempos em tempos na coexistência? (a confirmar)
-- Lista final de assuntos do quadro de atendimento com a clínica.
+- [ ] 2.1 Botões Assumir, Pendente interno, Retomar, Finalizar chamando as funções da 0.5.
+- [ ] 2.2 Marcar como não lida; vistos registrados ao abrir.
+- [ ] 2.3 Webhook `painel_enviar` no n8n de teste: valida janela de 24h, envia, grava a mensagem `[EQUIPE]` com `enviado_por`.
+- [ ] 2.4 Webhook `painel_retomar`: devolve a conversa à IA quando o cartão sai de "em atendimento" e a última mensagem é do paciente.
+- [ ] 2.5 Agente de teste lê o dono da conversa no Postgres, no lugar do bloqueio de 7 minutos no Redis.
+- [ ] 2.6 `notificar_equipe` abre a solicitação com assunto e devolve erro de verdade quando descarta a chamada.
+- [ ] 2.7 Teto de 60 minutos em modo restrito.
+- [ ] 2.8 Notificações no painel (alerta sonoro e Web Push).
+  *Pronto quando:* a Amanda atende um dia inteiro só pelo painel, no número de teste.
+
+## Fase 3 — CRM completo e configurável
+
+- [ ] 3.1 Tela de configuração do CRM gravando em `crm_etapas`, `crm_topicos`, `crm_config`, com os três modelos de partida.
+- [ ] 3.2 Robô do CRM e `notificar_equipe` lendo gatilhos e palavras dessas tabelas.
+- [ ] 3.3 Etiquetas, notas, vincular paciente ao telefone.
+
+## Fase 4 — Configuração do agente
+
+- [ ] 4.1 Versões de prompt, publicar com recriação do cache, reverter.
+- [ ] 4.2 Parâmetros de negócio editáveis pelo gestor (`teste.negocio`).
+
+## Fase 5 — Segundo cliente
+
+- [ ] 5.1 SSA no mesmo app: cadastro pela skill `cadastrar-cliente-painel`, endereço `painel.ssa.planeelabia.com`.
