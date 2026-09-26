@@ -8,9 +8,11 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 
 ## Fase 0 — Fundação
 
-- [ ] **0.1 Ler o banco real.** Gerar os `SELECT` em `information_schema.columns` para o schema `teste` (todas as tabelas) e para `public.mensagens_gemini_cliente`, `public.usuarios_cliente`, `public.log_agendamentos`, `public.log_requisicoes`, `public.notificacoes`. O Mateus roda e cola o resultado. Salvar em `supabase/esquema_atual.md`.
+- [x] **0.1 Ler o banco real.** Gerar os `SELECT` em `information_schema.columns` para o schema `teste` (todas as tabelas) e para `public.mensagens_gemini_cliente`, `public.usuarios_cliente`, `public.log_agendamentos`, `public.log_requisicoes`, `public.notificacoes`. O Mateus roda e cola o resultado. Salvar em `supabase/esquema_atual.md`.
   *Pronto quando:* o arquivo lista cada tabela com suas colunas e tipos.
-- [ ] **0.2 Esqueleto do app.** Next.js + TypeScript, `design/tokens.css` global, fontes Geist, tema claro/escuro com alternância salva no navegador, cliente Supabase lendo `.env.local`. O app lê o endereço acessado e abre o modo Planee (`adm`) ou o modo cliente (decisões 12 e 19). Publicado na Vercel, no endereço grátis `.vercel.app` (decisão 20).
+  *Feito em 26/09:* 28 tabelas (5 do `public`, 23 do `teste`) lidas do `information_schema` pela sessão da Sara (só leitura), com colunas, tipos, não nulo, padrão e chaves, mais observações para a 0.3.
+- [x] **0.2 Esqueleto do app.** Next.js + TypeScript, `design/tokens.css` global, fontes Geist, tema claro/escuro com alternância salva no navegador, cliente Supabase lendo `.env.local`. O app lê o endereço acessado e abre o modo Planee (`adm`) ou o modo cliente (decisões 12 e 19). Publicado na Vercel, no endereço grátis `.vercel.app` (decisão 20).
+  *Feito:* no ar em https://crm-planee-topaz.vercel.app; `?modo=adm` abre o modo Planee (conferido em 26/09: barra lateral com Clientes e Interno Planee, alternância de tema, aviso de Supabase não configurado).
 - [ ] **0.2b Registro de clientes.** Supabase da Planee com a lista de clientes (nome, apelido, endereço, qual Supabase) e o login da equipe Planee. Chaves de cada cliente só no servidor (variáveis de ambiente).
   *Pronto quando:* `npm run dev` abre uma página com a barra lateral do protótipo nos dois temas.
 - [ ] **0.3 Mapear nomes.** Comparar `supabase/esquema_atual.md` com `docs/especificacao.md` (seções 6 e 10) e `docs/decisoes.md` (itens 8 e 9). Onde o schema `teste` já tem a tabela (`conversa_estado`, `crm_eventos`, `crm_fatos`, `pacientes`, `pacientes_telefone`), usar a existente. Escrever a lista final em `supabase/modelo.md`.
