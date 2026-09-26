@@ -1,0 +1,27 @@
+.app, .app * { box-sizing: border-box; }
+.app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+.lateral { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 16px 12px; gap: 20px; position: sticky; top: 0; height: 100vh; }
+.marca { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
+.logo { width: 30px; height: 30px; border-radius: 9px; background: var(--ink); color: var(--inv); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.marcaNome { font-weight: 650; font-size: 14px; letter-spacing: -0.01em; }
+.marcaSub { font-size: 12px; color: var(--ink-3); }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.itemNav { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 9px; color: var(--ink-2); text-decoration: none; font-size: 13.5px; font-weight: 500; background: none; border: 0; cursor: pointer; font-family: inherit; text-align: left; width: 100%; }
+.itemNav:hover { background: var(--hover); color: var(--ink); }
+.itemNav[aria-current='page'] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+.rodape { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); padding: 0 10px; }
+.pontoOk, .pontoOff { width: 7px; height: 7px; border-radius: 50%; }
+.pontoOk { background: var(--ia); }
+.pontoOff { background: var(--fn); }
+.conteudo { padding: 28px 32px; min-width: 0; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .lateral { position: static; height: auto; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .nav { flex-direction: row; flex-wrap: wrap; }
+  .itemNav { width: auto; }
+  .conteudo { padding: 20px 16px; }
+}
+
+@media (max-width: 760px) { .rodape { margin-top: 0; flex-direction: row; align-items: center; justify-content: space-between; } .rodape .itemNav { width: auto; } }
