@@ -10,7 +10,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   const telas = telasDo(modo);
   const atual = telas.find((t) => t.id === tela);
   if (!atual) {
-    // Tela do outro modo (ex.: /inbox aberto no adm): volta para a primeira tela do modo atual.
+    // Tela do outro modo (ex.: /inbox aberto no deploy adm): volta para a primeira tela deste modo.
     if (telasDo(modo === 'adm' ? 'cliente' : 'adm').some((t) => t.id === tela)) redirect(`/${telas[0].id}`);
     notFound();
   }
@@ -21,10 +21,8 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <div className={p.cartao}>
         <p className={p.texto}>{atual.descricao}</p>
         <p className={p.dica}>
-          Esqueleto da tarefa 0.2. Para ver o outro modo neste endereço, use{' '}
-          <a className={p.mono} href={modo === 'adm' ? '/?modo=cliente' : '/?modo=adm'}>
-            ?modo={modo === 'adm' ? 'cliente' : 'adm'}
-          </a>.
+          Esqueleto da tarefa 0.2. Este deploy está no modo {modo === 'adm' ? 'Planee' : 'cliente'}, definido pela variável{' '}
+          <span className={p.mono}>PAINEL_MODO</span> do projeto na Vercel.
         </p>
       </div>
     </Shell>

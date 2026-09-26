@@ -4,6 +4,8 @@ Ordem de execução. Cada tarefa tem critério de pronto. Marque `[x]` ao conclu
 
 As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda a produção, e só depois de validada no ambiente de teste.
 
+**Como o código vai ao ar (decisão 21):** cada tarefa numa branch. A Vercel publica a branch num link de teste, ligado ao Supabase de teste; build quebrado não vai ao ar. O merge na `main` publica em todos os projetos de cliente; se der problema, volta-se a versão anterior na Vercel, cliente por cliente. Cliente novo não é commit: é projeto novo na Vercel, variáveis, CNAME e semente (skill `cadastrar-cliente-painel`).
+
 ---
 
 ## Fase 0 — Fundação
@@ -11,35 +13,38 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 - [x] **0.1 Ler o banco real.** Gerar os `SELECT` em `information_schema.columns` para o schema `teste` (todas as tabelas) e para `public.mensagens_gemini_cliente`, `public.usuarios_cliente`, `public.log_agendamentos`, `public.log_requisicoes`, `public.notificacoes`. O Mateus roda e cola o resultado. Salvar em `supabase/esquema_atual.md`.
   *Pronto quando:* o arquivo lista cada tabela com suas colunas e tipos.
   *Feito em 26/09:* 28 tabelas (5 do `public`, 23 do `teste`) lidas do `information_schema` pela sessão da Sara (só leitura), com colunas, tipos, não nulo, padrão e chaves, mais observações para a 0.3.
-- [x] **0.2 Esqueleto do app.** Next.js + TypeScript, `design/tokens.css` global, fontes Geist, tema claro/escuro com alternância salva no navegador, cliente Supabase lendo `.env.local`. O app lê o endereço acessado e abre o modo Planee (`adm`) ou o modo cliente (decisões 12 e 19). Publicado na Vercel, no endereço grátis `.vercel.app` (decisão 20).
-  *Feito:* no ar em https://crm-planee-topaz.vercel.app; `?modo=adm` abre o modo Planee (conferido em 26/09: barra lateral com Clientes e Interno Planee, alternância de tema, aviso de Supabase não configurado).
-- [ ] **0.2b Registro de clientes.** Supabase da Planee com a lista de clientes (nome, apelido, endereço, qual Supabase) e o login da equipe Planee. Chaves de cada cliente só no servidor (variáveis de ambiente).
+- [x] **0.2 Esqueleto do app.** Next.js + TypeScript, `design/tokens.css` global, fontes Geist, tema claro/escuro com alternância salva no navegador, cliente Supabase lendo as variáveis do deploy. O modo (`cliente` ou `adm`) e o nome do cliente vêm das variáveis do projeto na Vercel (decisão 21). Publicado na Vercel, no endereço grátis `.vercel.app` (decisão 20).
   *Pronto quando:* `npm run dev` abre uma página com a barra lateral do protótipo nos dois temas.
-- [ ] **0.3 Mapear nomes.** Comparar `supabase/esquema_atual.md` com `docs/especificacao.md` (seções 6 e 10) e `docs/decisoes.md` (itens 8 e 9). Onde o schema `teste` já tem a tabela (`conversa_estado`, `crm_eventos`, `crm_fatos`, `pacientes`, `pacientes_telefone`), usar a existente. Escrever a lista final em `supabase/modelo.md`.
+  *Feito:* no ar em https://crm-planee-topaz.vercel.app (conferido em 26/09: telas do modo cliente, alternância de tema, aviso de Supabase não configurado). Revisto em 26/09 para o modo vir da variável `PAINEL_MODO`, sem escolha de banco pelo endereço.
+- [ ] **0.2b Supabase de teste (decisão 23).** Projeto Supabase separado, só para o painel, com a estrutura do schema `teste` recriada a partir de `supabase/esquema_atual.md` e dados fictícios. O deploy `crm-planee-topaz` passa a apontar para ele (variáveis na Vercel).
+  *Pronto quando:* o deploy mostra "Supabase conectado" e nenhum dado real existe nesse projeto.
+- [ ] **0.3 Modelo padrão (decisão 22).** Comparar `supabase/esquema_atual.md` com `docs/especificacao.md` (seções 6 e 10) e `docs/decisoes.md`. Escrever em `supabase/modelo.md` o conjunto de tabelas que **todo** cliente terá, com nomes e colunas fixos. Para cada tabela, dizer de onde vem no Dr. Amilton e na SSA: tabela existente, view sobre tabela existente ou tabela nova. Incluir documento CPF ou CNPJ e nome do contato configurável (decisão 13).
   *Pronto quando:* o Mateus aprovar `supabase/modelo.md`.
-- [ ] **0.4 SQL das tabelas novas, em `teste`.** Uma migração por arquivo em `supabase/migrations/`, na ordem:
+- [ ] **0.4 Migrações.** Uma migração por arquivo em `supabase/migrations/`, rodada primeiro no Supabase de teste, na ordem:
   1. `atendimentos` (com `topico`, `aberto_por`, marcas de tempo) e `atendimento_vistas`
   2. `crm_etapas`, `crm_topicos`, `crm_config`
   3. `painel_usuarios`, `painel_auditoria`
   4. `contatos_equipe`, `contato_etiquetas`, `contato_notas`
   5. colunas de `conversa_estado` que faltarem (dono, não lidas, marcada não lida, `ia_desligada`)
-  *Pronto quando:* cada migração rodou (pelo Mateus) e o `SELECT` de conferência bateu.
+  6. views do modelo padrão onde o cliente já tem tabela equivalente (arquivo separado por cliente em `supabase/clientes/<apelido>/`)
+  *Pronto quando:* cada migração rodou (pelo Mateus) no Supabase de teste e o `SELECT` de conferência bateu.
 - [ ] **0.5 Gatilhos e funções.** Gatilho de mensagem nova atualiza última mensagem e não lidas; gatilho de `atendimentos` recalcula o dono da conversa; funções `assumir_conversa`, `mover_atendimento`, `marcar_nao_lida`, `registrar_vista`, cada uma gravando quem e quando.
   *Pronto quando:* um teste em SQL mostra o dono mudando de `aguardando` para `humano` e de volta para `ia`.
-- [ ] **0.6 RLS e login.** Supabase Auth; RLS por papel lido de `painel_usuarios` (`secretaria`, `gestor`); um usuário de cada papel para teste. Login do `adm` com segundo fator (MFA) obrigatório e registro de cada conversa aberta pela Planee.
+- [ ] **0.6 RLS e login.** Supabase Auth; RLS por papel lido de `painel_usuarios` (`secretaria`, `gestor`, `planee`); um usuário de cada papel para teste. Papel `planee` com segundo fator (MFA) obrigatório e registro de cada conversa aberta (decisão 24).
   *Pronto quando:* a secretária não consegue ler a tela interna nem por URL direta.
 - [ ] **0.7 Semente do CRM.** Preencher `crm_etapas` e `crm_topicos` com o modelo Clínica (valores no protótipo, função `modelos()`).
 
 ## Fase 1 — Leitura (nada escreve)
 
-- [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas.
+- [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas, escutando só a conversa aberta e a lista.
 - [ ] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
 - [ ] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
-- [ ] **1.4 Interno Planee.** No `adm`, com todos os clientes lado a lado: custo por dia, cache e fallback, falhas, alertas.
+- [ ] **1.4 Central Planee (decisão 24).** Projeto próprio na Vercel (`PAINEL_MODO=adm`), com Supabase da Planee: lista de clientes, custo por dia, cache e fallback, falhas e alertas de todos, e o link para o painel de cada cliente. Login com MFA.
   *Pronto quando (fase):* o Dr. Amilton abre os resultados sozinho e a Planee acompanha conversas sem abrir o Supabase.
 
 ## Fase 2 — Atendimento (toca o agente, primeiro no ambiente de teste)
 
+- [ ] 2.0 Os workflows de teste da Sara passam a gravar no Supabase de teste (só a credencial dos workflows da pasta `AMBIENTE DE TESTE — Sara`).
 - [ ] 2.1 Botões Assumir, Pendente interno, Retomar, Finalizar chamando as funções da 0.5.
 - [ ] 2.2 Marcar como não lida; vistos registrados ao abrir.
 - [ ] 2.3 Webhook `painel_enviar` no n8n de teste: valida janela de 24h, envia, grava a mensagem `[EQUIPE]` com `enviado_por`.
@@ -49,6 +54,7 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 - [ ] 2.7 Teto de 60 minutos em modo restrito.
 - [ ] 2.8 Notificações no painel (alerta sonoro e Web Push).
   *Pronto quando:* a Amanda atende um dia inteiro só pelo painel, no número de teste.
+- [ ] 2.9 Entrada em produção do Dr. Amilton: migrações e views no banco dele, projeto `painel-amilton` na Vercel com as variáveis dele, CNAME `painel.amilton.planeelabia.com` (nome a confirmar), Vercel Pro (decisão 20).
 
 ## Fase 3 — CRM completo e configurável
 
@@ -63,4 +69,4 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 
 ## Fase 5 — Segundo cliente
 
-- [ ] 5.1 SSA no mesmo app: cadastro pela skill `cadastrar-cliente-painel`, endereço `painel.ssa.planeelabia.com`.
+- [ ] 5.1 SSA: cadastro pela skill `cadastrar-cliente-painel` (projeto próprio na Vercel, views do modelo padrão sobre `crm_estado`, `clientes_conhecidos` e `clientes_legado`, endereço `painel.ssa.planeelabia.com`). Nenhum commit.
