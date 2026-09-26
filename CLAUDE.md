@@ -20,11 +20,11 @@ O primeiro cliente é o Instituto Neuro Essentia (Dr. Amilton). O agente de IA s
 | `design/tokens.css` | Cores e superfícies dos temas claro e escuro, prontas para usar |
 | `design/sistema-visual.md` | Regras do sistema visual |
 
-Quando a especificação e as decisões divergirem, **as decisões valem** (a especificação foi escrita em 17/09; as decisões de 24/09 mudam nomes de tabela e tiram o ClickUp).
+Quando a especificação e as decisões divergirem, **as decisões valem** (a especificação foi escrita em 17/09; as decisões de 24 a 26/09 mudam nomes de tabela, tiram o ClickUp e definem um deploy por cliente).
 
 ## Regras que não se quebram
 
-1. **Produção não é tocada.** Escrita no banco só no schema `teste`. O schema `public` é somente leitura. Nos workflows do n8n, só a pasta `AMBIENTE DE TESTE — Sara`.
+1. **Produção não é tocada.** Escrita no banco só no Supabase de teste do painel (decisão 23); enquanto ele não existir, só no schema `teste`. O schema `public` é somente leitura. Nos workflows do n8n, só a pasta `AMBIENTE DE TESTE — Sara`.
 2. **Nenhuma credencial no repositório nem na conversa.** Chaves vão no `.env.local`, que o Mateus preenche. Se precisar de um valor, peça para ele colocar no `.env.local`.
 3. **SQL de escrita passa pelo Mateus.** Entregue um comando por vez, pronto para colar, com um `SELECT` de conferência logo depois. Ele roda, confere e só então segue.
 4. **Confirme antes de mudar.** Mostre o que vai fazer e espere o OK antes de alterar banco, workflow ou decisão.
@@ -32,6 +32,8 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 6. **Dados de saúde (LGPD).** Nada de dado real de paciente em seed, teste, print ou commit. Use dados fictícios. CPF aparece mascarado para o papel `planee`.
 7. **O painel não fala com a Meta.** Todo envio de mensagem passa por webhook do n8n. O painel nunca insere em `mensagens_gemini_cliente`.
 8. **O agente não depende do painel.** Se o painel cair, a IA continua atendendo.
+9. **Nada específico de cliente no código** (decisão 21). Cada cliente é um projeto na Vercel com as próprias variáveis; diferença entre clientes é configuração no banco dele. Nunca `if (cliente === ...)`.
+10. **O código só conhece o modelo padrão** (decisão 22). Tabelas e colunas de `supabase/modelo.md`; adaptação de banco antigo é view no banco do cliente.
 
 ## Armadilhas conhecidas do banco
 
@@ -55,7 +57,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 - Supabase: Auth, Postgres com RLS por papel, Realtime.
 - Estilo: CSS Modules + `design/tokens.css` (variáveis CSS). Sem biblioteca de componentes; o protótipo é a referência.
 - Fontes: Geist e Geist Mono (Google Fonts ou `next/font`).
-- Hospedagem: Vercel, fora da VPS do agente.
+- Hospedagem: Vercel, fora da VPS do agente. Um projeto por cliente mais o projeto `adm`, todos da mesma `main`; o modo vem da variável `PAINEL_MODO`.
 - Idioma da interface: português do Brasil.
 
 ## Papéis
