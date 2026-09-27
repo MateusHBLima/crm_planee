@@ -1,0 +1,95 @@
+import { NextResponse, type NextRequest } from 'next/server';
+import { ErroApi } from '@/lib/db';
+import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
+import { catalogo, RECURSOS } from '@/lib/api/recursos';
+import * as s from '@/lib/api/servico';
+
+// Conector MCP (Streamable HTTP, respostas JSON) para chats do Claude criarem e editarem o CRM.
+// Chave: cabeçalho Authorization: Bearer <chave>, ou no caminho /api/mcp/<chave> para conectores
+// que não permitem cabeçalho. Toda escrita fica em painel_auditoria.
+
+export const dynamic = 'force-dynamic';
+
+const NOMES = Object.keys(RECURSOS);
+const recursoProp = { type: 'string', enum: NOMES, description: 'Qual parte do CRM: ' + NOMES.join(', ') };
+
+const FERRAMENTAS = [
+  { name: 'descrever_crm', description: 'Mostra tudo que dá para criar e editar no CRM: recursos, campos, filtros e regras. Chame primeiro.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'listar', description: 'Lista registros de um recurso, com filtros opcionais.', inputSchema: { type: 'object', properties: { recurso: recursoProp, filtros: { type: 'object', additionalProperties: { type: 'string' } }, limite: { type: 'number' } }, required: ['recurso'] } },
+  { name: 'obter', description: 'Lê um registro pelo id.', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' } }, required: ['recurso', 'id'] } },
+  { name: 'criar', description: 'Cria um registro. Para etapas e topicos, informe também "id" (texto curto).', inputSchema: { type: 'object', properties: { recurso: recursoProp, dados: { type: 'object' } }, required: ['recurso', 'dados'] } },
+  { name: 'atualizar', description: 'Edita campos de um registro (ex.: mover atendimento de etapa, renomear etapa).', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' }, dados: { type: 'object' } }, required: ['recurso', 'id', 'dados'] } },
+  { name: 'arquivar', description: 'Arquiva um registro (nada é apagado de vez).', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' } }, required: ['recurso', 'id'] } },
+  { name: 'ler_config', description: 'Lê a configuração do CRM (todas ou uma chave).', inputSchema: { type: 'object', properties: { chave: { type: 'string' } } } },
+  { name: 'definir_config', description: 'Cria ou altera uma configuração do CRM (ex.: termo_contato, etapas_atendimento, campos_cartao).', inputSchema: { type: 'object', properties: { chave: { type: 'string' }, valor: {} }, required: ['chave', 'valor'] } },
+];
+
+type Rpc = { jsonrpc: '2.0'; id?: string | number | null; method: string; params?: Record<string, unknown> };
+
+const ok = (id: Rpc['id'], result: unknown) => ({ jsonrpc: '2.0', id: id ?? null, result });
+const falha = (id: Rpc['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
+
+async function chamar(chaveTexto: string | null, nome: string, a: Record<string, unknown>) {
+  if (nome === 'descrever_crm') return catalogo();
+  const chave = await autenticar(chaveTexto);
+  const rec = String(a.recurso ?? '');
+  switch (nome) {
+    case 'listar': return s.listar(chave, rec, (a.filtros as Record<string, string>) ?? {}, Number(a.limite));
+    case 'obter': return s.obter(chave, rec, String(a.id ?? ''));
+    case 'criar': return s.criar(chave, rec, a.dados);
+    case 'atualizar': return s.atualizar(chave, rec, String(a.id ?? ''), a.dados);
+    case 'arquivar': return s.arquivar(chave, rec, String(a.id ?? ''));
+    case 'ler_config': return s.lerConfig(chave, a.chave ? String(a.chave) : undefined);
+    case 'definir_config': return s.definirConfig(chave, String(a.chave ?? ''), a.valor);
+    default: throw new ErroApi(404, `Ferramenta "${nome}" não existe.`);
+  }
+}
+
+async function responder(msg: Rpc, chaveTexto: string | null) {
+  switch (msg.method) {
+    case 'initialize':
+      return ok(msg.id, {
+        protocolVersion: (msg.params?.protocolVersion as string) || '2025-06-18',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'painel-planee-crm', version: '1.0.0' },
+        instructions: 'CRM do Painel Planee. Chame descrever_crm antes de criar ou editar. Nada é apagado de vez; mensagens de WhatsApp não saem por aqui.',
+      });
+    case 'ping':
+      return ok(msg.id, {});
+    case 'tools/list':
+      return ok(msg.id, { tools: FERRAMENTAS });
+    case 'tools/call': {
+      const nome = String(msg.params?.name ?? '');
+      const args = (msg.params?.arguments as Record<string, unknown>) ?? {};
+      try {
+        const r = await chamar(chaveTexto, nome, args);
+        return ok(msg.id, { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] });
+      } catch (e) {
+        const m = e instanceof ErroApi ? e.message + (e.detalhe ? ` ${JSON.stringify(e.detalhe)}` : '') : 'Erro interno.';
+        if (!(e instanceof ErroApi)) console.error(e);
+        return ok(msg.id, { content: [{ type: 'text', text: m }], isError: true });
+      }
+    }
+    default:
+      return falha(msg.id, -32601, `Método ${msg.method} não suportado.`);
+  }
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ k?: string[] }> }) {
+  const k = (await ctx.params).k?.[0] ?? null;
+  const chaveTexto = chaveDoCabecalho(req.headers.get('authorization')) ?? k;
+  let entrada: Rpc | Rpc[];
+  try { entrada = await req.json(); } catch { return NextResponse.json(falha(null, -32700, 'JSON inválido.'), { status: 400 }); }
+  const lista = Array.isArray(entrada) ? entrada : [entrada];
+  const respostas = [];
+  for (const m of lista) {
+    if (m.id === undefined || m.id === null) continue; // notificação: sem resposta
+    respostas.push(await responder(m, chaveTexto));
+  }
+  if (!respostas.length) return new NextResponse(null, { status: 202 });
+  return NextResponse.json(Array.isArray(entrada) ? respostas : respostas[0]);
+}
+
+export async function GET() {
+  return NextResponse.json({ erro: 'Use POST (MCP Streamable HTTP).' }, { status: 405 });
+}

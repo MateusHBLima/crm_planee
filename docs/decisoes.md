@@ -50,6 +50,8 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 23. **Supabase só para teste.** O painel é desenvolvido num projeto Supabase separado, com dados fictícios. Migrações rodam ali primeiro, e o teste de carga também. O schema `teste` do banco de produção do Dr. Amilton continua sendo o ambiente de teste da Sara, não do painel. Na fase 2, os workflows de teste da Sara passam a gravar no Supabase de teste.
 24. **Central Planee em `adm.planeelabia.com`.** Projeto próprio na Vercel (`PAINEL_MODO=adm`) com um Supabase da Planee: lista de clientes, custo, falhas e alertas de todos, e o link para o painel de cada cliente. A equipe Planee entra no painel de cada cliente com o papel `planee` (usuário criado no cadastro), segundo fator (MFA) obrigatório e cada conversa aberta registrada; CPF mascarado por padrão, com registro quando alguém vê inteiro (LGPD).
 
+25. **API do CRM primeiro.** Tudo que dá para criar e editar no CRM (etapas, assuntos, configuração, contatos, oportunidades, atendimentos, notas) passa por uma API (`/api/v1`) e por um conector MCP (`/api/mcp`), para os chats do Claude e o n8n mexerem no CRM de qualquer projeto sem commit. As telas usam as mesmas operações. Chave por integração, com escopos (`leitura`, `crm`, `config`); só o hash fica no banco; toda escrita em `painel_auditoria`. Nada é apagado de vez (arquivar), WhatsApp não sai pela API e estrutura do banco continua sendo migração. As tabelas da migração `001_crm_api.sql` entram no modelo padrão da tarefa 0.3. Detalhe em `docs/api.md`.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

@@ -1,0 +1,128 @@
+// Catálogo do que a API deixa criar e editar (decisão 25).
+// Acrescentar um recurso novo é acrescentar uma entrada aqui (e a tabela na migração).
+
+export type Escopo = 'leitura' | 'crm' | 'config';
+
+export type Recurso = {
+  nome: string;
+  tabela: string;
+  descricao: string;
+  chave: 'id';
+  idTipo: 'texto' | 'uuid';
+  idObrigatorioNaCriacao: boolean; // true quando o id é escolhido por quem cria (ex.: "receita")
+  escrita: Escopo;
+  campos: Record<string, string>; // campo editável -> descrição
+  filtros: string[];
+  ordem: string;
+};
+
+export const RECURSOS: Record<string, Recurso> = {
+  etapas: {
+    nome: 'etapas', tabela: 'crm_etapas', chave: 'id', idTipo: 'texto', idObrigatorioNaCriacao: true, escrita: 'config',
+    descricao: 'Etapas do funil comercial. Precisa existir ao menos uma de cada tipo (aberta, ganho, perdido).',
+    campos: {
+      ordem: 'número da posição no funil',
+      nome: 'nome exibido',
+      tipo: 'aberta | ganho | perdido',
+      gatilho: 'evento que move o cartão para cá, ou "Manual (equipe)"',
+    },
+    filtros: ['tipo', 'arquivado'], ordem: 'ordem, nome',
+  },
+  topicos: {
+    nome: 'topicos', tabela: 'crm_topicos', chave: 'id', idTipo: 'texto', idObrigatorioNaCriacao: true, escrita: 'config',
+    descricao: 'Assuntos do quadro de atendimento (colunas). Sem cor: ícone e nome.',
+    campos: {
+      ordem: 'número da posição',
+      nome: 'nome exibido',
+      icone: 'receita | doc | exame | valor | agenda | os | garantia | caixa | recibo | pessoa | predio | outros',
+      palavras: 'palavras que a IA usa para classificar, separadas por vírgula',
+    },
+    filtros: ['arquivado'], ordem: 'ordem, nome',
+  },
+  contatos: {
+    nome: 'contatos', tabela: 'contatos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Pacientes ou clientes. Telefone no formato 55 + DDD + número, só dígitos.',
+    campos: {
+      nome: 'nome da pessoa',
+      telefone: 'só dígitos, com 55',
+      documento: 'CPF ou CNPJ, só dígitos',
+      tipo_documento: 'cpf | cnpj',
+      empresa: 'empresa, quando for cliente PJ',
+    },
+    filtros: ['telefone', 'documento', 'arquivado'], ordem: 'criado_em desc',
+  },
+  oportunidades: {
+    nome: 'oportunidades', tabela: 'oportunidades', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Cartões do funil comercial. Mover de etapa = atualizar etapa_id.',
+    campos: {
+      contato_id: 'id do contato',
+      interesse: 'o que a pessoa quer',
+      etapa_id: 'id de uma etapa existente',
+      valor: 'valor estimado em reais',
+    },
+    filtros: ['contato_id', 'etapa_id', 'arquivado'], ordem: 'atualizado_em desc',
+  },
+  atendimentos: {
+    nome: 'atendimentos', tabela: 'atendimentos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Solicitações do quadro de atendimento. Mover = atualizar etapa; finalizar = etapa "finalizado".',
+    campos: {
+      contato_id: 'id do contato',
+      topico_id: 'id de um assunto existente',
+      etapa: 'aguardando | em_atendimento | pendente | finalizado',
+      resumo: 'o que foi pedido',
+      aberto_por: 'IA ou nome de quem abriu',
+      responsavel: 'nome de quem está atendendo',
+      oportunidade_id: 'id da oportunidade ligada, se houver',
+    },
+    filtros: ['contato_id', 'topico_id', 'etapa', 'responsavel', 'arquivado'], ordem: 'atualizado_em desc',
+  },
+  notas: {
+    nome: 'notas', tabela: 'notas', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Notas internas em contatos, oportunidades ou atendimentos.',
+    campos: {
+      alvo_tipo: 'contatos | oportunidades | atendimentos',
+      alvo_id: 'id do registro',
+      texto: 'conteúdo da nota',
+      autor: 'quem escreveu',
+    },
+    filtros: ['alvo_tipo', 'alvo_id', 'arquivado'], ordem: 'criado_em desc',
+  },
+};
+
+export function recurso(nome: string): Recurso | undefined {
+  return Object.prototype.hasOwnProperty.call(RECURSOS, nome) ? RECURSOS[nome] : undefined;
+}
+
+// Descrição para quem usa a API (pessoa ou IA).
+export function catalogo() {
+  return {
+    api: 'Painel Planee — API do CRM',
+    versao: 'v1',
+    autenticacao: 'Cabeçalho Authorization: Bearer <chave>. Escopos: leitura, crm, config.',
+    regras: [
+      'Nada é apagado de vez: "arquivar" marca arquivado = true.',
+      'Mensagens de WhatsApp não são enviadas por esta API (passam pelo n8n).',
+      'Toda escrita fica registrada em painel_auditoria.',
+    ],
+    recursos: Object.values(RECURSOS).map((r) => ({
+      nome: r.nome,
+      descricao: r.descricao,
+      escopo_escrita: r.escrita,
+      id: r.idObrigatorioNaCriacao ? 'texto escolhido na criação (ex.: "receita")' : 'uuid gerado',
+      campos: r.campos,
+      filtros: r.filtros,
+      rotas: [
+        `GET /api/v1/${r.nome}`,
+        `POST /api/v1/${r.nome}`,
+        `GET /api/v1/${r.nome}/{id}`,
+        `PATCH /api/v1/${r.nome}/{id}`,
+        `DELETE /api/v1/${r.nome}/{id} (arquiva)`,
+      ],
+    })),
+    config: {
+      descricao: 'Configuração livre do CRM (chave -> valor JSON). Ex.: termo_contato, etapas_atendimento, campos_cartao.',
+      rotas: ['GET /api/v1/config', 'GET /api/v1/config/{chave}', 'PUT /api/v1/config/{chave} (corpo: {"valor": ...})'],
+      escopo_escrita: 'config',
+    },
+  };
+}
