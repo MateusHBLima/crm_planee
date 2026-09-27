@@ -19,6 +19,7 @@ O primeiro cliente é o Instituto Neuro Essentia (Dr. Amilton). O agente de IA s
 | `prototipo/Main.dc.html` | Protótipo navegável aprovado. Referência de tela, cor e comportamento |
 | `design/tokens.css` | Cores e superfícies dos temas claro e escuro, prontas para usar |
 | `design/sistema-visual.md` | Regras do sistema visual |
+| `docs/api.md` | API do CRM e conector MCP: o que dá para criar e editar sem commit |
 
 Quando a especificação e as decisões divergirem, **as decisões valem** (a especificação foi escrita em 17/09; as decisões de 24 a 26/09 mudam nomes de tabela, tiram o ClickUp e definem um deploy por cliente).
 
@@ -34,6 +35,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 8. **O agente não depende do painel.** Se o painel cair, a IA continua atendendo.
 9. **Nada específico de cliente no código** (decisão 21). Cada cliente é um projeto na Vercel com as próprias variáveis; diferença entre clientes é configuração no banco dele. Nunca `if (cliente === ...)`.
 10. **O código só conhece o modelo padrão** (decisão 22). Tabelas e colunas de `supabase/modelo.md`; adaptação de banco antigo é view no banco do cliente.
+11. **Mexer no CRM é pela API, não pelo banco.** Criar ou editar etapa, assunto, contato, cartão ou configuração é chamada à API (`docs/api.md`) ou ao conector MCP, nunca SQL solto nem commit. Recurso novo no CRM = entrada em `lib/api/recursos.ts` + migração.
 
 ## Armadilhas conhecidas do banco
 
