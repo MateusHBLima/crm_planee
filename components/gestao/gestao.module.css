@@ -1,0 +1,72 @@
+/* Telas Empresas e Equipe (decisão 26). Mesmos tokens do resto do painel. */
+.tela { display: flex; flex-direction: column; gap: 18px; max-width: 980px; }
+.tela * { box-sizing: border-box; }
+.tela button, .tela input, .tela select { font-family: inherit; color: inherit; }
+.tela button { cursor: pointer; }
+.tela button:disabled { cursor: not-allowed; opacity: .5; }
+.tela :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.topo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; justify-content: space-between; }
+.rotulo { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.titulo { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.sub { margin: 4px 0 0; font-size: 13px; color: var(--ink-3); max-width: 62ch; }
+
+.cartao { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.cartaoTopo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cartaoNome { font-size: 16px; font-weight: 650; margin: 0; }
+.id { font-family: var(--font-geist-mono), ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3); }
+.selo { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.seloOk { background: var(--ia-bg); color: var(--ia-ink); }
+.seloOff { background: var(--rs-bg); color: var(--rs-ink); }
+.espaco { flex-grow: 1; }
+
+.bloco { display: flex; flex-direction: column; gap: 8px; }
+.blocoTitulo { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.dica { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
+.check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--ink-2); line-height: 1.35; }
+.check input { margin-top: 2px; accent-color: var(--ink); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--surface-3); font-size: 12.5px; }
+.chip button { border: 0; background: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--ink-3); }
+.chip button:hover { background: var(--hover); color: var(--ink); }
+.chipSo { padding: 0 10px; }
+
+.linha { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.campo { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); flex: 1 1 200px; min-width: 0; }
+.campo input, .campo select, .entrada { height: 38px; padding: 0 12px; font-size: 13.5px; background: var(--field); border: 1px solid var(--line-strong); border-radius: 10px; width: 100%; }
+.entrada { flex: 1 1 220px; width: auto; min-width: 0; }
+
+.botao, .botaoSec, .botaoPerigo { height: 38px; padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.tela .botao { border: 0; background: var(--ink); color: var(--inv); }
+.tela .botao:hover { background: var(--ink-hover, var(--ink)); }
+.tela .botaoSec { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+.tela .botaoSec:hover { background: var(--hover); }
+.tela .botaoPerigo { border: 1px solid var(--line-strong); background: var(--surface); color: var(--rs-ink); }
+.botaoPeq { height: 30px; padding: 0 10px; font-size: 12.5px; }
+
+.aviso { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 10px; font-size: 13px; }
+.avisoErro { background: var(--rs-bg); color: var(--rs-ink); }
+.avisoOk { background: var(--ia-bg); color: var(--ia-ink); }
+.aviso button { border: 0; background: none; color: inherit; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; }
+
+/* Equipe */
+.lista { display: flex; flex-direction: column; }
+.pessoa { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto; gap: 10px 16px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
+.pessoa:first-child { border-top: 0; }
+.pessoaNome { font-size: 13.5px; font-weight: 600; }
+.pessoaEmail { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+.pessoaAcoes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.editor { grid-column: 1 / -1; background: var(--surface-2, var(--surface-3)); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.inativa { opacity: .55; }
+
+.seletorEmpresa { display: flex; flex-direction: column; gap: 4px; padding: 0 8px; font-size: 11.5px; color: var(--ink-3); }
+.seletorEmpresa select { height: 34px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--field); font-size: 13px; color: var(--ink); font-family: inherit; }
+
+@media (max-width: 760px) {
+  .pessoa { grid-template-columns: minmax(0, 1fr); }
+  .pessoaAcoes { justify-content: flex-start; }
+}
+.visivelLeitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

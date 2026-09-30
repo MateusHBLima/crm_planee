@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { ErroApi } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
+import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo, RECURSOS } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 
@@ -29,9 +30,9 @@ type Rpc = { jsonrpc: '2.0'; id?: string | number | null; method: string; params
 const ok = (id: Rpc['id'], result: unknown) => ({ jsonrpc: '2.0', id: id ?? null, result });
 const falha = (id: Rpc['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
-async function chamar(chaveTexto: string | null, nome: string, a: Record<string, unknown>) {
+async function chamar(chaveTexto: string | null, host: string | null, nome: string, a: Record<string, unknown>) {
   if (nome === 'descrever_crm') return catalogo();
-  const chave = await autenticar(chaveTexto);
+  const chave = await autenticar(chaveTexto, host);
   const rec = String(a.recurso ?? '');
   switch (nome) {
     case 'listar': return s.listar(chave, rec, (a.filtros as Record<string, string>) ?? {}, Number(a.limite));
@@ -45,7 +46,7 @@ async function chamar(chaveTexto: string | null, nome: string, a: Record<string,
   }
 }
 
-async function responder(msg: Rpc, chaveTexto: string | null) {
+async function responder(msg: Rpc, chaveTexto: string | null, host: string | null) {
   switch (msg.method) {
     case 'initialize':
       return ok(msg.id, {
@@ -62,7 +63,7 @@ async function responder(msg: Rpc, chaveTexto: string | null) {
       const nome = String(msg.params?.name ?? '');
       const args = (msg.params?.arguments as Record<string, unknown>) ?? {};
       try {
-        const r = await chamar(chaveTexto, nome, args);
+        const r = await chamar(chaveTexto, host, nome, args);
         return ok(msg.id, { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] });
       } catch (e) {
         const m = e instanceof ErroApi ? e.message + (e.detalhe ? ` ${JSON.stringify(e.detalhe)}` : '') : 'Erro interno.';
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ k?: string
   const respostas = [];
   for (const m of lista) {
     if (m.id === undefined || m.id === null) continue; // notificação: sem resposta
-    respostas.push(await responder(m, chaveTexto));
+    respostas.push(await responder(m, chaveTexto, hostDeCabecalhos(req.headers)));
   }
   if (!respostas.length) return new NextResponse(null, { status: 202 });
   return NextResponse.json(Array.isArray(entrada) ? respostas : respostas[0]);

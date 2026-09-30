@@ -1,7 +1,13 @@
 import 'server-only';
-import { banco, ErroApi } from '@/lib/db';
+import { bancoDaEmpresa, ErroApi } from '@/lib/db';
 import * as api from '@/lib/api/servico';
 import { atorDe, podeArquivar, type Usuario } from '@/lib/sessao';
+
+// Banco de dados da empresa escolhida pela pessoa (decisão 26). Sem empresa, nada de CRM.
+function db(u: Usuario) {
+  if (!u.empresa) throw new ErroApi(403, 'Escolha uma empresa para abrir o CRM.');
+  return bancoDaEmpresa(u.empresa);
+}
 
 // Leitura e ações do CRM para as telas do painel. Toda escrita passa pela mesma camada da API
 // (lib/api/servico.ts), com auditoria em nome da pessoa logada.
@@ -24,7 +30,7 @@ export type Quadro = {
 
 export const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
 
-// CPF no meio do texto ou no campo documento: o papel planee vê só o final (regra 6).
+// CPF no meio do texto ou no campo documento: o master (Planee) vê só o final (regra 6).
 const CPF_TEXTO = /\b(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})\b/g;
 function mascararTexto(t: string) { return t.replace(CPF_TEXTO, (_m, _a, _b, _c, d: string) => '***.***.***-' + d); }
 function mascararDoc(d: string | null) { return d ? '***.***.***-' + d.replace(/\D/g, '').slice(-2) : null; }
@@ -45,12 +51,12 @@ function limparCartao(u: Usuario, r: Record<string, unknown>): Cartao {
     assumido_em: iso(r.assumido_em),
     finalizado_em: iso(r.finalizado_em),
   };
-  if (u.papel === 'planee') { c.resumo = mascararTexto(c.resumo); c.documento = mascararDoc(c.documento); }
+  if (u.master) { c.resumo = mascararTexto(c.resumo); c.documento = mascararDoc(c.documento); }
   return c;
 }
 
-async function nomesEtapas(): Promise<Record<Etapa, string>> {
-  const r = await banco().query(`select valor from crm_config where chave = 'etapas_atendimento'`);
+async function nomesEtapas(u: Usuario): Promise<Record<Etapa, string>> {
+  const r = await db(u).query(`select valor from crm_config where chave = 'etapas_atendimento'`);
   const v = (r.rows[0]?.valor ?? {}) as Partial<Record<Etapa, string>>;
   return { ...NOMES_PADRAO, ...v };
 }
@@ -64,14 +70,14 @@ const SELECT_CARTAO = `
 export async function lerQuadro(u: Usuario): Promise<Quadro> {
   const f = fuso();
   const [tops, etapas, cards, fin] = await Promise.all([
-    banco().query(`select id, nome, icone, ordem from crm_topicos where not arquivado order by ordem, nome`),
-    nomesEtapas(),
-    banco().query(
+    db(u).query(`select id, nome, icone, ordem from crm_topicos where not arquivado order by ordem, nome`),
+    nomesEtapas(u),
+    db(u).query(
       `${SELECT_CARTAO}
         where not a.arquivado
           and (a.etapa <> 'finalizado' or a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1))
         order by a.aberto_em desc limit 600`, [f]),
-    banco().query(
+    db(u).query(
       `select count(*)::int n from atendimentos where not arquivado and etapa = 'finalizado'
           and finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1)`, [f]),
   ]);
@@ -85,12 +91,12 @@ export type Evento = { quando: string; texto: string; quem: string | null; tipo:
 export type Detalhe = { cartao: Cartao; eventos: Evento[] };
 
 export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
-  const [a, etapas] = await Promise.all([banco().query(`${SELECT_CARTAO} where a.id = $1`, [id]), nomesEtapas()]);
+  const [a, etapas] = await Promise.all([db(u).query(`${SELECT_CARTAO} where a.id = $1`, [id]), nomesEtapas(u)]);
   if (!a.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
   const cartao = limparCartao(u, a.rows[0]);
   const [notas, aud] = await Promise.all([
-    banco().query(`select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1 and not arquivado order by criado_em`, [id]),
-    banco().query(
+    db(u).query(`select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1 and not arquivado order by criado_em`, [id]),
+    db(u).query(
       `select p.quando, p.acao, p.detalhe, coalesce(u.nome, k.nome) as quem
          from painel_auditoria p left join painel_usuarios u on u.id = p.usuario_id left join api_chaves k on k.id = p.chave_id
         where p.recurso = 'atendimentos' and p.alvo_id = $1 order by p.quando`, [id]),
@@ -110,7 +116,7 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
   }
   for (const n of notas.rows) {
     const texto = String(n.texto).replace(SOMBRA, '');
-    eventos.push({ quando: new Date(n.criado_em).toISOString(), texto: u.papel === 'planee' ? mascararTexto(texto) : texto, quem: n.autor, tipo: 'nota' });
+    eventos.push({ quando: new Date(n.criado_em).toISOString(), texto: u.master ? mascararTexto(texto) : texto, quem: n.autor, tipo: 'nota' });
   }
   eventos.sort((x, y) => x.quando.localeCompare(y.quando));
   return { cartao, eventos };
@@ -118,8 +124,8 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
 
 // ---- Ações do quadro ----
 
-async function etapaAtual(id: string): Promise<{ etapa: Etapa; responsavel: string | null }> {
-  const r = await banco().query(`select etapa, responsavel from atendimentos where id = $1 and not arquivado`, [id]);
+async function etapaAtual(u: Usuario, id: string): Promise<{ etapa: Etapa; responsavel: string | null }> {
+  const r = await db(u).query(`select etapa, responsavel from atendimentos where id = $1 and not arquivado`, [id]);
   if (!r.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
   return r.rows[0];
 }
@@ -131,13 +137,13 @@ export async function assumir(u: Usuario, id: string) {
 
 export async function mover(u: Usuario, id: string, etapa: Etapa) {
   if (!ETAPAS.includes(etapa)) throw new ErroApi(400, 'Etapa inválida.');
-  const atual = await etapaAtual(id);
+  const atual = await etapaAtual(u, id);
   if (atual.etapa === etapa) return;
   const dados: Record<string, string> = { etapa };
   // Quem tira do "aguardando" passa a ser o responsável, se ainda não houver um.
   if (etapa !== 'aguardando' && !atual.responsavel) dados.responsavel = u.nome;
   await api.atualizar(atorDe(u), 'atendimentos', id, dados);
-  if (etapa !== 'aguardando') await banco().query(`update atendimentos set assumido_em = coalesce(assumido_em, now()) where id = $1`, [id]);
+  if (etapa !== 'aguardando') await db(u).query(`update atendimentos set assumido_em = coalesce(assumido_em, now()) where id = $1`, [id]);
 }
 
 export async function mudarAssunto(u: Usuario, id: string, topico: string) {
@@ -148,7 +154,7 @@ export async function anotar(u: Usuario, id: string, texto: string) {
   const t = texto.trim();
   if (!t) throw new ErroApi(400, 'Escreva a nota antes de salvar.');
   if (t.length > 4000) throw new ErroApi(400, 'A nota passou de 4.000 caracteres.');
-  await etapaAtual(id);
+  await etapaAtual(u, id);
   await api.criar(atorDe(u), 'notas', { alvo_tipo: 'atendimentos', alvo_id: id, texto: t, autor: u.nome });
 }
 
@@ -161,8 +167,8 @@ export async function arquivarAtendimento(u: Usuario, id: string) {
 
 export async function lerComercial(u: Usuario) {
   const [et, ops] = await Promise.all([
-    banco().query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`),
-    banco().query(
+    db(u).query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`),
+    db(u).query(
       `select o.id, o.etapa_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
          from oportunidades o left join contatos c on c.id = o.contato_id
         where not o.arquivado order by o.atualizado_em desc limit 600`),
@@ -172,7 +178,7 @@ export async function lerComercial(u: Usuario) {
 }
 
 export async function lerContatos(u: Usuario) {
-  const r = await banco().query(
+  const r = await db(u).query(
     `select c.id, c.nome, c.telefone, c.documento, c.criado_em,
             (select count(*) from atendimentos a where a.contato_id = c.id and not a.arquivado and a.etapa <> 'finalizado')::int as abertos,
             (select count(*) from atendimentos a where a.contato_id = c.id and not a.arquivado)::int as total,
@@ -181,12 +187,12 @@ export async function lerContatos(u: Usuario) {
       order by coalesce((select max(a.aberto_em) from atendimentos a where a.contato_id = c.id), c.criado_em) desc limit 1000`);
   return r.rows.map((c) => ({
     id: c.id as string, nome: c.nome as string | null, telefone: c.telefone as string | null,
-    documento: u.papel === 'planee' ? mascararDoc(c.documento) : (c.documento as string | null),
+    documento: u.master ? mascararDoc(c.documento) : (c.documento as string | null),
     abertos: c.abertos as number, total: c.total as number, ultimo: c.ultimo ? new Date(c.ultimo).toISOString() : null,
   }));
 }
 
 export async function lerAtendimentosDoContato(u: Usuario, contatoId: string) {
-  const r = await banco().query(`${SELECT_CARTAO} where a.contato_id = $1 and not a.arquivado order by a.aberto_em desc limit 100`, [contatoId]);
+  const r = await db(u).query(`${SELECT_CARTAO} where a.contato_id = $1 and not a.arquivado order by a.aberto_em desc limit 100`, [contatoId]);
   return r.rows.map((x) => limparCartao(u, x));
 }

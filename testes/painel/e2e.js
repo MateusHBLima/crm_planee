@@ -77,7 +77,7 @@ async function entrar(p, email, senha='senha123') {
   await entrar(p, 'planee@teste.local');
   const txtJ = await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent();
   ok('Planee vê CPF mascarado (campo e texto)', !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
-  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee vê as 4 telas', navP.length === 4, navP.join(','));
+  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 7 telas', navP.join(',') === 'Inbox,CRM,Resultados,Configurações,Equipe,Empresas,Interno Planee', navP.join(','));
   await p.goto(B + '/configuracoes'); ok('tela ainda em construção abre', (await p.locator('text=em construção').count()) === 1);
   await ctx.close();
   // gestor arquiva

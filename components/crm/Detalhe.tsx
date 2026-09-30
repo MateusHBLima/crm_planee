@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Cartao, Etapa, Evento, Quadro as TQuadro } from '@/lib/painel/crm';
-import type { Papel } from '@/lib/sessao';
 import { anotarAtendimento, carregarDetalhe } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { Acoes, EtapaPill } from './Quadro';
@@ -11,8 +10,8 @@ import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
-export function Detalhe({ cartao: k, quadro, fmt, papel, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
-  cartao: Cartao; quadro: TQuadro; fmt: Fmt; papel: Papel; nome: string; ocupado: boolean;
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
+  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
 }) {
@@ -131,7 +130,7 @@ export function Detalhe({ cartao: k, quadro, fmt, papel, ocupado, onFechar, onAs
             </form>
           </section>
 
-          {papel !== 'secretaria' && (
+          {podeArquivar && (
             <section className={c.detBloco}>
               {!confirmarArquivo ? (
                 <button type="button" className={c.botaoPerigo} onClick={() => setConfirmarArquivo(true)} disabled={ocupado}>

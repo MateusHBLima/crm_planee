@@ -1,0 +1,66 @@
+'use server';
+
+import { cookies } from 'next/headers';
+import { ErroApi } from '@/lib/db';
+import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
+import { usuarioAtual, type Usuario } from '@/lib/sessao';
+import * as g from './gestao';
+import type { Resposta } from './acoes';
+
+// Ações das telas Empresas e Equipe. Cada uma confere a sessão e o nível de novo no servidor.
+
+async function comUsuario<T>(fn: (u: Usuario) => Promise<T>): Promise<Resposta<T>> {
+  const u = await usuarioAtual();
+  if (!u) return { ok: false, erro: 'Sua sessão terminou. Entre de novo.', sair: true };
+  try {
+    return { ok: true, dados: await fn(u) };
+  } catch (e) {
+    if (e instanceof ErroApi) return { ok: false, erro: e.message };
+    console.error(e);
+    return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
+  }
+}
+
+export async function trocarEmpresa(id: string) {
+  return comUsuario(async (u) => {
+    if (u.empresaFixa) throw new ErroApi(400, 'Neste endereço a empresa é fixa.');
+    if (!u.empresas.some((e) => e.id === id)) throw new ErroApi(403, 'Você não tem acesso a essa empresa.');
+    (await cookies()).set(COOKIE_EMPRESA, id, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 90 });
+    return true;
+  });
+}
+
+export async function carregarEmpresas() { return comUsuario((u) => g.listarEmpresas(u)); }
+export async function criarEmpresa(dados: { id: string; nome: string; modulos: string[] }) {
+  return comUsuario(async (u) => { await g.criarEmpresa(u, dados); return g.listarEmpresas(u); });
+}
+export async function atualizarEmpresa(id: string, dados: { nome?: string; ativo?: boolean; modulos?: string[] }) {
+  return comUsuario(async (u) => { await g.atualizarEmpresa(u, id, dados); return g.listarEmpresas(u); });
+}
+export async function definirBancoEmpresa(id: string, url: string) {
+  return comUsuario(async (u) => { await g.definirBancoEmpresa(u, id, url); return g.listarEmpresas(u); });
+}
+export async function adicionarDominio(empresa: string, dominio: string) {
+  return comUsuario(async (u) => { await g.adicionarDominio(u, empresa, dominio); return g.listarEmpresas(u); });
+}
+export async function removerDominio(dominio: string) {
+  return comUsuario(async (u) => { await g.removerDominio(u, dominio); return g.listarEmpresas(u); });
+}
+// O master cadastra o primeiro admin de uma empresa direto na tela Empresas.
+export async function adicionarAdmin(empresa: string, nome: string, email: string) {
+  return comUsuario(async (u) => {
+    if (u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee (master) faz isso.');
+    const e = await empresaPorId(empresa);
+    if (!e) throw new ErroApi(404, 'Empresa não encontrada.');
+    await g.adicionarPessoa({ ...u, empresa: e }, { nome, email, nivel: 'admin', permissoes: [] });
+    return g.listarEmpresas(u);
+  });
+}
+
+export async function carregarEquipe() { return comUsuario((u) => g.listarEquipe(u)); }
+export async function adicionarPessoa(dados: { nome: string; email: string; nivel: string; permissoes: string[] }) {
+  return comUsuario(async (u) => { await g.adicionarPessoa(u, dados); return g.listarEquipe(u); });
+}
+export async function atualizarPessoa(id: string, dados: { nivel?: string; permissoes?: string[]; ativo?: boolean }) {
+  return comUsuario(async (u) => { await g.atualizarPessoa(u, id, dados); return g.listarEquipe(u); });
+}

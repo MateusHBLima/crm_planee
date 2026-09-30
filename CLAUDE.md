@@ -57,15 +57,17 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 ## Stack
 
 - Next.js (App Router) + TypeScript.
-- Supabase: Auth, Postgres com RLS por papel, Realtime.
+- Supabase: Auth, Postgres, Realtime. Banco central (empresas, pessoas, permissões) + banco de dados de cada empresa (decisão 26); no teste, os dois são o mesmo Supabase.
 - Estilo: CSS Modules + `design/tokens.css` (variáveis CSS). Sem biblioteca de componentes; o protótipo é a referência.
 - Fontes: Geist e Geist Mono (Google Fonts ou `next/font`).
-- Hospedagem (decisão 27): produção no Docker Swarm da Planee na Hetzner (`worker-01`, Traefik e Portainer no `Manager-01`), imagem gerada pelo GitHub a cada merge na `main`. A Vercel grátis é só o link de teste das branches. Passo a passo em `docs/producao.md`.
+- Hospedagem (decisão 27): produção no Docker Swarm da Planee na Hetzner (`worker-01`, Traefik e Portainer no `Manager-01`), imagem gerada pelo GitHub a cada merge na `main`. Não usamos Vercel: cada branch passa pelos testes locais (`testes/painel/rodar.sh`) antes do PR. Passo a passo em `docs/producao.md`.
 - Idioma da interface: português do Brasil.
 
 ## Papéis
 
-Quatro níveis (decisão 26): `master` (Planee: tudo, em todas as empresas; CPF mascarado, acesso a conversa auditado), empresa, `admin` (o que o master liberou para a empresa) e `membro` (o que o admin deu). Permissões são chaves (`inbox.ver`, `crm.editar`...); `secretaria` e `gestor` viram modelos de permissão. Enquanto o banco central não existe, valem os papéis de `painel_usuarios` (`secretaria`, `gestor`, `planee`).
+Quatro níveis (decisão 26): `master` (Planee: tudo, em todas as empresas; CPF mascarado, acesso a conversa auditado), empresa, `admin` (o que o master liberou para a empresa, em `empresas.modulos`) e `membro` (o que o admin deu, dentro do que a empresa tem). Permissões são chaves de `lib/permissoes.ts` (`inbox.ver`, `crm.editar`...); `secretaria` e `gestor` são modelos de permissão. Tabelas no banco central: `empresas`, `empresa_dominios`, `painel_usuarios` (com `master`), `painel_vinculos`, `central_auditoria` (migração 004). Quem é quem e em qual empresa: `lib/sessao.ts`, a cada pedido; o endereço acessado escolhe a empresa (`lib/empresa.ts`). A coluna `painel_usuarios.papel` é só histórico da transição.
+
+Toda leitura ou escrita de dado de empresa passa pelo banco dela: `bancoDaEmpresa(u.empresa)` nas telas e `bancoDe(chave)` na API. Nunca `banco()` direto para dado de empresa.
 
 ## Como trabalhar com o Mateus
 

@@ -1,8 +1,8 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
-import { banco, transacao, ErroApi } from '@/lib/db';
+import { transacao, ErroApi } from '@/lib/db';
 import { recurso as acharRecurso, type Recurso } from './recursos';
-import type { Chave } from './auth';
+import { bancoDe, type Chave } from './auth';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
 
@@ -21,7 +21,9 @@ function validarId(r: Recurso, id: string) {
 }
 
 function exigirEscopo(chave: Chave, escopo: string) {
-  if (!chave.escopos.includes(escopo)) throw new ErroApi(403, `Esta chave não tem o escopo "${escopo}".`);
+  if (!chave.escopos.includes(escopo)) {
+    throw new ErroApi(403, chave.usuario_id ? 'Você não tem permissão para isso nesta empresa.' : `Esta chave não tem o escopo "${escopo}".`);
+  }
 }
 
 function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
@@ -78,7 +80,7 @@ export async function listar(chave: Chave, nome: string, filtros: Record<string,
   const off = Math.max(Number(deslocamento) || 0, 0);
   const sql = `select * from ${r.tabela} ${where.length ? 'where ' + where.join(' and ') : ''} order by ${r.ordem} limit ${lim} offset ${off}`;
   try {
-    const res = await banco().query(sql, vals);
+    const res = await bancoDe(chave).query(sql, vals);
     return { itens: res.rows, limite: lim, deslocamento: off };
   } catch (e) { traduzErroBanco(e); }
 }
@@ -87,7 +89,7 @@ export async function obter(chave: Chave, nome: string, id: string) {
   exigirEscopo(chave, 'leitura');
   const r = exigirRecurso(nome);
   validarId(r, id);
-  const res = await banco().query(`select * from ${r.tabela} where id = $1`, [id]);
+  const res = await bancoDe(chave).query(`select * from ${r.tabela} where id = $1`, [id]);
   if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
   return res.rows[0];
 }
@@ -111,7 +113,7 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
       const res = await c.query(`insert into ${r.tabela} (${cols.join(', ')}) values (${ph}) returning *`, vals);
       await auditar(c, chave, 'criar', r.nome, String(res.rows[0].id), dados);
       return res.rows[0];
-    });
+    }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
 
@@ -133,7 +135,7 @@ export async function atualizar(chave: Chave, nome: string, id: string, corpo: u
       if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
       await auditar(c, chave, 'atualizar', r.nome, id, dados);
       return res.rows[0];
-    });
+    }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
 
@@ -156,7 +158,7 @@ export async function assumirAtendimento(chave: Chave, id: string, responsavel: 
     );
     await auditar(c, chave, 'atualizar', 'atendimentos', id, { etapa: 'em_atendimento', responsavel });
     return res.rows[0];
-  });
+  }, bancoDe(chave));
 }
 const RECURSO_ATENDIMENTOS = () => exigirRecurso('atendimentos');
 
@@ -176,17 +178,17 @@ export async function arquivar(chave: Chave, nome: string, id: string) {
     if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
     await auditar(c, chave, 'arquivar', r.nome, id, null);
     return res.rows[0];
-  });
+  }, bancoDe(chave));
 }
 
 export async function lerConfig(chave: Chave, nomeChave?: string) {
   exigirEscopo(chave, 'leitura');
   if (nomeChave) {
-    const res = await banco().query('select chave, valor, atualizado_em from crm_config where chave = $1', [nomeChave]);
+    const res = await bancoDe(chave).query('select chave, valor, atualizado_em from crm_config where chave = $1', [nomeChave]);
     if (!res.rowCount) throw new ErroApi(404, `Configuração "${nomeChave}" não existe.`);
     return res.rows[0];
   }
-  const res = await banco().query('select chave, valor, atualizado_em from crm_config order by chave');
+  const res = await bancoDe(chave).query('select chave, valor, atualizado_em from crm_config order by chave');
   return { itens: res.rows };
 }
 
@@ -202,5 +204,5 @@ export async function definirConfig(chave: Chave, nomeChave: string, valor: unkn
     );
     await auditar(c, chave, 'definir', 'config', nomeChave, valor);
     return res.rows[0];
-  });
+  }, bancoDe(chave));
 }

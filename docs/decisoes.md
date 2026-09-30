@@ -63,12 +63,13 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Banco central da Planee:** empresas, domínios, usuários, permissões e auditoria. O login é um só, nesse banco.
     - **Dados de cada empresa** (conversas, CRM, pacientes) ficam no banco da própria empresa, no modelo padrão (decisão 22). O endereço desse banco fica cifrado no banco central; a chave de cifra existe só no servidor.
     - **Domínio próprio por empresa:** o painel descobre a empresa pelo endereço acessado e, a cada pedido, confere no servidor que o usuário pertence àquela empresa. Domínio errado nunca mostra dados de outra clínica.
-    - **Empresa nova não é commit:** cadastro na tela do master, registro de DNS e o domínio acrescentado na stack do Portainer.
-27. **Produção no Hetzner da Planee; teste na Vercel grátis.** Substitui a 20.
+    - **Empresa nova não é commit:** cadastro na tela do master e registro de DNS. O Traefik consulta o painel de tempos em tempos (provedor HTTP, `/api/traefik`) e cria sozinho a rota com HTTPS de cada domínio cadastrado; a stack não é editada. *Ajustado em 30/09.*
+    - **Primeiro acesso:** o admin cadastra o e-mail; a pessoa cria a própria senha em "Primeiro acesso" (só e-mail cadastrado que nunca entrou). A confirmação de e-mail do Supabase Auth fica ligada.
+27. **Produção no Hetzner da Planee; sem Vercel.** Substitui a 20.
     - O painel roda no Docker Swarm do projeto PLANEE, no `worker-01` (rótulo `planee.papel=painel`), com duas réplicas. O Traefik do `Manager-01` faz o HTTPS; o firewall `planee-cluster` protege os dois servidores.
-    - Cada merge na `main` gera a imagem Docker no GitHub (`ghcr.io/mateushblima/crm_planee`); o Portainer atualiza a stack com ela. Voltar versão é trocar a versão da imagem no Portainer.
+    - Cada merge na `main` gera a imagem Docker no GitHub (`ghcr.io/mateushblima/crm_planee`). O serviço `atualizador` (Shepherd) confere a imagem a cada 5 minutos e atualiza o painel, uma réplica por vez; o webhook de serviço do Portainer é pago. Voltar versão é trocar a versão da imagem no Portainer. *Ajustado em 30/09.*
     - Endereço da Planee: `adm.planeelabia.com`.
-    - A Vercel fica só como link de teste das branches, ligado ao Supabase de teste, no plano grátis. Passo a passo em `docs/producao.md`.
+    - Sem Vercel (retirada em 30/09): o painel, a API e o conector ficam só em `adm.planeelabia.com` (e nos domínios das empresas). Antes do PR, cada branch passa pelos testes locais (`testes/painel/rodar.sh`). Passo a passo em `docs/producao.md`.
 
 ## Em aberto
 

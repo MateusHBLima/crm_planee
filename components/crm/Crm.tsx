@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import type { Papel } from '@/lib/sessao';
 import {
   arquivarAtendimento, assumirAtendimento, carregarQuadro, moverAtendimento, mudarAssunto, type Resposta,
 } from '@/lib/painel/acoes';
@@ -18,7 +17,7 @@ type Aba = 'atendimento' | 'comercial' | 'contatos';
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
-export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; nome: string }) {
+export function Crm({ inicial, podeArquivar, nome }: { inicial: TQuadro; podeArquivar: boolean; nome: string }) {
   const [quadro, setQuadro] = useState(inicial);
   const [aba, setAba] = useState<Aba>('atendimento');
   const [busca, setBusca] = useState('');
@@ -144,7 +143,7 @@ export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; 
       {aba === 'contatos' && <Contatos busca={busca} quadro={quadro} onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />}
 
       {cartaoAberto && (
-        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} papel={papel} nome={nome} ocupado={ocupado}
+        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} nome={nome} ocupado={ocupado}
           onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} />
       )}

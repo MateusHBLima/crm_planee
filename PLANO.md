@@ -4,7 +4,7 @@ Ordem de execução. Cada tarefa tem critério de pronto. Marque `[x]` ao conclu
 
 As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda a produção, e só depois de validada no ambiente de teste.
 
-**Como o código vai ao ar (decisão 27):** cada tarefa numa branch. A Vercel grátis publica a branch num link de teste, ligado ao Supabase de teste. O merge na `main` gera a imagem Docker no GitHub; o Portainer atualiza a stack do painel no Swarm da Hetzner, e voltar versão é trocar a versão da imagem no Portainer (`docs/producao.md`). Cliente novo não é commit: é empresa cadastrada na tela do master, registro de DNS e domínio acrescentado na stack (decisão 26).
+**Como o código vai ao ar (decisão 27):** cada tarefa numa branch, que passa pelos testes locais (`testes/painel/rodar.sh`, Postgres descartável) antes do PR. O merge na `main` gera a imagem Docker no GitHub; o Portainer atualiza a stack do painel no Swarm da Hetzner, e voltar versão é trocar a versão da imagem no Portainer (`docs/producao.md`). Cliente novo não é commit: é empresa cadastrada na tela do master, registro de DNS e domínio acrescentado na stack (decisão 26).
 
 ---
 
@@ -41,10 +41,14 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
   *Pronto quando:* a secretária não consegue ler a tela interna nem por URL direta.
   *Parcial em 29/09:* login pelo Supabase Auth, papéis de `painel_usuarios` conferidos no servidor de cada tela, CPF mascarado para `planee`. O resto (MFA, níveis e permissões) passa para a 0.8.
 - [ ] **0.7 Semente do CRM.** Preencher `crm_etapas` e `crm_topicos` com o modelo Clínica (valores no protótipo, função `modelos()`).
-- [ ] **0.8 Banco central e permissões (decisão 26).** Tabelas centrais (empresas, domínios, usuários, permissões, auditoria), empresa escolhida pelo endereço e conferida no servidor a cada pedido, banco de cada empresa com endereço cifrado. Tela do master: empresas, domínios, módulos liberados, admins. Tela do admin: membros e permissões, com os modelos "secretária" e "gestor". MFA obrigatório para o master.
+- [x] **0.8 Banco central e permissões (decisão 26).** Tabelas centrais (empresas, domínios, usuários, permissões, auditoria), empresa escolhida pelo endereço e conferida no servidor a cada pedido, banco de cada empresa com endereço cifrado. Tela do master: empresas, domínios, módulos liberados, admins. Tela do admin: membros e permissões, com os modelos "secretária" e "gestor". MFA obrigatório para o master.
   *Pronto quando:* no link de teste, um membro de uma empresa fictícia não vê nada de outra empresa nem por URL direta nem pela API, e o admin só consegue dar permissões que o master liberou.
-- [ ] **0.9 Produção no Swarm (decisão 27).** Imagem Docker gerada a cada merge na `main`, stack do painel no Portainer (`deploy/stack-painel.yml`) no `worker-01` com duas réplicas, Traefik com HTTPS em `adm.planeelabia.com`.
+  *Feito em 30/09:* migrações 004 (central) e 005 (dados); telas Empresas (master: empresas, módulos, domínios, admins, banco próprio cifrado) e Equipe (admin: membros, modelos Secretária/Gestor, desativar); seletor de empresa no endereço geral; empresa pelo domínio, conferida a cada pedido; primeiro acesso com criação de senha; `/api/traefik` com os domínios para o Traefik. Verificado com 38 testes novos (`testes/painel/central.js`) além dos 34 anteriores: duas empresas com bancos separados, domínio `outra.localhost`, pessoa de uma empresa barrada no domínio da outra, admin limitado aos módulos, módulo retirado some na hora, empresa desativada sai do Traefik. Ficou para a 0.8b: MFA do master.
+- [ ] **0.8b MFA do master.** Segundo fator (TOTP do Supabase Auth) obrigatório para quem tem `master`.
+  *Pronto quando:* o master só entra com o código do aplicativo autenticador.
+- [x] **0.9 Produção no Swarm (decisão 27).** Imagem Docker gerada a cada merge na `main`, stack do painel no Portainer (`deploy/stack-painel.yml`) no `worker-01` com duas réplicas, Traefik com HTTPS em `adm.planeelabia.com`.
   *Pronto quando:* `https://adm.planeelabia.com` abre o login, `/api/saude` responde e uma troca de versão no Portainer sobe e volta sem derrubar o painel.
+  *Feito em 30/09:* stack `painel` no ar, 2 réplicas no `worker-01`, HTTPS emitido pelo Traefik, `/api/saude` com a versão `50eafc6`, login testado pelo Mateus. A atualização automática é o serviço `atualizador` (`deploy/stack-atualizador.yml`).
 
 ## Fase 1 — Leitura (nada escreve)
 

@@ -7,6 +7,8 @@ Tudo que dá para criar e editar no CRM passa por esta API. As telas do painel e
 - REST: `https://<deploy>/api/v1` (sem chave, `GET /api/v1` devolve o catálogo completo: recursos, campos, filtros e regras).
 - Conector MCP para o Claude: `https://<deploy>/api/mcp` com cabeçalho `Authorization: Bearer <chave>`, ou `https://<deploy>/api/mcp/<chave>` quando o conector não aceita cabeçalho.
 
+**Qual empresa (decisão 26):** o endereço chamado escolhe o banco. No domínio de uma empresa (ex.: `https://painel.clinica.com.br/api/v1`), a chave é conferida e os dados são lidos e gravados no banco daquela empresa. No endereço geral (`adm.planeelabia.com`), vale o banco padrão do deploy. Cada chave existe só no banco da empresa dela.
+
 ## O que dá para fazer
 
 | Recurso | O que é | Escrita |
@@ -42,4 +44,4 @@ O resultado aparece uma vez só. Cole direto no conector (ou no n8n); não mande
 
 ## Configuração do deploy
 
-Variável `DATABASE_URL` no projeto da Vercel: a string do "connection pooler" do Supabase daquele cliente (Settings → Database → Connection string, modo Transaction). Sem ela, a API responde 503.
+Variável `DATABASE_URL` na stack `painel` do Portainer: a string do "connection pooler" do Supabase (Settings → Database → Connection string). Sem ela, a API responde 503. O conector do Claude usa `https://adm.planeelabia.com/api/mcp/<chave>`.

@@ -1,6 +1,6 @@
 # Stack do painel no Portainer (decisão 27). Passo a passo em docs/producao.md.
 # Os valores das variáveis ficam só no Portainer (seção "Environment variables" da stack), nunca aqui.
-# Domínio novo de empresa (decisão 26): acrescentar "|| Host(`novo.dominio`)" na regra do roteador.
+# Domínio de empresa (decisão 26): não entra aqui. O Traefik lê os domínios em /api/traefik (docs/producao.md).
 
 version: "3.8"
 
@@ -11,8 +11,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - PAINEL_MODO=${PAINEL_MODO:-adm}
-      - PAINEL_CLIENTE_NOME=${PAINEL_CLIENTE_NOME:-}
+      - CENTRAL_DATABASE_URL=${CENTRAL_DATABASE_URL:-}
+      - PAINEL_CHAVE_CIFRA=${PAINEL_CHAVE_CIFRA:-}
       - PAINEL_FUSO=America/Sao_Paulo
     networks:
       - network_public
@@ -40,6 +40,7 @@ services:
         reservations:
           memory: 256M
       labels:
+        - shepherd.enable=true
         - traefik.enable=true
         - traefik.http.routers.painel.rule=Host(`adm.planeelabia.com`)
         - traefik.http.routers.painel.entrypoints=websecure
