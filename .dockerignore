@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.github
+.env
+.env.*
+!.env.example
+.vercel
+*.log
+*.tsbuildinfo
+testes
+prototipo
+docs
+design/*.md
+deploy
+README.md

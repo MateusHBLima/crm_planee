@@ -1,0 +1,54 @@
+# Stack do painel no Portainer (decisão 27). Passo a passo em docs/producao.md.
+# Os valores das variáveis ficam só no Portainer (seção "Environment variables" da stack), nunca aqui.
+# Domínio novo de empresa (decisão 26): acrescentar "|| Host(`novo.dominio`)" na regra do roteador.
+
+version: "3.8"
+
+services:
+  painel:
+    image: ghcr.io/mateushblima/crm_planee:${VERSAO:-latest}
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - PAINEL_MODO=${PAINEL_MODO:-adm}
+      - PAINEL_CLIENTE_NOME=${PAINEL_CLIENTE_NOME:-}
+      - PAINEL_FUSO=America/Sao_Paulo
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.planee.papel == painel
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          cpus: "1"
+          memory: 768M
+        reservations:
+          memory: 256M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.painel.rule=Host(`adm.planeelabia.com`)
+        - traefik.http.routers.painel.entrypoints=websecure
+        - traefik.http.routers.painel.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.painel.service=painel
+        - traefik.http.services.painel.loadbalancer.server.port=3000
+        - traefik.docker.network=network_public
+
+networks:
+  network_public:
+    external: true
+    name: network_public

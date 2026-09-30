@@ -21,7 +21,7 @@ O primeiro cliente é o Instituto Neuro Essentia (Dr. Amilton). O agente de IA s
 | `design/sistema-visual.md` | Regras do sistema visual |
 | `docs/api.md` | API do CRM e conector MCP: o que dá para criar e editar sem commit |
 
-Quando a especificação e as decisões divergirem, **as decisões valem** (a especificação foi escrita em 17/09; as decisões de 24 a 26/09 mudam nomes de tabela, tiram o ClickUp e definem um deploy por cliente).
+Quando a especificação e as decisões divergirem, **as decisões valem** (a especificação foi escrita em 17/09; as decisões de 24 a 30/09 mudam nomes de tabela, tiram o ClickUp e definem um painel só para todos os clientes, hospedado na Hetzner).
 
 ## Regras que não se quebram
 
@@ -33,7 +33,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 6. **Dados de saúde (LGPD).** Nada de dado real de paciente em seed, teste, print ou commit. Use dados fictícios. CPF aparece mascarado para o papel `planee`.
 7. **O painel não fala com a Meta.** Todo envio de mensagem passa por webhook do n8n. O painel nunca insere em `mensagens_gemini_cliente`.
 8. **O agente não depende do painel.** Se o painel cair, a IA continua atendendo.
-9. **Nada específico de cliente no código** (decisão 21). Cada cliente é um projeto na Vercel com as próprias variáveis; diferença entre clientes é configuração no banco dele. Nunca `if (cliente === ...)`.
+9. **Nada específico de cliente no código** (decisão 26). Cada cliente é uma empresa no banco central, com domínio, módulos e banco próprios; diferença entre clientes é configuração, nunca `if (cliente === ...)`. Todo acesso a dado de empresa confere no servidor que o usuário pertence a ela.
 10. **O código só conhece o modelo padrão** (decisão 22). Tabelas e colunas de `supabase/modelo.md`; adaptação de banco antigo é view no banco do cliente.
 11. **Mexer no CRM é pela API, não pelo banco.** Criar ou editar etapa, assunto, contato, cartão ou configuração é chamada à API (`docs/api.md`) ou ao conector MCP, nunca SQL solto nem commit. Recurso novo no CRM = entrada em `lib/api/recursos.ts` + migração.
 12. **Só o chat principal sobe código.** Nenhum outro chat faz commit, push, PR, upload pelo site do GitHub ou sessão do Claude Code por conta própria. Os outros chats desenvolvem pelo conector CRM Planee e pela API (`docs/api.md`) e, no n8n, só na pasta `AMBIENTE DE TESTE — Sara`. Quando a API não fizer o que precisam, descrevem o que falta ao Mateus, e a API é estendida no chat principal para todos.
@@ -60,12 +60,12 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 - Supabase: Auth, Postgres com RLS por papel, Realtime.
 - Estilo: CSS Modules + `design/tokens.css` (variáveis CSS). Sem biblioteca de componentes; o protótipo é a referência.
 - Fontes: Geist e Geist Mono (Google Fonts ou `next/font`).
-- Hospedagem: Vercel, fora da VPS do agente. Um projeto por cliente mais o projeto `adm`, todos da mesma `main`; o modo vem da variável `PAINEL_MODO`.
+- Hospedagem (decisão 27): produção no Docker Swarm da Planee na Hetzner (`worker-01`, Traefik e Portainer no `Manager-01`), imagem gerada pelo GitHub a cada merge na `main`. A Vercel grátis é só o link de teste das branches. Passo a passo em `docs/producao.md`.
 - Idioma da interface: português do Brasil.
 
 ## Papéis
 
-`secretaria` (inbox e CRM), `gestor` (+ resultados e configurações de negócio e CRM), `planee` (tudo, CPF mascarado, acesso a conversa auditado). A tabela de acessos completa está em `docs/especificacao.md`, seção 2.
+Quatro níveis (decisão 26): `master` (Planee: tudo, em todas as empresas; CPF mascarado, acesso a conversa auditado), empresa, `admin` (o que o master liberou para a empresa) e `membro` (o que o admin deu). Permissões são chaves (`inbox.ver`, `crm.editar`...); `secretaria` e `gestor` viram modelos de permissão. Enquanto o banco central não existe, valem os papéis de `painel_usuarios` (`secretaria`, `gestor`, `planee`).
 
 ## Como trabalhar com o Mateus
 
