@@ -46,7 +46,7 @@ services:
         - traefik.http.routers.painel.tls.certresolver=letsencryptresolver
         - traefik.http.routers.painel.service=painel
         - traefik.http.services.painel.loadbalancer.server.port=3000
-        - traefik.docker.network=network_public
+        - traefik.swarm.network=network_public
 
 networks:
   network_public:

@@ -2,10 +2,12 @@
 
 O painel roda no Docker Swarm do projeto PLANEE na Hetzner:
 
-| Servidor | IP | Papel |
-|---|---|---|
-| `Manager-01` | 188.34.152.235 | líder do Swarm, Traefik (HTTPS), Portainer, n8n |
-| `worker-01` | 188.245.3.108 | painel (rótulo `planee.papel=painel`) |
+| Servidor | Papel |
+|---|---|
+| `Manager-01` | líder do Swarm, Traefik (HTTPS), Portainer, n8n |
+| `worker-01` | painel (rótulo `planee.papel=painel`) |
+
+Os IPs ficam no console da Hetzner e no projeto do Claude, não neste repositório (ele é público).
 
 Firewall `planee-cluster` nos dois: 22, 80, 443 e ICMP abertos; 2377/tcp, 7946/tcp e 4789–7946/udp só entre os dois servidores.
 
@@ -26,14 +28,14 @@ Se a versão nova não passar na verificação de saúde, o Swarm volta sozinho 
 
 ## Primeira instalação (uma vez)
 
-1. **DNS:** registro `A` de `adm.planeelabia.com` para `188.34.152.235` (GoDaddy).
+1. **DNS:** registro `A` de `adm.planeelabia.com` para o IP do `Manager-01` (GoDaddy).
 2. **Imagem pública:** depois da primeira execução do workflow, GitHub → Packages → `crm_planee` → Package settings → Change visibility → Public. A imagem não tem nenhuma chave; tudo vem das variáveis da stack.
 3. **Stack:** Portainer → Stacks → Add stack → nome `painel` → colar `deploy/stack-painel.yml` → em **Environment variables**, cadastrar `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` (e `PAINEL_MODO`, se não for `adm`) → **Deploy the stack**.
 4. **Atualização automática:** Portainer → Services → `painel_painel` → **Service webhook** ligado → copiar o endereço → GitHub → Settings → Secrets and variables → Actions → New secret `PORTAINER_WEBHOOK_PAINEL`.
 
 ## Domínio de empresa (decisão 26)
 
-1. A empresa cria o registro `A` (ou `CNAME` para `adm.planeelabia.com`) do domínio dela apontando para `188.34.152.235`.
+1. A empresa cria o registro `A` (ou `CNAME` para `adm.planeelabia.com`) do domínio dela apontando para o IP do `Manager-01`.
 2. Portainer → stack `painel` → na regra do roteador, acrescentar ``|| Host(`novo.dominio`)`` → **Update the stack**. O Traefik emite o certificado sozinho.
 3. Cadastrar o domínio na empresa, na tela do master.
 
@@ -41,4 +43,4 @@ Nenhum desses passos é commit.
 
 ## Rede e Traefik
 
-A stack usa a rede `network_public`, o entrypoint `websecure` e o resolvedor de certificado `letsencryptresolver`, os mesmos do n8n e do Portainer. Se o Traefik do manager usar outros nomes, ajuste as etiquetas `traefik.*` da stack.
+O Traefik do manager é a versão 3, com o provedor `swarm`: rede `network_public`, entrypoint `websecure` (o `web` redireciona para ele) e resolvedor de certificado `letsencryptresolver` (desafio HTTP). A stack usa esses nomes, conferidos em 30/09.
