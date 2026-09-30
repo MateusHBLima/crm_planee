@@ -25,7 +25,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 
 ## Regras que não se quebram
 
-1. **Produção não é tocada.** Escrita no banco só no Supabase de teste do painel (decisão 23); enquanto ele não existir, só no schema `teste`. O schema `public` é somente leitura. Nos workflows do n8n, só a pasta `AMBIENTE DE TESTE — Sara`.
+1. **Produção não é tocada.** Escrita no banco do painel só no Supabase de teste `dyembftoneilewjnqxsk` (decisão 23); no banco do Dr. Amilton, só no schema `teste`. O schema `public` é somente leitura. Nos workflows do n8n, só a pasta `AMBIENTE DE TESTE — Sara`.
 2. **Nenhuma credencial no repositório nem na conversa.** Chaves vão no `.env.local`, que o Mateus preenche. Se precisar de um valor, peça para ele colocar no `.env.local`.
 3. **SQL de escrita passa pelo Mateus.** Entregue um comando por vez, pronto para colar, com um `SELECT` de conferência logo depois. Ele roda, confere e só então segue.
 4. **Confirme antes de mudar.** Mostre o que vai fazer e espere o OK antes de alterar banco, workflow ou decisão.
