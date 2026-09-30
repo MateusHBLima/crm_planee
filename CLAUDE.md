@@ -36,6 +36,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 9. **Nada específico de cliente no código** (decisão 21). Cada cliente é um projeto na Vercel com as próprias variáveis; diferença entre clientes é configuração no banco dele. Nunca `if (cliente === ...)`.
 10. **O código só conhece o modelo padrão** (decisão 22). Tabelas e colunas de `supabase/modelo.md`; adaptação de banco antigo é view no banco do cliente.
 11. **Mexer no CRM é pela API, não pelo banco.** Criar ou editar etapa, assunto, contato, cartão ou configuração é chamada à API (`docs/api.md`) ou ao conector MCP, nunca SQL solto nem commit. Recurso novo no CRM = entrada em `lib/api/recursos.ts` + migração.
+12. **Só o chat principal sobe código.** Nenhum outro chat faz commit, push, PR, upload pelo site do GitHub ou sessão do Claude Code por conta própria. Os outros chats desenvolvem pelo conector CRM Planee e pela API (`docs/api.md`) e, no n8n, só na pasta `AMBIENTE DE TESTE — Sara`. Quando a API não fizer o que precisam, descrevem o que falta ao Mateus, e a API é estendida no chat principal para todos.
 
 ## Armadilhas conhecidas do banco
 
