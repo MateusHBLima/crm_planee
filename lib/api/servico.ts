@@ -47,9 +47,18 @@ function traduzErroBanco(e: unknown): never {
 }
 
 async function auditar(c: PoolClient, chave: Chave, acao: string, recurso: string, alvo: string | null, detalhe: unknown) {
+  const d = detalhe === undefined ? null : JSON.stringify(detalhe);
+  // Escrita feita por uma pessoa no painel grava usuario_id (coluna da migração 003).
+  if (chave.usuario_id) {
+    await c.query(
+      'insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe) values ($1,$2,$3,$4,$5)',
+      [chave.usuario_id, acao, recurso, alvo, d],
+    );
+    return;
+  }
   await c.query(
     'insert into painel_auditoria (chave_id, acao, recurso, alvo_id, detalhe) values ($1,$2,$3,$4,$5)',
-    [chave.id, acao, recurso, alvo, detalhe === undefined ? null : JSON.stringify(detalhe)],
+    [chave.id, acao, recurso, alvo, d],
   );
 }
 
@@ -127,6 +136,29 @@ export async function atualizar(chave: Chave, nome: string, id: string, corpo: u
     });
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
+
+// Assumir um atendimento de forma atômica: trava a linha, confere que ainda está em "aguardando"
+// e só então muda. Duas pessoas clicando ao mesmo tempo: a segunda recebe 409 com o nome da primeira.
+export async function assumirAtendimento(chave: Chave, id: string, responsavel: string) {
+  exigirEscopo(chave, 'crm');
+  validarId(RECURSO_ATENDIMENTOS(), id);
+  return transacao(async (c) => {
+    const atual = await c.query('select etapa, responsavel from atendimentos where id = $1 and not arquivado for update', [id]);
+    if (!atual.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
+    const { etapa, responsavel: quem } = atual.rows[0];
+    if (etapa !== 'aguardando') {
+      throw new ErroApi(409, quem ? `${quem} já assumiu este atendimento.` : 'Este atendimento já saiu de "aguardando".');
+    }
+    const res = await c.query(
+      `update atendimentos set etapa = 'em_atendimento', responsavel = $2, assumido_em = coalesce(assumido_em, now()),
+              finalizado_em = null, atualizado_em = now() where id = $1 returning *`,
+      [id, responsavel],
+    );
+    await auditar(c, chave, 'atualizar', 'atendimentos', id, { etapa: 'em_atendimento', responsavel });
+    return res.rows[0];
+  });
+}
+const RECURSO_ATENDIMENTOS = () => exigirRecurso('atendimentos');
 
 export async function arquivar(chave: Chave, nome: string, id: string) {
   const r = exigirRecurso(nome);

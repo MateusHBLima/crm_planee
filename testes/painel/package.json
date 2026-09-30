@@ -1,0 +1,6 @@
+{
+  "name": "testes-painel",
+  "private": true,
+  "description": "Testes de ponta a ponta do login e do quadro de atendimento (Playwright). Ver rodar.sh.",
+  "devDependencies": { "playwright": "^1.55.0" }
+}

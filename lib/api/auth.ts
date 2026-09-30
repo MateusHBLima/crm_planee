@@ -2,7 +2,8 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { banco, ErroApi } from '@/lib/db';
 
-export type Chave = { id: string; nome: string; escopos: string[] };
+// Quem faz a operação: uma chave da API (id) ou uma pessoa logada no painel (usuario_id).
+export type Chave = { id: string | null; nome: string; escopos: string[]; usuario_id?: string | null };
 
 // Confere a chave (só o hash fica no banco) e marca o último uso.
 export async function autenticar(texto: string | null | undefined): Promise<Chave> {
