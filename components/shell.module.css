@@ -25,3 +25,15 @@
 }
 
 @media (max-width: 760px) { .rodape { margin-top: 0; flex-direction: row; align-items: center; justify-content: space-between; } .rodape .itemNav { width: auto; } }
+
+.usuario { display: flex; align-items: center; gap: 9px; padding: 8px 6px 8px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.avatar { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; font-size: 12.5px; font-weight: 650; }
+.usuarioTexto { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; }
+.usuarioNome { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usuarioPapel { font-size: 11.5px; color: var(--ink-3); }
+.sair { width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); display: grid; place-items: center; cursor: pointer; }
+.sair:hover { background: var(--hover); color: var(--ink); }
+.sair:focus-visible, .itemNav:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.conteudoLargo { min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
+@media (max-width: 760px) { .usuario { flex-grow: 1; } .conteudoLargo { min-height: 0; } }
+@media (max-width: 760px) { .rodape { flex-wrap: wrap; gap: 8px; } .usuario { flex-basis: 100%; } .app { grid-template-columns: minmax(0, 1fr); } }
