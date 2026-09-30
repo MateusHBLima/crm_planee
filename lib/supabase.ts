@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-// Lê o .env.local (ou as variáveis da Vercel). Sem chave configurada, devolve null e o app segue abrindo.
+// Lê o .env.local (ou as variáveis da stack). Sem chave configurada, devolve null e o app segue abrindo.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function supabaseCliente(): SupabaseClient<any, any, any> | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

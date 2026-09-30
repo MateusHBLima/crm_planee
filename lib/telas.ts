@@ -1,7 +1,10 @@
-import type { Modo } from './modo';
-import type { Papel } from './sessao';
+import type { Nivel } from './permissoes';
 
-export type Tela = { id: string; nome: string; icone: string; descricao: string; papeis: Papel[] };
+// O mínimo da pessoa que decide as telas (vem de lib/sessao.ts no servidor).
+export type QuemVe = { nivel: Nivel; permissoes: readonly string[]; empresa: { id: string } | null };
+export type Tela = { id: string; nome: string; icone: string; descricao: string; exige: (u: QuemVe) => boolean };
+
+const pode = (u: QuemVe, p: string) => u.permissoes.includes(p);
 
 // Caminhos dos ícones: função icones() do protótipo (traço 1,8px, 24x24).
 export const ICONES: Record<string, string> = {
@@ -36,19 +39,20 @@ export const ICONES: Record<string, string> = {
   lua: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
 };
 
-const CLIENTE: Tela[] = [
-  { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', papeis: ['secretaria', 'gestor', 'planee'] },
-  { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', papeis: ['secretaria', 'gestor', 'planee'] },
-  { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Consultas marcadas pela IA, conversas por dia, espera pela equipe. Fase 1.3.', papeis: ['gestor', 'planee'] },
-  { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', papeis: ['gestor', 'planee'] },
+// Telas do painel (decisão 26). Cada uma aparece para quem tem a permissão dela na empresa escolhida;
+// Equipe é do admin e do master; Empresas e Interno, só do master.
+const TELAS: Tela[] = [
+  { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
+  { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
+  { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Consultas marcadas pela IA, conversas por dia, espera pela equipe. Fase 1.3.', exige: (u) => pode(u, 'resultados.ver') },
+  { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', exige: (u) => pode(u, 'crm.config') || pode(u, 'agente.config') },
+  { id: 'equipe', nome: 'Equipe', icone: 'pessoa', descricao: 'Pessoas da empresa, níveis e permissões.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
+  { id: 'empresas', nome: 'Empresas', icone: 'clientes', descricao: 'Empresas, domínios, módulos liberados e admins.', exige: (u) => u.nivel === 'master' },
+  { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Custo, cache, falhas e alertas de todos os clientes. Fase 1.4.', exige: (u) => u.nivel === 'master' },
 ];
 
-const ADM: Tela[] = [
-  { id: 'clientes', nome: 'Clientes', icone: 'clientes', descricao: 'Lista de clientes e acesso a cada painel. Tarefa 0.2b.', papeis: ['planee'] },
-  { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Custo, cache, falhas e alertas de todos os clientes. Fase 1.4.', papeis: ['planee'] },
-];
+export const IDS_TELAS = TELAS.map((t) => t.id);
 
-export function telasDo(modo: Modo, papel?: Papel): Tela[] {
-  const todas = modo === 'adm' ? ADM : CLIENTE;
-  return papel ? todas.filter((t) => t.papeis.includes(papel)) : todas;
+export function telasDe(u: QuemVe): Tela[] {
+  return TELAS.filter((t) => t.exige(u));
 }

@@ -1,0 +1,36 @@
+# Atualização automática do painel (decisão 27). O webhook de serviço do Portainer é recurso pago, então usamos o
+# Shepherd: a cada 5 minutos ele confere se saiu imagem nova no ghcr.io e atualiza só os serviços com o rótulo
+# shepherd.enable=true (o painel). A troca é uma réplica por vez e, se a nova falhar na verificação de saúde,
+# o Swarm volta sozinho para a anterior. Roda no manager porque precisa falar com o Docker do Swarm.
+# Usa a rede externa network_public: o Portainer fala com o Swarm pelo agente, que pode cair no worker, e o
+# worker não cria rede nova ("This node is not a swarm manager").
+version: "3.8"
+
+services:
+  shepherd:
+    image: containrrr/shepherd:latest
+    environment:
+      - SLEEP_TIME=5m
+      - FILTER_SERVICES=label=shepherd.enable=true
+      - WITH_REGISTRY_AUTH=false
+      - ROLLBACK_ON_FAILURE=true
+      - TZ=America/Sao_Paulo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+    networks:
+      - network_public
+
+networks:
+  network_public:
+    external: true

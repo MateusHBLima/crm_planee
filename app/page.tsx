@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation';
-import { contexto } from '@/lib/contexto';
 import { exigirUsuario } from '@/lib/sessao';
-import { telasDo } from '@/lib/telas';
+import { telasDe } from '@/lib/telas';
 
-// Enquanto a inbox (1.1) não existe, o modo cliente abre direto no CRM.
+// Enquanto a inbox (1.1) não existe, abre direto no CRM (ou na primeira tela que a pessoa pode ver).
 export default async function Inicio() {
-  const { modo } = await contexto();
   const u = await exigirUsuario();
-  const telas = telasDo(modo, u.papel);
+  const telas = telasDe(u);
+  if (!telas.length) redirect('/entrar?motivo=semtelas');
   redirect(`/${(telas.find((t) => t.id === 'crm') ?? telas[0]).id}`);
 }

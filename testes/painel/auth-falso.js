@@ -21,6 +21,13 @@ http.createServer((req, res) => {
       if (u.searchParams.get('grant_type') === 'password') return USERS[d.email] === d.password ? j(200, emitir(d.email)) : j(400, { error: 'invalid_grant' });
       if (u.searchParams.get('grant_type') === 'refresh_token') { const e = refresh[d.refresh_token]; setTimeout(() => delete refresh[d.refresh_token], 10000); /* como o Supabase: reuso por 10 s */ return e ? j(200, emitir(e)) : j(400, { error: 'invalid_grant' }); }
     }
+    if (u.pathname === '/auth/v1/signup') {
+      // Primeiro acesso (Supabase com "Confirm email" desligado devolve a sessão; CONFIRMA=1 imita o ligado).
+      const d = JSON.parse(body || '{}');
+      if (USERS[d.email]) return j(200, { id: 'x', email: d.email }); // Supabase não revela que o e-mail já existe
+      USERS[d.email] = d.password;
+      return process.env.CONFIRMA === '1' ? j(200, { id: 'novo', email: d.email, confirmation_sent_at: new Date().toISOString() }) : j(200, emitir(d.email));
+    }
     if (u.pathname === '/auth/v1/user') {
       const t = (req.headers.authorization || '').replace('Bearer ', ''); try { const p = JSON.parse(Buffer.from(t.split('.')[1], 'base64url')); if (p.exp > Date.now() / 1000) return j(200, { id: p.sub, email: p.email }); } catch {}
       return j(401, { msg: 'invalid token' });

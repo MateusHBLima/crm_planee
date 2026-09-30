@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import type { Papel } from '@/lib/sessao';
 import {
   arquivarAtendimento, assumirAtendimento, carregarQuadro, moverAtendimento, mudarAssunto, type Resposta,
 } from '@/lib/painel/acoes';
@@ -11,6 +10,8 @@ import { Quadro } from './Quadro';
 import { Detalhe } from './Detalhe';
 import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
+import { NovoAtendimento } from './Formularios';
+import { useAvisos } from './avisos';
 import { criarFormatos } from './util';
 import c from './crm.module.css';
 
@@ -18,7 +19,9 @@ type Aba = 'atendimento' | 'comercial' | 'contatos';
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
-export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; nome: string }) {
+export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, nome }: {
+  inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; mascarado: boolean; nome: string;
+}) {
   const [quadro, setQuadro] = useState(inicial);
   const [aba, setAba] = useState<Aba>('atendimento');
   const [busca, setBusca] = useState('');
@@ -27,6 +30,8 @@ export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; 
   const [aberto, setAberto] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
+  const [novo, setNovo] = useState(false);
+  const avisos = useAvisos(quadro);
   const [ocupado, iniciar] = useTransition();
   const ocupadoRef = useRef(false);
   ocupadoRef.current = ocupado;
@@ -42,11 +47,14 @@ export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; 
     return r.dados;
   }, []);
 
-  // Atualiza sozinho enquanto a aba do navegador está visível.
+  // Atualiza sozinho enquanto a aba do navegador está visível; com os avisos ligados, também escondida
+  // (o navegador espaça os pedidos da aba escondida, mas o aviso de cartão novo chega).
+  const avisosRef = useRef(false);
+  avisosRef.current = avisos.ligado;
   useEffect(() => {
     let parado = false;
     const tick = async () => {
-      if (parado || document.hidden || ocupadoRef.current) return;
+      if (parado || ocupadoRef.current || (document.hidden && !avisosRef.current)) return;
       const r = await carregarQuadro();
       if (parado) return;
       if (r.ok) { setQuadro(r.dados); setFalhouAtualizar(false); }
@@ -78,6 +86,7 @@ export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; 
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
   const fechar = useCallback(() => setAberto(null), []);
   const avisarErro = useCallback((t: string) => setAviso({ tipo: 'erro', texto: t }), []);
+  const avisarOk = useCallback((t: string) => setAviso({ tipo: 'ok', texto: t }), []);
 
   return (
     <div className={c.tela}>
@@ -135,16 +144,32 @@ export function Crm({ inicial, papel, nome }: { inicial: TQuadro; papel: Papel; 
             <button type="button" className={c.botaoSec} aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
               {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
             </button>
+            {avisos.suportado && (
+              <button type="button" id="avisos-crm" className={c.botaoSec} aria-pressed={avisos.ligado} onClick={avisos.alternar}
+                title="Som e notificação quando chega atendimento novo em aguardando">
+                {avisos.ligado ? 'Avisos ligados' : 'Ligar avisos'}
+              </button>
+            )}
+            {podeEditar && (
+              <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
+            )}
           </div>
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} ocupado={ocupado}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} ocupado={ocupado} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={setAberto} onAssumir={acoes.assumir} onMover={acoes.mover} />
         </>
       )}
-      {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} />}
-      {aba === 'contatos' && <Contatos busca={busca} quadro={quadro} onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />}
+      {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} podeArquivar={podeArquivar} onAviso={avisarOk} />}
+      {aba === 'contatos' && (
+        <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
+          onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
+      )}
+      {novo && (
+        <NovoAtendimento quadro={quadro} onFechar={() => setNovo(false)}
+          onPronto={(q) => { setQuadro(q); setNovo(false); avisarOk('Atendimento aberto.'); }} />
+      )}
 
       {cartaoAberto && (
-        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} papel={papel} nome={nome} ocupado={ocupado}
+        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} nome={nome} ocupado={ocupado}
           onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} />
       )}

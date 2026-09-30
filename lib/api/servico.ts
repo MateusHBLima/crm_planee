@@ -1,8 +1,9 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
-import { banco, transacao, ErroApi } from '@/lib/db';
+import { transacao, ErroApi } from '@/lib/db';
 import { recurso as acharRecurso, type Recurso } from './recursos';
-import type { Chave } from './auth';
+import { bancoDe, type Chave } from './auth';
+import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
 
@@ -21,7 +22,9 @@ function validarId(r: Recurso, id: string) {
 }
 
 function exigirEscopo(chave: Chave, escopo: string) {
-  if (!chave.escopos.includes(escopo)) throw new ErroApi(403, `Esta chave não tem o escopo "${escopo}".`);
+  if (!chave.escopos.includes(escopo)) {
+    throw new ErroApi(403, chave.usuario_id ? 'Você não tem permissão para isso nesta empresa.' : `Esta chave não tem o escopo "${escopo}".`);
+  }
 }
 
 function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
@@ -78,7 +81,7 @@ export async function listar(chave: Chave, nome: string, filtros: Record<string,
   const off = Math.max(Number(deslocamento) || 0, 0);
   const sql = `select * from ${r.tabela} ${where.length ? 'where ' + where.join(' and ') : ''} order by ${r.ordem} limit ${lim} offset ${off}`;
   try {
-    const res = await banco().query(sql, vals);
+    const res = await bancoDe(chave).query(sql, vals);
     return { itens: res.rows, limite: lim, deslocamento: off };
   } catch (e) { traduzErroBanco(e); }
 }
@@ -87,7 +90,7 @@ export async function obter(chave: Chave, nome: string, id: string) {
   exigirEscopo(chave, 'leitura');
   const r = exigirRecurso(nome);
   validarId(r, id);
-  const res = await banco().query(`select * from ${r.tabela} where id = $1`, [id]);
+  const res = await bancoDe(chave).query(`select * from ${r.tabela} where id = $1`, [id]);
   if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
   return res.rows[0];
 }
@@ -111,7 +114,7 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
       const res = await c.query(`insert into ${r.tabela} (${cols.join(', ')}) values (${ph}) returning *`, vals);
       await auditar(c, chave, 'criar', r.nome, String(res.rows[0].id), dados);
       return res.rows[0];
-    });
+    }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
 
@@ -133,7 +136,7 @@ export async function atualizar(chave: Chave, nome: string, id: string, corpo: u
       if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
       await auditar(c, chave, 'atualizar', r.nome, id, dados);
       return res.rows[0];
-    });
+    }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
 
@@ -156,7 +159,7 @@ export async function assumirAtendimento(chave: Chave, id: string, responsavel: 
     );
     await auditar(c, chave, 'atualizar', 'atendimentos', id, { etapa: 'em_atendimento', responsavel });
     return res.rows[0];
-  });
+  }, bancoDe(chave));
 }
 const RECURSO_ATENDIMENTOS = () => exigirRecurso('atendimentos');
 
@@ -176,17 +179,17 @@ export async function arquivar(chave: Chave, nome: string, id: string) {
     if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
     await auditar(c, chave, 'arquivar', r.nome, id, null);
     return res.rows[0];
-  });
+  }, bancoDe(chave));
 }
 
 export async function lerConfig(chave: Chave, nomeChave?: string) {
   exigirEscopo(chave, 'leitura');
   if (nomeChave) {
-    const res = await banco().query('select chave, valor, atualizado_em from crm_config where chave = $1', [nomeChave]);
+    const res = await bancoDe(chave).query('select chave, valor, atualizado_em from crm_config where chave = $1', [nomeChave]);
     if (!res.rowCount) throw new ErroApi(404, `Configuração "${nomeChave}" não existe.`);
     return res.rows[0];
   }
-  const res = await banco().query('select chave, valor, atualizado_em from crm_config order by chave');
+  const res = await bancoDe(chave).query('select chave, valor, atualizado_em from crm_config order by chave');
   return { itens: res.rows };
 }
 
@@ -202,5 +205,106 @@ export async function definirConfig(chave: Chave, nomeChave: string, valor: unkn
     );
     await auditar(c, chave, 'definir', 'config', nomeChave, valor);
     return res.rows[0];
-  });
+  }, bancoDe(chave));
+}
+
+// ---- Para o agente de IA (Sara): ler a ficha e mover o funil pelo telefone ----
+
+// Tudo o que o CRM sabe de um telefone, em uma chamada: quem é, desde quando, atendimentos abertos e
+// recentes, notas, oportunidades e as etapas do funil. CPF sai só com o final (LGPD: o agente não precisa do resto).
+export async function ficha(chave: Chave, telefone: unknown) {
+  exigirEscopo(chave, 'leitura');
+  const tel = normalizarTelefone(telefone);
+  const db = bancoDe(chave);
+  const cont = await db.query(
+    `select id, nome, telefone, documento, tipo_documento, criado_em from contatos
+      where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em`,
+    chaveTelefone(tel),
+  );
+  const etapas = await db.query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`);
+  if (!cont.rowCount) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows };
+  const ids = cont.rows.map((c) => c.id);
+  const [atend, ops, notas] = await Promise.all([
+    db.query(
+      `select a.id, a.contato_id, a.topico_id, t.nome as assunto, a.etapa, a.resumo, a.responsavel, a.aberto_por,
+              a.aberto_em, a.finalizado_em
+         from atendimentos a left join crm_topicos t on t.id = a.topico_id
+        where a.contato_id = any($1) and not a.arquivado
+        order by (a.etapa <> 'finalizado') desc, a.aberto_em desc limit 15`, [ids]),
+    db.query(
+      `select o.id, o.contato_id, o.interesse, o.valor, o.etapa_id, e.nome as etapa, e.tipo as etapa_tipo, o.criado_em, o.atualizado_em
+         from oportunidades o left join crm_etapas e on e.id = o.etapa_id
+        where o.contato_id = any($1) and not o.arquivado order by o.atualizado_em desc limit 10`, [ids]),
+    db.query(
+      `select n.alvo_tipo, n.alvo_id, n.texto, n.autor, n.criado_em from notas n
+        where not n.arquivado and ((n.alvo_tipo = 'contatos' and n.alvo_id = any($1))
+           or (n.alvo_tipo = 'atendimentos' and n.alvo_id in (select id from atendimentos where contato_id = any($1)))
+           or (n.alvo_tipo = 'oportunidades' and n.alvo_id in (select id from oportunidades where contato_id = any($1))))
+        order by n.criado_em desc limit 15`, [ids]),
+  ]);
+  return {
+    encontrado: true,
+    telefone: tel,
+    contatos: cont.rows.map((c) => ({
+      id: c.id, nome: c.nome, contato_desde: c.criado_em,
+      cpf_final: c.documento ? String(c.documento).replace(/\D/g, '').slice(-3) : null,
+    })),
+    atendimentos_abertos: atend.rows.filter((a) => a.etapa !== 'finalizado'),
+    atendimentos_recentes: atend.rows.filter((a) => a.etapa === 'finalizado'),
+    oportunidades: ops.rows.map((o) => ({ ...o, valor: o.valor === null ? null : Number(o.valor) })),
+    notas: notas.rows,
+    etapas_funil: etapas.rows,
+  };
+}
+
+// Coloca o telefone numa etapa do funil comercial: move a oportunidade em aberto dele ou cria uma.
+// Cria o contato se ainda não existir. Tudo numa transação, com auditoria.
+export async function moverNoFunil(chave: Chave, corpo: unknown) {
+  exigirEscopo(chave, 'crm');
+  if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?}.');
+  const d = corpo as Record<string, unknown>;
+  const tel = normalizarTelefone(d.telefone);
+  const etapaId = String(d.etapa_id ?? '');
+  if (!ID_TEXTO.test(etapaId)) throw new ErroApi(400, 'Informe "etapa_id" (veja etapas_funil na ficha).');
+  const valor = d.valor === undefined || d.valor === null || d.valor === '' ? undefined : Number(d.valor);
+  if (valor !== undefined && (!Number.isFinite(valor) || valor < 0)) throw new ErroApi(400, 'Valor inválido.');
+  const interesse = d.interesse === undefined ? undefined : String(d.interesse ?? '').trim().slice(0, 300) || null;
+  const nome = String(d.nome ?? '').trim().slice(0, 120) || null;
+  return transacao(async (c) => {
+    const et = await c.query('select id, nome, tipo from crm_etapas where id = $1 and not arquivado', [etapaId]);
+    if (!et.rowCount) throw new ErroApi(400, `Etapa "${etapaId}" não existe no funil.`);
+    let cont = await c.query(`select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`, chaveTelefone(tel));
+    let contatoId: string;
+    if (cont.rowCount) {
+      contatoId = cont.rows[0].id;
+      if (nome && !cont.rows[0].nome) await c.query('update contatos set nome = $2, atualizado_em = now() where id = $1', [contatoId, nome]);
+    } else {
+      cont = await c.query('insert into contatos (telefone, nome) values ($1, $2) returning id', [tel, nome]);
+      contatoId = cont.rows[0].id;
+      await auditar(c, chave, 'criar', 'contatos', contatoId, { telefone: tel, nome });
+    }
+    // A oportunidade "viva" é a mais recente que não está arquivada nem fechada (ganho/perdido).
+    const viva = await c.query(
+      `select o.id, o.etapa_id from oportunidades o join crm_etapas e on e.id = o.etapa_id
+        where o.contato_id = $1 and not o.arquivado and e.tipo = 'aberta' order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
+    const campos: Record<string, unknown> = { etapa_id: etapaId };
+    if (interesse !== undefined) campos.interesse = interesse;
+    if (valor !== undefined) campos.valor = valor;
+    let op;
+    if (viva.rowCount) {
+      const cols = Object.keys(campos);
+      const res = await c.query(
+        `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, atualizado_em = now() where id = $1 returning *`,
+        [viva.rows[0].id, ...Object.values(campos)]);
+      op = res.rows[0];
+      await auditar(c, chave, 'atualizar', 'oportunidades', op.id, { de: viva.rows[0].etapa_id, ...campos });
+    } else {
+      const res = await c.query(
+        'insert into oportunidades (contato_id, etapa_id, interesse, valor) values ($1, $2, $3, $4) returning *',
+        [contatoId, etapaId, interesse ?? null, valor ?? null]);
+      op = res.rows[0];
+      await auditar(c, chave, 'criar', 'oportunidades', op.id, { contato_id: contatoId, ...campos });
+    }
+    return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount };
+  }, bancoDe(chave));
 }

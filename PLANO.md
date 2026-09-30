@@ -4,7 +4,7 @@ Ordem de execução. Cada tarefa tem critério de pronto. Marque `[x]` ao conclu
 
 As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda a produção, e só depois de validada no ambiente de teste.
 
-**Como o código vai ao ar (decisão 27):** cada tarefa numa branch. A Vercel grátis publica a branch num link de teste, ligado ao Supabase de teste. O merge na `main` gera a imagem Docker no GitHub; o Portainer atualiza a stack do painel no Swarm da Hetzner, e voltar versão é trocar a versão da imagem no Portainer (`docs/producao.md`). Cliente novo não é commit: é empresa cadastrada na tela do master, registro de DNS e domínio acrescentado na stack (decisão 26).
+**Como o código vai ao ar (decisão 27):** cada tarefa numa branch, que passa pelos testes locais (`testes/painel/rodar.sh`, Postgres descartável) antes do PR. O merge na `main` gera a imagem Docker no GitHub; o Portainer atualiza a stack do painel no Swarm da Hetzner, e voltar versão é trocar a versão da imagem no Portainer (`docs/producao.md`). Cliente novo não é commit: é empresa cadastrada na tela do master, registro de DNS e domínio acrescentado na stack (decisão 26).
 
 ---
 
@@ -41,16 +41,22 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
   *Pronto quando:* a secretária não consegue ler a tela interna nem por URL direta.
   *Parcial em 29/09:* login pelo Supabase Auth, papéis de `painel_usuarios` conferidos no servidor de cada tela, CPF mascarado para `planee`. O resto (MFA, níveis e permissões) passa para a 0.8.
 - [ ] **0.7 Semente do CRM.** Preencher `crm_etapas` e `crm_topicos` com o modelo Clínica (valores no protótipo, função `modelos()`).
-- [ ] **0.8 Banco central e permissões (decisão 26).** Tabelas centrais (empresas, domínios, usuários, permissões, auditoria), empresa escolhida pelo endereço e conferida no servidor a cada pedido, banco de cada empresa com endereço cifrado. Tela do master: empresas, domínios, módulos liberados, admins. Tela do admin: membros e permissões, com os modelos "secretária" e "gestor". MFA obrigatório para o master.
+- [x] **0.8 Banco central e permissões (decisão 26).** Tabelas centrais (empresas, domínios, usuários, permissões, auditoria), empresa escolhida pelo endereço e conferida no servidor a cada pedido, banco de cada empresa com endereço cifrado. Tela do master: empresas, domínios, módulos liberados, admins. Tela do admin: membros e permissões, com os modelos "secretária" e "gestor". MFA obrigatório para o master.
   *Pronto quando:* no link de teste, um membro de uma empresa fictícia não vê nada de outra empresa nem por URL direta nem pela API, e o admin só consegue dar permissões que o master liberou.
-- [ ] **0.9 Produção no Swarm (decisão 27).** Imagem Docker gerada a cada merge na `main`, stack do painel no Portainer (`deploy/stack-painel.yml`) no `worker-01` com duas réplicas, Traefik com HTTPS em `adm.planeelabia.com`.
+  *Feito em 30/09:* migrações 004 (central) e 005 (dados); telas Empresas (master: empresas, módulos, domínios, admins, banco próprio cifrado) e Equipe (admin: membros, modelos Secretária/Gestor, desativar); seletor de empresa no endereço geral; empresa pelo domínio, conferida a cada pedido; primeiro acesso com criação de senha; `/api/traefik` com os domínios para o Traefik. Verificado com 38 testes novos (`testes/painel/central.js`) além dos 34 anteriores: duas empresas com bancos separados, domínio `outra.localhost`, pessoa de uma empresa barrada no domínio da outra, admin limitado aos módulos, módulo retirado some na hora, empresa desativada sai do Traefik. Ficou para a 0.8b: MFA do master.
+- [ ] **0.8b MFA do master.** Segundo fator (TOTP do Supabase Auth) obrigatório para quem tem `master`.
+  *Pronto quando:* o master só entra com o código do aplicativo autenticador.
+- [x] **0.9 Produção no Swarm (decisão 27).** Imagem Docker gerada a cada merge na `main`, stack do painel no Portainer (`deploy/stack-painel.yml`) no `worker-01` com duas réplicas, Traefik com HTTPS em `adm.planeelabia.com`.
   *Pronto quando:* `https://adm.planeelabia.com` abre o login, `/api/saude` responde e uma troca de versão no Portainer sobe e volta sem derrubar o painel.
+  *Feito em 30/09:* stack `painel` no ar, 2 réplicas no `worker-01`, HTTPS emitido pelo Traefik, `/api/saude` com a versão `50eafc6`, login testado pelo Mateus. A atualização automática é o serviço `atualizador` (`deploy/stack-atualizador.yml`).
 
 ## Fase 1 — Leitura (nada escreve)
 
 - [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas, escutando só a conversa aberta e a lista.
 - [x] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
   *Feito em 29/09:* quadro, comercial e contatos lidos pela mesma camada da API (PR #5), com teste de ponta a ponta.
+- [x] **1.2b CRM completo pela tela.** Criar atendimento, contato e oportunidade; editar contato; notas do contato; mover, editar e arquivar oportunidade; tela Configurações do CRM (assuntos, etapas do funil, nomes das etapas); avisos de cartão novo (som, notificação e título da aba); telas respeitam `crm.ver`, `crm.editar`, `crm.arquivar` e `crm.config`. Ferramentas da IA: `ficha_do_contato` e `mover_no_funil` (API e MCP).
+  *Feito em 30/09:* `testes/painel/crm-completo.js` (40 testes: telas, permissões, avisos com aba escondida, ficha, funil e MCP).
 - [ ] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
 - [ ] ~~**1.4 Central Planee (decisão 24).**~~ *Substituída pela 0.8 (decisão 26); custo, falhas e alertas de todos entram na tela do master.*
   *Pronto quando (fase):* o Dr. Amilton abre os resultados sozinho e a Planee acompanha conversas sem abrir o Supabase.
@@ -61,17 +67,17 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 - [ ] 2.1 Botões Assumir, Pendente interno, Retomar, Finalizar chamando as funções da 0.5.
 - [ ] 2.2 Marcar como não lida; vistos registrados ao abrir.
 - [ ] 2.3 Webhook `painel_enviar` no n8n de teste: valida janela de 24h, envia, grava a mensagem `[EQUIPE]` com `enviado_por`.
-- [ ] 2.4 Webhook `painel_retomar`: devolve a conversa à IA quando o cartão sai de "em atendimento" e a última mensagem é do paciente.
+- [ ] 2.4 Webhook `painel_retomar`: devolve a conversa à IA quando o cartão sai de "em atendimento" e a última mensagem é do paciente. *Lado do painel feito (aviso ao finalizar, `docs/api.md`); falta o workflow no n8n de teste.*
 - [ ] 2.5 Agente de teste lê o dono da conversa no Postgres, no lugar do bloqueio de 7 minutos no Redis.
 - [ ] 2.6 `notificar_equipe` abre a solicitação com assunto e devolve erro de verdade quando descarta a chamada.
 - [ ] 2.7 Teto de 60 minutos em modo restrito.
-- [ ] 2.8 Notificações no painel (alerta sonoro e Web Push).
+- [ ] 2.8 Notificações no painel (alerta sonoro e Web Push). *Som, notificação com a aba aberta e contagem no título: feitos na 1.2b. Falta o Web Push (painel fechado).*
   *Pronto quando:* a Amanda atende um dia inteiro só pelo painel, no número de teste.
 - [ ] 2.9 Entrada em produção do Dr. Amilton: migrações e views no banco dele, empresa cadastrada na tela do master com o banco dele, domínio `painel.amilton.planeelabia.com` (nome a confirmar) apontando para o `Manager-01` (decisões 26 e 27).
 
 ## Fase 3 — CRM completo e configurável
 
-- [ ] 3.1 Tela de configuração do CRM gravando em `crm_etapas`, `crm_topicos`, `crm_config`, com os três modelos de partida.
+- [ ] 3.1 Tela de configuração do CRM gravando em `crm_etapas`, `crm_topicos`, `crm_config`, com os três modelos de partida. *Tela feita na 1.2b; faltam os modelos de partida.*
 - [ ] 3.2 Robô do CRM e `notificar_equipe` lendo gatilhos e palavras dessas tabelas.
 - [ ] 3.3 Etiquetas, notas, vincular paciente ao telefone.
 

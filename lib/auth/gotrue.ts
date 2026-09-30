@@ -33,6 +33,22 @@ async function token(grant: 'password' | 'refresh_token', corpo: Record<string, 
 }
 
 export const entrarComSenha = (email: string, senha: string) => token('password', { email, password: senha });
+
+// Primeiro acesso: cria a conta no Supabase Auth. Com confirmação de e-mail ligada no Supabase, volta sem tokens
+// (a pessoa confirma pelo e-mail e depois entra); sem confirmação, já volta com a sessão.
+export async function criarConta(email: string, senha: string): Promise<{ tokens: Tokens | null; erro: string | null }> {
+  const { url, chave } = base();
+  const r = await fetch(`${url}/auth/v1/signup`, {
+    method: 'POST', headers: { apikey: chave, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: senha }), cache: 'no-store',
+  });
+  const j = (await r.json().catch(() => ({}))) as Partial<Tokens> & { msg?: string; error_description?: string; code?: string | number };
+  if (!r.ok) return { tokens: null, erro: j.msg || j.error_description || 'Não foi possível criar a senha.' };
+  if (j.access_token && j.refresh_token) {
+    return { tokens: { access_token: j.access_token, refresh_token: j.refresh_token, expires_in: Number(j.expires_in) || 3600 }, erro: null };
+  }
+  return { tokens: null, erro: null };
+}
 export const renovarSessao = (refresh: string) => token('refresh_token', { refresh_token: refresh });
 
 // Confere o token no Supabase Auth (assinatura e validade) e devolve o e-mail e o id do usuário.
