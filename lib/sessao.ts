@@ -66,7 +66,9 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
       : vinculos;
     if (!pessoa.master && !candidatas.length) return { usuario: null, motivo: 'empresa' };
     const pedida = (await cookies()).get(COOKIE_EMPRESA)?.value;
-    empresa = candidatas.find((e) => e.id === pedida) ?? candidatas[0] ?? null;
+    // O master entra na visão da Planee (sem empresa) até escolher uma no seletor.
+    // Quem não é master cai na primeira empresa dele: sem empresa não há tela para ele.
+    empresa = candidatas.find((e) => e.id === pedida) ?? (pessoa.master ? null : candidatas[0]) ?? null;
     vinculo = empresa ? vinculos.find((v) => v.id === empresa!.id) : undefined;
     lista = candidatas.map((e) => ({ id: e.id, nome: e.nome }));
   }

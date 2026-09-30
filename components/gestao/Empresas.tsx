@@ -34,12 +34,24 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
   const [dominio, setDominio] = useState('');
   const [admin, setAdmin] = useState({ nome: '', email: '' });
   const [banco, setBanco] = useState('');
+  const [nome, setNome] = useState<string | null>(null);
   const mudouModulos = [...modulos].sort().join() !== [...e.modulos].sort().join();
 
   return (
     <article className={g.cartao} aria-label={`Empresa ${e.nome}`} data-empresa={e.id}>
       <div className={g.cartaoTopo}>
-        <h2 className={g.cartaoNome}>{e.nome}</h2>
+        {nome === null ? (
+          <>
+            <h2 className={g.cartaoNome}>{e.nome}</h2>
+            <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado} onClick={() => setNome(e.nome)}>Renomear</button>
+          </>
+        ) : (
+          <form className={g.linha} onSubmit={(ev) => { ev.preventDefault(); rodar(() => atualizarEmpresa(e.id, { nome }), `Empresa renomeada para ${nome.trim()}.`, () => setNome(null)); }}>
+            <input aria-label={`Novo nome de ${e.nome}`} className={g.entrada} value={nome} onChange={(ev) => setNome(ev.target.value)} required maxLength={80} autoFocus />
+            <button type="submit" className={`${g.botao} ${g.botaoPeq}`} disabled={ocupado || !nome.trim()}>Salvar</button>
+            <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} onClick={() => setNome(null)}>Cancelar</button>
+          </form>
+        )}
         <span className={g.id}>{e.id}</span>
         <span className={`${g.selo} ${e.ativo ? g.seloOk : g.seloOff}`}>{e.ativo ? 'Ativa' : 'Desativada'}</span>
         <span className={g.selo}>{e.pessoas} {e.pessoas === 1 ? 'pessoa' : 'pessoas'}</span>
