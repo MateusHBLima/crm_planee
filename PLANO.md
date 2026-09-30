@@ -4,7 +4,7 @@ Ordem de execução. Cada tarefa tem critério de pronto. Marque `[x]` ao conclu
 
 As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda a produção, e só depois de validada no ambiente de teste.
 
-**Como o código vai ao ar (decisão 21):** cada tarefa numa branch. A Vercel publica a branch num link de teste, ligado ao Supabase de teste; build quebrado não vai ao ar. O merge na `main` publica em todos os projetos de cliente; se der problema, volta-se a versão anterior na Vercel, cliente por cliente. Cliente novo não é commit: é projeto novo na Vercel, variáveis, CNAME e semente (skill `cadastrar-cliente-painel`).
+**Como o código vai ao ar (decisão 27):** cada tarefa numa branch. A Vercel grátis publica a branch num link de teste, ligado ao Supabase de teste. O merge na `main` gera a imagem Docker no GitHub; o Portainer atualiza a stack do painel no Swarm da Hetzner, e voltar versão é trocar a versão da imagem no Portainer (`docs/producao.md`). Cliente novo não é commit: é empresa cadastrada na tela do master, registro de DNS e domínio acrescentado na stack (decisão 26).
 
 ---
 
@@ -39,14 +39,20 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
   *Pronto quando:* um teste em SQL mostra o dono mudando de `aguardando` para `humano` e de volta para `ia`.
 - [ ] **0.6 RLS e login.** Supabase Auth; RLS por papel lido de `painel_usuarios` (`secretaria`, `gestor`, `planee`); um usuário de cada papel para teste. Papel `planee` com segundo fator (MFA) obrigatório e registro de cada conversa aberta (decisão 24).
   *Pronto quando:* a secretária não consegue ler a tela interna nem por URL direta.
+  *Parcial em 29/09:* login pelo Supabase Auth, papéis de `painel_usuarios` conferidos no servidor de cada tela, CPF mascarado para `planee`. O resto (MFA, níveis e permissões) passa para a 0.8.
 - [ ] **0.7 Semente do CRM.** Preencher `crm_etapas` e `crm_topicos` com o modelo Clínica (valores no protótipo, função `modelos()`).
+- [ ] **0.8 Banco central e permissões (decisão 26).** Tabelas centrais (empresas, domínios, usuários, permissões, auditoria), empresa escolhida pelo endereço e conferida no servidor a cada pedido, banco de cada empresa com endereço cifrado. Tela do master: empresas, domínios, módulos liberados, admins. Tela do admin: membros e permissões, com os modelos "secretária" e "gestor". MFA obrigatório para o master.
+  *Pronto quando:* no link de teste, um membro de uma empresa fictícia não vê nada de outra empresa nem por URL direta nem pela API, e o admin só consegue dar permissões que o master liberou.
+- [ ] **0.9 Produção no Swarm (decisão 27).** Imagem Docker gerada a cada merge na `main`, stack do painel no Portainer (`deploy/stack-painel.yml`) no `worker-01` com duas réplicas, Traefik com HTTPS em `adm.planeelabia.com`.
+  *Pronto quando:* `https://adm.planeelabia.com` abre o login, `/api/saude` responde e uma troca de versão no Portainer sobe e volta sem derrubar o painel.
 
 ## Fase 1 — Leitura (nada escreve)
 
 - [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas, escutando só a conversa aberta e a lista.
-- [ ] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
+- [x] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
+  *Feito em 29/09:* quadro, comercial e contatos lidos pela mesma camada da API (PR #5), com teste de ponta a ponta.
 - [ ] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
-- [ ] **1.4 Central Planee (decisão 24).** Projeto próprio na Vercel (`PAINEL_MODO=adm`), com Supabase da Planee: lista de clientes, custo por dia, cache e fallback, falhas e alertas de todos, e o link para o painel de cada cliente. Login com MFA.
+- [ ] ~~**1.4 Central Planee (decisão 24).**~~ *Substituída pela 0.8 (decisão 26); custo, falhas e alertas de todos entram na tela do master.*
   *Pronto quando (fase):* o Dr. Amilton abre os resultados sozinho e a Planee acompanha conversas sem abrir o Supabase.
 
 ## Fase 2 — Atendimento (toca o agente, primeiro no ambiente de teste)
@@ -61,7 +67,7 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 - [ ] 2.7 Teto de 60 minutos em modo restrito.
 - [ ] 2.8 Notificações no painel (alerta sonoro e Web Push).
   *Pronto quando:* a Amanda atende um dia inteiro só pelo painel, no número de teste.
-- [ ] 2.9 Entrada em produção do Dr. Amilton: migrações e views no banco dele, projeto `painel-amilton` na Vercel com as variáveis dele, CNAME `painel.amilton.planeelabia.com` (nome a confirmar), Vercel Pro (decisão 20).
+- [ ] 2.9 Entrada em produção do Dr. Amilton: migrações e views no banco dele, empresa cadastrada na tela do master com o banco dele, domínio `painel.amilton.planeelabia.com` (nome a confirmar) apontando para o `Manager-01` (decisões 26 e 27).
 
 ## Fase 3 — CRM completo e configurável
 
@@ -76,4 +82,4 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 
 ## Fase 5 — Segundo cliente
 
-- [ ] 5.1 SSA: cadastro pela skill `cadastrar-cliente-painel` (projeto próprio na Vercel, views do modelo padrão sobre `crm_estado`, `clientes_conhecidos` e `clientes_legado`, endereço `painel.ssa.planeelabia.com`). Nenhum commit.
+- [ ] 5.1 SSA: empresa cadastrada na tela do master, views do modelo padrão sobre `crm_estado`, `clientes_conhecidos` e `clientes_legado` no banco dela, endereço `painel.ssa.planeelabia.com`. Nenhum commit.

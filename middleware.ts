@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { COOKIE_ACESSO, COOKIE_RENOVA, DIAS_SESSAO, opcoesCookie, renovarSessao, segundosRestantes } from '@/lib/auth/gotrue';
 
-// Toda tela do painel exige login. A API (/api/v1, /api/mcp) usa chave própria e fica de fora.
+// Toda tela do painel exige login. A API (/api/v1, /api/mcp) usa chave própria e fica de fora,
+// assim como /api/saude (verificação do Docker).
 // Aqui só se garante que existe sessão e que o token está em dia; quem é a pessoa e o papel dela
 // são conferidos no servidor de cada tela (lib/sessao.ts).
 export async function middleware(req: NextRequest) {
@@ -40,5 +41,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!entrar|api/v1|api/mcp|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)'],
+  matcher: ['/((?!entrar|api/v1|api/mcp|api/saude|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)'],
 };

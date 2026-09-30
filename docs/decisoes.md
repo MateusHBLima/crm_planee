@@ -41,16 +41,34 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 ## 25/09/2026
 
 19. **A Planee entra por um endereço só: `adm.planeelabia.com`.** Mesmo app, modo Planee: lista de clientes, painel interno com todos os clientes e acesso à inbox, ao CRM e às configurações de qualquer um. Um Supabase pequeno da Planee guarda a lista de clientes e o login da equipe Planee; as chaves de cada cliente ficam só no servidor. O papel `planee` sai dos painéis dos clientes, que ficam com `secretaria` e `gestor`. No `adm`, segundo fator (MFA) obrigatório; cada conversa aberta fica registrada e o CPF aparece mascarado por padrão, com registro quando alguém vê inteiro (LGPD). *Substituída pela 24 em 26/09.*
-20. **Hospedagem: Vercel por enquanto, no endereço grátis `.vercel.app`.** Sem domínio próprio e sem cliente real até a entrada em produção. Antes disso, rever a hospedagem: Vercel Pro (US$ 20/mês, cobre todos os clientes), Netlify ou Cloudflare (exige passar o DNS do `planeelabia.com` para o Cloudflare). Os endereços `adm` e `painel.<cliente>` viram registros CNAME na GoDaddy só nessa hora.
+20. **Hospedagem: Vercel por enquanto, no endereço grátis `.vercel.app`.** Sem domínio próprio e sem cliente real até a entrada em produção. Antes disso, rever a hospedagem: Vercel Pro (US$ 20/mês, cobre todos os clientes), Netlify ou Cloudflare (exige passar o DNS do `planeelabia.com` para o Cloudflare). Os endereços `adm` e `painel.<cliente>` viram registros CNAME na GoDaddy só nessa hora. *Substituída pela 27 em 30/09.*
 
 ## 26/09/2026 — revisão da arquitetura
 
-21. **Um deploy por cliente.** Cada cliente tem o seu projeto na Vercel, todos saindo do mesmo repositório e da mesma `main`, cada um com as próprias variáveis (Supabase dele, `PAINEL_MODO`, nome) e o próprio endereço (`painel.<cliente>.planeelabia.com`). O app não escolhe banco pelo endereço: um erro de roteamento não pode mostrar pacientes de outra clínica. Volta de versão é por cliente, na Vercel. Cliente novo é projeto novo na Vercel, variáveis, CNAME e semente, sem commit. **Nada específico de cliente no código:** diferença entre clientes é configuração no banco dele. Com o plano Pro, os vários projetos não mudam o custo.
+21. **Um deploy por cliente.** Cada cliente tem o seu projeto na Vercel, todos saindo do mesmo repositório e da mesma `main`, cada um com as próprias variáveis (Supabase dele, `PAINEL_MODO`, nome) e o próprio endereço (`painel.<cliente>.planeelabia.com`). O app não escolhe banco pelo endereço: um erro de roteamento não pode mostrar pacientes de outra clínica. Volta de versão é por cliente, na Vercel. Cliente novo é projeto novo na Vercel, variáveis, CNAME e semente, sem commit. **Nada específico de cliente no código:** diferença entre clientes é configuração no banco dele. Com o plano Pro, os vários projetos não mudam o custo. *Substituída pela 26 em 30/09.*
 22. **Mesmo formato de tabelas em todo cliente.** O painel lê e grava um conjunto padrão de tabelas, definido em `supabase/modelo.md`. Onde o banco do cliente já tem uma tabela equivalente (ex.: `crm_estado` na SSA, `conversa_estado` no Dr. Amilton), a adaptação é uma view no banco dele com o nome padrão. O código enxerga sempre os mesmos nomes.
 23. **Supabase só para teste.** O painel é desenvolvido num projeto Supabase separado, com dados fictícios. Migrações rodam ali primeiro, e o teste de carga também. O schema `teste` do banco de produção do Dr. Amilton continua sendo o ambiente de teste da Sara, não do painel. Na fase 2, os workflows de teste da Sara passam a gravar no Supabase de teste.
-24. **Central Planee em `adm.planeelabia.com`.** Projeto próprio na Vercel (`PAINEL_MODO=adm`) com um Supabase da Planee: lista de clientes, custo, falhas e alertas de todos, e o link para o painel de cada cliente. A equipe Planee entra no painel de cada cliente com o papel `planee` (usuário criado no cadastro), segundo fator (MFA) obrigatório e cada conversa aberta registrada; CPF mascarado por padrão, com registro quando alguém vê inteiro (LGPD).
+24. **Central Planee em `adm.planeelabia.com`.** Projeto próprio na Vercel (`PAINEL_MODO=adm`) com um Supabase da Planee: lista de clientes, custo, falhas e alertas de todos, e o link para o painel de cada cliente. A equipe Planee entra no painel de cada cliente com o papel `planee` (usuário criado no cadastro), segundo fator (MFA) obrigatório e cada conversa aberta registrada; CPF mascarado por padrão, com registro quando alguém vê inteiro (LGPD). *Substituída pela 26 em 30/09.*
 
 25. **API do CRM primeiro.** Tudo que dá para criar e editar no CRM (etapas, assuntos, configuração, contatos, oportunidades, atendimentos, notas) passa por uma API (`/api/v1`) e por um conector MCP (`/api/mcp`), para os chats do Claude e o n8n mexerem no CRM de qualquer projeto sem commit. As telas usam as mesmas operações. Chave por integração, com escopos (`leitura`, `crm`, `config`); só o hash fica no banco; toda escrita em `painel_auditoria`. Nada é apagado de vez (arquivar), WhatsApp não sai pela API e estrutura do banco continua sendo migração. As tabelas da migração `001_crm_api.sql` entram no modelo padrão da tarefa 0.3. Detalhe em `docs/api.md`.
+
+## 30/09/2026 — um painel para todos e produção na Hetzner
+
+26. **Um painel só para todos os clientes, com quatro níveis de acesso.** Substitui a 21 e a 24.
+    - **Master (Planee):** vê e faz tudo em todas as empresas; cadastra empresas e admins e escolhe o que cada empresa pode usar. Segundo fator (MFA) obrigatório e cada conversa aberta registrada.
+    - **Empresa:** cada cliente, com os próprios domínios, módulos e banco.
+    - **Admin da empresa:** vê e faz só o que o master liberou para a empresa; cadastra os membros e distribui as permissões.
+    - **Membro:** vê e faz só o que o admin deu, sempre dentro do que a empresa tem.
+    - **Permissões** são uma lista de chaves (`inbox.ver`, `crm.editar`, `crm.config`, `resultados.ver`, `agente.config`, `usuarios.gerir`...). "Secretária" e "gestor" viram modelos prontos que o admin aplica com um clique.
+    - **Banco central da Planee:** empresas, domínios, usuários, permissões e auditoria. O login é um só, nesse banco.
+    - **Dados de cada empresa** (conversas, CRM, pacientes) ficam no banco da própria empresa, no modelo padrão (decisão 22). O endereço desse banco fica cifrado no banco central; a chave de cifra existe só no servidor.
+    - **Domínio próprio por empresa:** o painel descobre a empresa pelo endereço acessado e, a cada pedido, confere no servidor que o usuário pertence àquela empresa. Domínio errado nunca mostra dados de outra clínica.
+    - **Empresa nova não é commit:** cadastro na tela do master, registro de DNS e o domínio acrescentado na stack do Portainer.
+27. **Produção no Hetzner da Planee; teste na Vercel grátis.** Substitui a 20.
+    - O painel roda no Docker Swarm do projeto PLANEE, no `worker-01` (rótulo `planee.papel=painel`), com duas réplicas. O Traefik do `Manager-01` faz o HTTPS; o firewall `planee-cluster` protege os dois servidores.
+    - Cada merge na `main` gera a imagem Docker no GitHub (`ghcr.io/mateushblima/crm_planee`); o Portainer atualiza a stack com ela. Voltar versão é trocar a versão da imagem no Portainer.
+    - Endereço da Planee: `adm.planeelabia.com`.
+    - A Vercel fica só como link de teste das branches, ligado ao Supabase de teste, no plano grátis. Passo a passo em `docs/producao.md`.
 
 ## Em aberto
 
