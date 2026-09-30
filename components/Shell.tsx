@@ -7,13 +7,15 @@ import { sair } from '@/app/entrar/acoes';
 import { AlternarTema } from './AlternarTema';
 import { Icone } from './Icone';
 import { TrocarEmpresa } from './TrocarEmpresa';
+import { SairDaEmpresa } from './SairDaEmpresa';
 import s from './shell.module.css';
 
 export function Shell({ atual, usuario, largo, children }: {
   atual: string; usuario: Usuario; largo?: boolean; children: React.ReactNode;
 }) {
   const telas = telasDe(usuario);
-  const escolhe = !usuario.empresaFixa && usuario.empresas.length > 1;
+  const escolhe = !usuario.empresaFixa && (usuario.master || usuario.empresas.length > 1);
+  const dentro = usuario.master && !usuario.empresaFixa && usuario.empresa;
   const banco = bancoConfigurado();
   return (
     <div className={s.app}>
@@ -22,10 +24,10 @@ export function Shell({ atual, usuario, largo, children }: {
           <span className={s.logo}>P</span>
           <div>
             <div className={s.marcaNome}>Painel Planee</div>
-            <div className={s.marcaSub}>{usuario.empresa ? usuario.empresa.nome : 'Nenhuma empresa'}</div>
+            <div className={s.marcaSub}>{usuario.empresa ? usuario.empresa.nome : usuario.master ? 'Planee — visão geral' : 'Nenhuma empresa'}</div>
           </div>
         </div>
-        {escolhe && <TrocarEmpresa atual={usuario.empresa?.id ?? null} empresas={usuario.empresas} />}
+        {escolhe && <TrocarEmpresa atual={usuario.empresa?.id ?? null} empresas={usuario.empresas} master={usuario.master} />}
         <nav className={s.nav} aria-label="Telas">
           {telas.map((t) => (
             <Link key={t.id} href={`/${t.id}`} className={s.itemNav} aria-current={t.id === atual ? 'page' : undefined}>
@@ -54,7 +56,10 @@ export function Shell({ atual, usuario, largo, children }: {
           </div>
         </div>
       </aside>
-      <main className={largo ? s.conteudoLargo : s.conteudo}>{children}</main>
+      <main className={largo ? s.conteudoLargo : s.conteudo}>
+        {dentro && <SairDaEmpresa nome={usuario.empresa!.nome} />}
+        {children}
+      </main>
     </div>
   );
 }

@@ -51,7 +51,7 @@ Nenhum desses passos é commit nem mexe na stack. Empresa desativada sai do Trae
 
 ## Empresas, pessoas e permissões (decisão 26)
 
-- **Master** (Planee): `painel_usuarios.master = true`. Tela **Empresas**: criar empresa, módulos liberados, domínios, admins, banco próprio.
+- **Master** (Planee): `painel_usuarios.master = true`. No `adm` ele entra na **visão geral da Planee** (telas Empresas e Interno), fora de qualquer empresa. Para ver o CRM, a inbox e o resto de um cliente, escolhe a empresa no seletor **Ver empresa**; uma faixa no topo mostra em qual empresa ele está, com o botão **Sair da empresa**. Tela **Empresas**: criar empresa, módulos liberados, domínios, admins, banco próprio.
 - **Admin**: tela **Equipe** da empresa. Adiciona membros com os modelos Secretária/Gestor ou permissão a permissão, sempre dentro dos módulos da empresa.
 - **Primeiro acesso**: o e-mail cadastrado cria a senha em `/entrar/primeiro-acesso`. Deixar ligado "Confirm email" no Supabase Auth, para ninguém criar a senha de um e-mail que não é dele.
 

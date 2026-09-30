@@ -125,6 +125,18 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   sql("update empresas set ativo=true where id='clinica-outra'");
   await ctx.close();
 
+  // Master renomeia uma empresa pela tela Empresas
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
+  const cOutra = p.locator('article[data-empresa="clinica-outra"]');
+  await cOutra.getByRole('button', { name: 'Renomear' }).click();
+  await cOutra.getByLabel('Novo nome de Clínica Outra').fill('Clínica Outra (renomeada)');
+  await cOutra.getByRole('button', { name: 'Salvar', exact: true }).click(); await p.waitForTimeout(1200);
+  ok('master renomeia a empresa', sql("select nome from empresas where id='clinica-outra'") === 'Clínica Outra (renomeada)'
+    && (await p.locator('article[data-empresa="clinica-outra"] h2').textContent()) === 'Clínica Outra (renomeada)'
+    && sql("select count(*) from central_auditoria where empresa_id='clinica-outra' and detalhe::text like '%renomeada%'") === '1');
+  await ctx.close();
+
   ok('sem erro de página', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);

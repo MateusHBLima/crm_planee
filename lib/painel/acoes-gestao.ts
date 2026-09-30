@@ -21,11 +21,18 @@ async function comUsuario<T>(fn: (u: Usuario) => Promise<T>): Promise<Resposta<T
   }
 }
 
+// id vazio = sair da empresa (só o master tem a visão da Planee, sem empresa).
 export async function trocarEmpresa(id: string) {
   return comUsuario(async (u) => {
     if (u.empresaFixa) throw new ErroApi(400, 'Neste endereço a empresa é fixa.');
+    const jar = await cookies();
+    if (!id) {
+      if (!u.master) throw new ErroApi(400, 'Escolha uma empresa.');
+      jar.delete(COOKIE_EMPRESA);
+      return true;
+    }
     if (!u.empresas.some((e) => e.id === id)) throw new ErroApi(403, 'Você não tem acesso a essa empresa.');
-    (await cookies()).set(COOKIE_EMPRESA, id, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 90 });
+    jar.set(COOKIE_EMPRESA, id, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 90 });
     return true;
   });
 }
