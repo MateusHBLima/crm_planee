@@ -16,8 +16,8 @@ export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFin
     && casaBusca(busca, [k.nome, k.telefone, k.documento, k.resumo, k.responsavel]));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, onAbrir, onAssumir, onMover }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; ocupado: boolean;
+export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; ocupado: boolean; podeEditar: boolean; podeConfig: boolean;
   onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort((a, b) =>
@@ -27,7 +27,12 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, onAbrir,
   if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros' });
 
   if (!quadro.topicos.length) {
-    return <div className={c.vazioTela}>Nenhum assunto configurado no CRM. Cadastre os assuntos pela API ou pelo conector.</div>;
+    return (
+      <div className={c.vazioTela}>
+        Nenhum assunto configurado no CRM.{' '}
+        {podeConfig ? <a className={c.linkBotao} href="/configuracoes">Cadastrar assuntos em Configurações</a> : 'Peça a quem configura o CRM para cadastrar.'}
+      </div>
+    );
   }
 
   return (
@@ -41,7 +46,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, onAbrir,
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} ocupado={ocupado} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} ocupado={ocupado} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : 'Nada aberto'}</div>}
           </section>
         );
@@ -50,8 +55,8 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, onAbrir,
   );
 }
 
-function CartaoQuadro({ k, quadro, fmt, ocupado, onAbrir, onAssumir, onMover }: {
-  k: Cartao; quadro: TQuadro; fmt: Fmt; ocupado: boolean;
+function CartaoQuadro({ k, quadro, fmt, ocupado, podeEditar, onAbrir, onAssumir, onMover }: {
+  k: Cartao; quadro: TQuadro; fmt: Fmt; ocupado: boolean; podeEditar: boolean;
   onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
   const fim = k.etapa === 'finalizado';
@@ -78,7 +83,7 @@ function CartaoQuadro({ k, quadro, fmt, ocupado, onAbrir, onAssumir, onMover }: 
         {k.notas > 0 && <span className={c.chipNeutro}><Icone nome="nota" tamanho={12} /> {k.notas} {k.notas === 1 ? 'nota' : 'notas'}</span>}
         {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
       </div>
-      <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />
+      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />}
     </article>
   );
 }

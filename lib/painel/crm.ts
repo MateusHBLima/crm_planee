@@ -1,11 +1,13 @@
 import 'server-only';
 import { bancoDaEmpresa, ErroApi } from '@/lib/db';
 import * as api from '@/lib/api/servico';
-import { atorDe, podeArquivar, type Usuario } from '@/lib/sessao';
+import { atorDe, pode, podeArquivar, type Usuario } from '@/lib/sessao';
+import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 
 // Banco de dados da empresa escolhida pela pessoa (decisão 26). Sem empresa, nada de CRM.
 function db(u: Usuario) {
   if (!u.empresa) throw new ErroApi(403, 'Escolha uma empresa para abrir o CRM.');
+  if (!pode(u, 'crm.ver')) throw new ErroApi(403, 'Você não tem acesso ao CRM nesta empresa.');
   return bancoDaEmpresa(u.empresa);
 }
 
@@ -144,6 +146,7 @@ export async function mover(u: Usuario, id: string, etapa: Etapa) {
   if (etapa !== 'aguardando' && !atual.responsavel) dados.responsavel = u.nome;
   await api.atualizar(atorDe(u), 'atendimentos', id, dados);
   if (etapa !== 'aguardando') await db(u).query(`update atendimentos set assumido_em = coalesce(assumido_em, now()) where id = $1`, [id]);
+  if (etapa === 'finalizado') await avisarFinalizado(u, id);
 }
 
 export async function mudarAssunto(u: Usuario, id: string, topico: string) {
@@ -169,7 +172,7 @@ export async function lerComercial(u: Usuario) {
   const [et, ops] = await Promise.all([
     db(u).query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`),
     db(u).query(
-      `select o.id, o.etapa_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
+      `select o.id, o.etapa_id, o.contato_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
          from oportunidades o left join contatos c on c.id = o.contato_id
         where not o.arquivado order by o.atualizado_em desc limit 600`),
   ]);
@@ -195,4 +198,185 @@ export async function lerContatos(u: Usuario) {
 export async function lerAtendimentosDoContato(u: Usuario, contatoId: string) {
   const r = await db(u).query(`${SELECT_CARTAO} where a.contato_id = $1 and not a.arquivado order by a.aberto_em desc limit 100`, [contatoId]);
   return r.rows.map((x) => limparCartao(u, x));
+}
+
+// ---- Criação e edição pelo painel (CRM completo) ----
+
+// Mesmo contato com e sem o 9: compara DDD + últimos 8 dígitos (regra tel_chave).
+async function contatoPorTelefone(u: Usuario, tel: string): Promise<{ id: string; nome: string | null } | null> {
+  const r = await db(u).query(
+    `select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`,
+    chaveTelefone(tel),
+  );
+  return r.rowCount ? r.rows[0] : null;
+}
+
+function textoObrigatorio(v: unknown, campo: string, max: number): string {
+  const s = String(v ?? '').trim();
+  if (!s) throw new ErroApi(400, `Preencha ${campo}.`);
+  if (s.length > max) throw new ErroApi(400, `${campo[0].toUpperCase() + campo.slice(1)} passou de ${max} caracteres.`);
+  return s;
+}
+
+function textoOpcional(v: unknown, max: number): string | null {
+  const s = String(v ?? '').trim();
+  return s ? s.slice(0, max) : null;
+}
+
+// Acha o contato pelo telefone (com ou sem o 9) ou cria um novo. Nome novo só preenche contato sem nome.
+async function garantirContato(u: Usuario, telefone: unknown, nome: unknown): Promise<string> {
+  const tel = normalizarTelefone(telefone);
+  const n = textoOpcional(nome, 120);
+  const achado = await contatoPorTelefone(u, tel);
+  if (achado) {
+    if (n && !achado.nome) await api.atualizar(atorDe(u), 'contatos', achado.id, { nome: n });
+    return achado.id;
+  }
+  const novo = await api.criar(atorDe(u), 'contatos', { telefone: tel, nome: n });
+  return String(novo.id);
+}
+
+export async function novoAtendimento(u: Usuario, dados: { telefone: unknown; nome: unknown; topico_id: unknown; resumo: unknown }) {
+  const resumo = textoObrigatorio(dados.resumo, 'o resumo', 2000);
+  const topico = String(dados.topico_id ?? '');
+  const contato = await garantirContato(u, dados.telefone, dados.nome);
+  const a = await api.criar(atorDe(u), 'atendimentos', { contato_id: contato, topico_id: topico || null, resumo, aberto_por: u.nome });
+  return String(a.id);
+}
+
+export type Ficha = { id: string; nome: string | null; telefone: string | null; documento: string | null; tipo_documento: string | null; empresa: string | null };
+
+export async function salvarContato(u: Usuario, id: string | null, dados: { nome: unknown; telefone: unknown; documento: unknown }) {
+  const nome = textoOpcional(dados.nome, 120);
+  const tel = normalizarTelefone(dados.telefone);
+  const docDig = String(dados.documento ?? '').replace(/\D/g, '');
+  if (docDig && docDig.length !== 11 && docDig.length !== 14) throw new ErroApi(400, 'Documento: CPF com 11 dígitos ou CNPJ com 14.');
+  const campos = { nome, telefone: tel, documento: docDig || null, tipo_documento: docDig ? (docDig.length === 11 ? 'cpf' : 'cnpj') : null };
+  if (u.master && id) delete (campos as Record<string, unknown>).documento, delete (campos as Record<string, unknown>).tipo_documento; // master vê o CPF mascarado: não sobrescreve
+  const outro = await contatoPorTelefone(u, tel);
+  if (outro && outro.id !== id) throw new ErroApi(409, `Esse telefone já é do contato ${outro.nome || 'sem nome'}.`);
+  if (id) { await api.atualizar(atorDe(u), 'contatos', id, campos); return id; }
+  return String((await api.criar(atorDe(u), 'contatos', campos)).id);
+}
+
+export async function notasDoContato(u: Usuario, contatoId: string) {
+  const r = await db(u).query(
+    `select id, texto, autor, criado_em from notas where alvo_tipo = 'contatos' and alvo_id = $1 and not arquivado order by criado_em desc limit 100`,
+    [contatoId],
+  );
+  return r.rows.map((n) => ({ id: n.id as string, texto: u.master ? mascararTexto(String(n.texto)) : String(n.texto), autor: n.autor as string | null, criado_em: iso(n.criado_em) as string }));
+}
+
+export async function anotarContato(u: Usuario, contatoId: string, texto: string) {
+  const t = textoObrigatorio(texto, 'a nota', 4000);
+  await api.criar(atorDe(u), 'notas', { alvo_tipo: 'contatos', alvo_id: contatoId, texto: t, autor: u.nome });
+}
+
+// Funil comercial
+// "1.234,56" e "800,00" (jeito brasileiro) ou "800.5" → número. Vazio → sem valor.
+function lerValor(v: unknown): number | null {
+  const s = String(v ?? '').trim().replace(/^R\$\s*/i, '');
+  if (!s) return null;
+  const n = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
+  if (!Number.isFinite(n) || n < 0) throw new ErroApi(400, 'Valor inválido. Ex.: 800,00');
+  return n;
+}
+export async function novaOportunidade(u: Usuario, dados: { telefone: unknown; nome: unknown; interesse: unknown; valor: unknown; etapa_id: unknown }) {
+  const contato = await garantirContato(u, dados.telefone, dados.nome);
+  const valor = lerValor(dados.valor);
+  const etapa = String(dados.etapa_id ?? '') || (await db(u).query(`select id from crm_etapas where not arquivado and tipo = 'aberta' order by ordem limit 1`)).rows[0]?.id;
+  if (!etapa) throw new ErroApi(400, 'Crie uma etapa do funil antes.');
+  await api.criar(atorDe(u), 'oportunidades', { contato_id: contato, interesse: textoOpcional(dados.interesse, 300), valor, etapa_id: etapa });
+}
+
+export async function editarOportunidade(u: Usuario, id: string, dados: { interesse?: unknown; valor?: unknown; etapa_id?: unknown }) {
+  const campos: Record<string, unknown> = {};
+  if (dados.etapa_id !== undefined) campos.etapa_id = String(dados.etapa_id);
+  if (dados.interesse !== undefined) campos.interesse = textoOpcional(dados.interesse, 300);
+  if (dados.valor !== undefined) {
+    campos.valor = lerValor(dados.valor);
+  }
+  await api.atualizar(atorDe(u), 'oportunidades', id, campos);
+}
+
+export async function arquivarOportunidade(u: Usuario, id: string) {
+  if (!podeArquivar(u)) throw new ErroApi(403, 'Você não tem permissão para arquivar.');
+  await api.arquivar(atorDe(u), 'oportunidades', id);
+}
+
+// ---- Configuração do CRM (quem tem crm.config) ----
+
+export type ConfigCrm = {
+  etapasAtendimento: Record<Etapa, string>;
+  topicos: { id: string; nome: string; icone: string; ordem: number; palavras: string | null }[];
+  funil: { id: string; nome: string; tipo: string; ordem: number; gatilho: string | null }[];
+};
+
+export async function lerConfigCrm(u: Usuario): Promise<ConfigCrm> {
+  const [et, tp, fn] = await Promise.all([
+    nomesEtapas(u),
+    db(u).query(`select id, nome, icone, ordem, palavras from crm_topicos where not arquivado order by ordem, nome`),
+    db(u).query(`select id, nome, tipo, ordem, gatilho from crm_etapas where not arquivado order by ordem, nome`),
+  ]);
+  return { etapasAtendimento: et, topicos: tp.rows, funil: fn.rows };
+}
+
+const idDe = (nome: string) => nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'item';
+
+export async function salvarTopico(u: Usuario, id: string | null, dados: { nome: unknown; icone: unknown; ordem: unknown; palavras: unknown }) {
+  const campos = {
+    nome: textoObrigatorio(dados.nome, 'o nome do assunto', 60),
+    icone: String(dados.icone || 'outros'),
+    ordem: Number(dados.ordem) || 0,
+    palavras: textoOpcional(dados.palavras, 1000),
+  };
+  if (id) return api.atualizar(atorDe(u), 'topicos', id, campos);
+  return api.criar(atorDe(u), 'topicos', { id: idDe(campos.nome), ...campos });
+}
+
+export async function salvarEtapaFunil(u: Usuario, id: string | null, dados: { nome: unknown; tipo: unknown; ordem: unknown; gatilho: unknown }) {
+  const tipo = String(dados.tipo || 'aberta');
+  if (!['aberta', 'ganho', 'perdido'].includes(tipo)) throw new ErroApi(400, 'Tipo inválido.');
+  const campos = {
+    nome: textoObrigatorio(dados.nome, 'o nome da etapa', 60), tipo,
+    ordem: Number(dados.ordem) || 0, gatilho: textoOpcional(dados.gatilho, 120) ?? 'Manual (equipe)',
+  };
+  if (id) return api.atualizar(atorDe(u), 'etapas', id, campos);
+  return api.criar(atorDe(u), 'etapas', { id: idDe(campos.nome), ...campos });
+}
+
+export async function arquivarItemConfig(u: Usuario, recurso: 'topicos' | 'etapas', id: string) {
+  if (recurso === 'topicos') {
+    const abertos = await db(u).query(`select count(*)::int n from atendimentos where topico_id = $1 and not arquivado and etapa <> 'finalizado'`, [id]);
+    if (abertos.rows[0].n) throw new ErroApi(409, `Esse assunto ainda tem ${abertos.rows[0].n} atendimento(s) aberto(s). Mude o assunto deles antes.`);
+  }
+  if (recurso === 'etapas') {
+    const ops = await db(u).query(`select count(*)::int n from oportunidades where etapa_id = $1 and not arquivado`, [id]);
+    if (ops.rows[0].n) throw new ErroApi(409, `Essa etapa ainda tem ${ops.rows[0].n} oportunidade(s). Mova antes de arquivar.`);
+  }
+  await api.arquivar(atorDe(u), recurso, id);
+}
+
+export async function salvarNomesEtapas(u: Usuario, nomes: Record<string, unknown>) {
+  const valor: Partial<Record<Etapa, string>> = {};
+  for (const e of ETAPAS) valor[e] = textoObrigatorio(nomes[e], `o nome de "${NOMES_PADRAO[e]}"`, 40);
+  await api.definirConfig(atorDe(u), 'etapas_atendimento', valor);
+}
+
+// Avisa o n8n quando a equipe finaliza um atendimento, para a IA poder retomar a conversa (fase 2, 2.4).
+// Só se o endereço estiver configurado; nunca atrasa nem derruba a tela.
+export async function avisarFinalizado(u: Usuario, atendimentoId: string) {
+  const url = process.env.N8N_WEBHOOK_PAINEL_RETOMAR;
+  if (!url) return;
+  try {
+    const r = await db(u).query(`select c.telefone from atendimentos a left join contatos c on c.id = a.contato_id where a.id = $1`, [atendimentoId]);
+    const telefone = r.rows[0]?.telefone;
+    if (!telefone) return;
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
+    await fetch(url, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
+      body: JSON.stringify({ evento: 'atendimento_finalizado', atendimento_id: atendimentoId, telefone, empresa: u.empresa?.id ?? null, por: u.nome }),
+    }).catch(() => undefined).finally(() => clearTimeout(t));
+  } catch { /* o aviso é extra: falha aqui não muda nada na tela */ }
 }

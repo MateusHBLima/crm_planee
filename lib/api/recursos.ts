@@ -104,6 +104,10 @@ export function catalogo() {
       'Mensagens de WhatsApp não são enviadas por esta API (passam pelo n8n).',
       'Toda escrita fica registrada em painel_auditoria.',
     ],
+    para_a_ia: [
+      'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). Escopo leitura.',
+      'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
+    ],
     recursos: Object.values(RECURSOS).map((r) => ({
       nome: r.nome,
       descricao: r.descricao,

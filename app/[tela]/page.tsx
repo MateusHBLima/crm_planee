@@ -4,9 +4,10 @@ import { Shell } from '@/components/Shell';
 import { Crm } from '@/components/crm/Crm';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
-import { exigirUsuario, podeArquivar } from '@/lib/sessao';
+import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
 import { hostDeCabecalhos } from '@/lib/empresa';
-import { lerQuadro } from '@/lib/painel/crm';
+import { lerConfigCrm, lerQuadro } from '@/lib/painel/crm';
+import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { listarEmpresas, listarEquipe } from '@/lib/painel/gestao';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
 import p from '../pagina.module.css';
@@ -28,7 +29,8 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     const quadro = await lerQuadro(usuario);
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <Crm key={usuario.empresa?.id} inicial={quadro} podeArquivar={podeArquivar(usuario)} nome={usuario.nome} />
+        <Crm key={usuario.empresa?.id} inicial={quadro} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
+          podeConfig={pode(usuario, 'crm.config')} mascarado={usuario.master} nome={usuario.nome} />
       </Shell>
     );
   }
@@ -40,6 +42,14 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <Shell atual={atual.id} usuario={usuario}>
         <Equipe key={usuario.empresa.id} inicial={pessoas} souMaster={usuario.nivel === 'master'} meuId={usuario.id} endereco={endereco}
           empresa={{ id: usuario.empresa.id, nome: usuario.empresa.nome, modulos: usuario.empresa.modulos }} />
+      </Shell>
+    );
+  }
+
+  if (atual.id === 'configuracoes' && usuario.empresa && pode(usuario, 'crm.config')) {
+    return (
+      <Shell atual={atual.id} usuario={usuario} largo>
+        <ConfigCrm key={usuario.empresa.id} inicial={await lerConfigCrm(usuario)} />
       </Shell>
     );
   }

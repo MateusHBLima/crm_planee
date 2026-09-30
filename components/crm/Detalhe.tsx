@@ -10,8 +10,8 @@ import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
-  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; nome: string; ocupado: boolean;
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
+  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
 }) {
@@ -92,17 +92,17 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, ocupado, onFecha
 
           <section className={c.detBloco}>
             <h3 className={c.rotuloSec}>Andamento</h3>
-            <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />
+            {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />}
             <div className={c.detCampos}>
               <label className={c.campo}>
                 <span>Etapa</span>
-                <select id="det-etapa" value={k.etapa} disabled={ocupado} onChange={(e) => onMover(k.id, e.target.value as Etapa)}>
+                <select id="det-etapa" value={k.etapa} disabled={ocupado || !podeEditar} onChange={(e) => onMover(k.id, e.target.value as Etapa)}>
                   {(Object.keys(quadro.etapas) as Etapa[]).map((e) => <option key={e} value={e}>{quadro.etapas[e]}</option>)}
                 </select>
               </label>
               <label className={c.campo}>
                 <span>Assunto</span>
-                <select id="det-assunto" value={k.topico_id ?? ''} disabled={ocupado} onChange={(e) => onAssunto(k.id, e.target.value)}>
+                <select id="det-assunto" value={k.topico_id ?? ''} disabled={ocupado || !podeEditar} onChange={(e) => onAssunto(k.id, e.target.value)}>
                   {!k.topico_id && <option value="">Sem assunto</option>}
                   {quadro.topicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
                 </select>
@@ -122,12 +122,12 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, ocupado, onFecha
                 ))}
               </ol>
             )}
-            <form className={c.formNota} onSubmit={(e) => { e.preventDefault(); if (nota.trim()) salvarNota(); }}>
+            {podeEditar && <form className={c.formNota} onSubmit={(e) => { e.preventDefault(); if (nota.trim()) salvarNota(); }}>
               <label className={c.visivelLeitor} htmlFor="nova-nota">Nova nota interna</label>
               <textarea id="nova-nota" value={nota} onChange={(e) => setNota(e.target.value)} rows={3} maxLength={4000}
                 placeholder="Nota interna (o paciente não vê)" />
               <button type="submit" className={c.acaoPri} disabled={salvando || !nota.trim()}>{salvando ? 'Salvando…' : 'Salvar nota'}</button>
-            </form>
+            </form>}
           </section>
 
           {podeArquivar && (
