@@ -71,7 +71,7 @@ function CartaoQuadro({ k, quadro, fmt, ocupado, podeEditar, onAbrir, onAssumir,
         <span className={c.resumo}>{k.resumo || 'Sem resumo.'}</span>
       </div>
       <div className={c.cartaoMeta}>
-        <span><Icone nome="relogio" tamanho={14} /><span><span className={c.metaRot}>Aberto</span> {fmt.quando(k.aberto_em)}{k.aberto_por ? ` · ${k.aberto_por}` : ''}{!fim && k.etapa === 'aguardando' ? ` · ${ha(k.aberto_em)}` : ''}</span></span>
+        <span><Icone nome="relogio" tamanho={14} /><span><span className={c.metaRot}>Aberto</span> {fmt.quando(k.aberto_em)}{k.aberto_por ? ` · ${k.aberto_por}` : ''}{!fim && k.etapa === 'aguardando' ? <> · <Relativo de={k.aberto_em} /></> : ''}</span></span>
         <span><Icone nome="pessoa" tamanho={14} /><span><span className={c.metaRot}>Responsável</span> {k.responsavel
           ? `${k.responsavel}${k.assumido_em ? ` · ${fmt.quando(k.assumido_em)} (${duracao(k.aberto_em, k.assumido_em)} após abrir)` : ''}`
           : 'ninguém assumiu'}</span></span>
@@ -92,9 +92,16 @@ export function EtapaPill({ etapa, nome }: { etapa: Etapa; nome: string }) {
   return <span className={c.pill} data-etapa={etapa}><Icone nome={etapa} tamanho={12} />{nome}</span>;
 }
 
+// "há 12 min" depende da hora: o servidor e o navegador podem calcular minutos diferentes. Sem o aviso de
+// hidratação, o React acusava erro (#418) quando a página carregava na virada do minuto.
+export function Relativo({ de }: { de: string | null | undefined }) {
+  return <span suppressHydrationWarning>{ha(de)}</span>;
+}
+
 export function Acoes({ k, quadro, ocupado, onAssumir, onMover }: {
   k: Cartao; quadro: TQuadro; ocupado: boolean; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
+  if (k.sombra) return null; // cartão sombra: só conferir e arquivar (o servidor também recusa)
   const b = (rotulo: string, fn: () => void, forte: boolean) => (
     <button key={rotulo} type="button" className={forte ? c.acaoPri : c.acaoSec} disabled={ocupado} onClick={fn}>{rotulo}</button>
   );

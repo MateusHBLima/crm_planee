@@ -27,8 +27,10 @@
 .busca input { width: 280px; max-width: 100%; height: 40px; padding: 0 12px 0 36px; font-size: 13.5px; background: var(--field); border: 1px solid var(--line-strong); border-radius: 10px; }
 
 /* Avisos */
-.aviso { padding: 0 28px; min-height: 0; }
-.avisoErro, .avisoOk { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 8px 8px 12px; border-radius: 10px; font-size: 13px; }
+/* Aviso flutuante acima de tudo (inclusive do detalhe aberto, z-index 30): antes ficava escondido atrás dele (U2). */
+.aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+.aviso > * { pointer-events: auto; box-shadow: var(--shadow-2); }
+.avisoErro, .avisoOk { display: inline-flex; align-items: center; gap: 10px; padding: 10px 8px 10px 14px; border-radius: 10px; font-size: 13.5px; }
 .avisoErro { background: var(--rs-bg); color: var(--rs-ink); }
 .avisoOk { background: var(--ia-bg); color: var(--ia-ink); }
 .avisoErro button, .avisoOk button { border: 0; background: none; color: inherit; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; }

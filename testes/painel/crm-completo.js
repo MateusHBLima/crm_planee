@@ -13,6 +13,7 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 async function entrar(p, email) {
   await p.goto(B + '/crm'); await p.fill('#email', email); await p.fill('#senha', 'senha123');
   await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
+  if (p.url().includes('/entrar/verificacao')) { await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800); }
 }
 const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t || '');
 

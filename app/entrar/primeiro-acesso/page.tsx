@@ -20,7 +20,7 @@ export default async function PrimeiroAcesso() {
           </div>
         </div>
         <h1 id="titulo" className={e.titulo}>Primeiro acesso</h1>
-        <p className={e.sub}>Crie a sua senha com o e-mail que o admin da sua empresa cadastrou.</p>
+        <p className={e.sub}>Crie a sua senha com o e-mail cadastrado e o código de primeiro acesso que o admin da sua empresa enviou para você.</p>
         <FormPrimeiro />
         <Link href="/entrar" className={e.link}>Já tenho senha</Link>
       </section>

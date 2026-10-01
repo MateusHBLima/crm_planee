@@ -9,15 +9,20 @@ import c from './crm.module.css';
 // Janela lateral (mesmo visual do detalhe do atendimento) para os formulários de criação e edição.
 export function Janela({ titulo, onFechar, children }: { titulo: string; onFechar: () => void; children: ReactNode }) {
   const painel = useRef<HTMLElement>(null);
+  // Quem chama passa uma função nova a cada desenho (o quadro se atualiza a cada 15 s). Guardada num ref, o efeito
+  // roda só ao abrir: antes, ele devolvia o foco à janela no meio da digitação (auditoria 01/10, U1).
+  const fechar = useRef(onFechar);
+  fechar.current = onFechar;
   useEffect(() => {
+    const antes = document.activeElement as HTMLElement | null;
     painel.current?.focus();
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') fechar.current(); };
     document.addEventListener('keydown', esc);
-    return () => document.removeEventListener('keydown', esc);
-  }, [onFechar]);
+    return () => { document.removeEventListener('keydown', esc); antes?.focus?.(); };
+  }, []);
   return (
     <div className={c.fundoDetalhe} onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}>
-      <aside ref={painel} tabIndex={-1} className={c.detalhe} aria-label={titulo} role="dialog">
+      <aside ref={painel} tabIndex={-1} className={c.detalhe} aria-label={titulo} role="dialog" aria-modal="true">
         <header className={c.detTopo}>
           <div className={c.detTitulo}><h2>{titulo}</h2></div>
           <button type="button" className={c.fechar} onClick={onFechar} aria-label="Fechar"><Icone nome="fechar" tamanho={18} /></button>

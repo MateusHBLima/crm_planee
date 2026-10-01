@@ -39,8 +39,10 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
 
   const tratar = useCallback(<T,>(r: Resposta<T>, sucesso?: string): T | null => {
     if (!r.ok) {
-      if (r.sair) { window.location.href = '/entrar?motivo=sessao'; return null; }
+      if (r.sair) { window.location.href = `/entrar?motivo=sessao&volta=${encodeURIComponent(window.location.pathname)}`; return null; }
       setAviso({ tipo: 'erro', texto: r.erro });
+      // O erro costuma ser "outra pessoa já mexeu": traz o quadro atual em vez de esperar a próxima atualização (U4).
+      carregarQuadro().then((q) => { if (q.ok) setQuadro(q.dados); }).catch(() => undefined);
       return null;
     }
     if (sucesso) setAviso({ tipo: 'ok', texto: sucesso });
@@ -75,11 +77,14 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
 
   const acoes = useMemo(() => ({
     assumir: (id: string) => iniciar(async () => { const d = tratar(await assumirAtendimento(id), `Você assumiu o atendimento.`); if (d) setQuadro(d); }),
-    mover: (id: string, etapa: Etapa) => iniciar(async () => { const d = tratar(await moverAtendimento(id, etapa), `Movido para ${quadro.etapas[etapa]}.`); if (d) setQuadro(d); }),
+    mover: (id: string, etapa: Etapa) => iniciar(async () => {
+      const de = quadro.cartoes.find((k) => k.id === id)?.etapa;
+      const d = tratar(await moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`); if (d) setQuadro(d);
+    }),
     assunto: (id: string, topico: string) => iniciar(async () => { const d = tratar(await mudarAssunto(id, topico), 'Assunto alterado.'); if (d) setQuadro(d); }),
     arquivar: (id: string) => iniciar(async () => { const d = tratar(await arquivarAtendimento(id), 'Atendimento arquivado.'); if (d) { setQuadro(d); setAberto(null); } }),
     recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro()); if (d) { setQuadro(d); setFalhouAtualizar(false); } }),
-  }), [quadro.etapas, tratar]);
+  }), [quadro.etapas, quadro.cartoes, tratar]);
 
   const temSombra = quadro.cartoes.some((k) => k.sombra);
   const contagem = (e: Etapa) => quadro.cartoes.filter((k) => k.etapa === e && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;

@@ -38,6 +38,9 @@ function mascararTexto(t: string) { return t.replace(CPF_TEXTO, (_m, _a, _b, _c,
 function mascararDoc(d: string | null) { return d ? '***.***.***-' + d.replace(/\D/g, '').slice(-2) : null; }
 
 const SOMBRA = /^\s*\[SOMBRA\]\s*/;
+// Cartões da Sara nova em modo sombra (pacientes reais da produção, a IA não respondeu): só a Planee (master) vê,
+// e ninguém move nem finaliza (finalizar avisaria o n8n com o telefone real). Auditoria 01/10, S4.
+const SQL_SEM_SOMBRA = `a.resumo !~ '^\\s*\\[SOMBRA\\]'`;
 // O pg devolve Date; a tela recebe texto ISO.
 const iso = (v: unknown): string | null => (v ? new Date(v as string).toISOString() : null);
 
@@ -76,12 +79,12 @@ export async function lerQuadro(u: Usuario): Promise<Quadro> {
     nomesEtapas(u),
     db(u).query(
       `${SELECT_CARTAO}
-        where not a.arquivado
+        where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
           and (a.etapa <> 'finalizado' or a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1))
-        order by a.aberto_em desc limit 600`, [f]),
+        order by a.aberto_em desc limit 600`, [f, u.master]),
     db(u).query(
-      `select count(*)::int n from atendimentos where not arquivado and etapa = 'finalizado'
-          and finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1)`, [f]),
+      `select count(*)::int n from atendimentos a where not a.arquivado and a.etapa = 'finalizado' and ($2::boolean or ${SQL_SEM_SOMBRA})
+          and a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1)`, [f, u.master]),
   ]);
   return {
     topicos: tops.rows as Topico[], etapas, fuso: f, lidoEm: new Date().toISOString(),
@@ -96,6 +99,7 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
   const [a, etapas] = await Promise.all([db(u).query(`${SELECT_CARTAO} where a.id = $1`, [id]), nomesEtapas(u)]);
   if (!a.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
   const cartao = limparCartao(u, a.rows[0]);
+  if (cartao.sombra && !u.master) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
   const [notas, aud] = await Promise.all([
     db(u).query(`select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1 and not arquivado order by criado_em`, [id]),
     db(u).query(
@@ -126,20 +130,32 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
 
 // ---- Ações do quadro ----
 
-async function etapaAtual(u: Usuario, id: string): Promise<{ etapa: Etapa; responsavel: string | null }> {
-  const r = await db(u).query(`select etapa, responsavel from atendimentos where id = $1 and not arquivado`, [id]);
+async function etapaAtual(u: Usuario, id: string): Promise<{ etapa: Etapa; responsavel: string | null; sombra: boolean }> {
+  const r = await db(u).query(`select etapa, responsavel, resumo from atendimentos where id = $1 and not arquivado`, [id]);
   if (!r.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
-  return r.rows[0];
+  const sombra = SOMBRA.test(String(r.rows[0].resumo ?? ''));
+  if (sombra && !u.master) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
+  return { etapa: r.rows[0].etapa, responsavel: r.rows[0].responsavel, sombra };
 }
 
+const ERRO_SOMBRA = 'Cartão sombra serve só para conferir o que a Sara nova teria feito: dá para anotar e arquivar, não para mover.';
+
 export async function assumir(u: Usuario, id: string) {
+  if ((await etapaAtual(u, id)).sombra) throw new ErroApi(409, ERRO_SOMBRA);
   // Atômico: trava a linha e confere "aguardando" na mesma transação (lib/api/servico.ts).
   await api.assumirAtendimento(atorDe(u), id, u.nome);
 }
 
-export async function mover(u: Usuario, id: string, etapa: Etapa) {
+// "de" é a etapa que a tela mostrava. Se outra pessoa mudou o cartão nesse meio-tempo, não sobrescreve:
+// avisa e a tela recarrega (auditoria 01/10, U3).
+export async function mover(u: Usuario, id: string, etapa: Etapa, de?: Etapa) {
   if (!ETAPAS.includes(etapa)) throw new ErroApi(400, 'Etapa inválida.');
   const atual = await etapaAtual(u, id);
+  if (atual.sombra) throw new ErroApi(409, ERRO_SOMBRA);
+  if (de && ETAPAS.includes(de) && atual.etapa !== de) {
+    const nomes = await nomesEtapas(u);
+    throw new ErroApi(409, `Outra pessoa já mudou este atendimento para "${nomes[atual.etapa]}". O quadro foi atualizado.`);
+  }
   if (atual.etapa === etapa) return;
   const dados: Record<string, string> = { etapa };
   // Quem tira do "aguardando" passa a ser o responsável, se ainda não houver um.
@@ -197,7 +213,7 @@ export async function lerContatos(u: Usuario) {
 
 export async function lerAtendimentosDoContato(u: Usuario, contatoId: string) {
   const r = await db(u).query(`${SELECT_CARTAO} where a.contato_id = $1 and not a.arquivado order by a.aberto_em desc limit 100`, [contatoId]);
-  return r.rows.map((x) => limparCartao(u, x));
+  return r.rows.map((x) => limparCartao(u, x)).filter((c) => u.master || !c.sombra);
 }
 
 // ---- Criação e edição pelo painel (CRM completo) ----

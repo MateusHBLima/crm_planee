@@ -17,7 +17,13 @@ function poolPara(url: string): Pool {
   let p = pools.get(k);
   if (!p) {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
-    p = new Pool({ connectionString: url, max: 5, ssl: local ? undefined : { rejectUnauthorized: false } });
+    // Limites de espera: com o banco lento, a tela mostra erro em vez de travar (auditoria 01/10, I3).
+    p = new Pool({
+      connectionString: url, max: 5, ssl: local ? undefined : { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, statement_timeout: 15000, query_timeout: 20000,
+    });
+    // Conexão parada que cai (reinício do pooler) emite 'error'; sem este ouvinte, o Node derruba o processo (I2).
+    p.on('error', (e) => registrarErro('conexão do banco', e));
     pools.set(k, p);
   }
   return p;
@@ -40,8 +46,16 @@ export function central(): Pool {
 
 export type RefEmpresa = { id: string; banco_url_cifrado: string | null };
 
+// Empresas que podem ficar no banco padrão do deploy (sem banco próprio). Qualquer outra sem banco é recusada:
+// sem isso, a empresa nova enxergaria os dados de quem já está no banco padrão (auditoria 01/10, S1).
+const empresasNoPadrao = () => (process.env.EMPRESA_BANCO_PADRAO ?? 'teste').split(',').map((s) => s.trim()).filter(Boolean);
+
 export function bancoDaEmpresa(e: RefEmpresa | null | undefined): Pool {
-  if (!e || !e.banco_url_cifrado) return banco();
+  if (!e) return banco();
+  if (!e.banco_url_cifrado) {
+    if (empresasNoPadrao().includes(e.id)) return banco();
+    throw new ErroApi(503, 'O banco desta empresa ainda não foi configurado. A Planee precisa salvar o banco dela na tela Empresas.');
+  }
   let url: string;
   try { url = decifrar(e.banco_url_cifrado); } catch {
     throw new ErroApi(503, `O banco da empresa "${e.id}" não pôde ser aberto (confira PAINEL_CHAVE_CIFRA).`);
@@ -68,4 +82,14 @@ export class ErroApi extends Error {
   constructor(public status: number, message: string, public detalhe?: unknown) {
     super(message);
   }
+}
+
+// Log de erro sem dado pessoal: erros do Postgres trazem a linha inteira em "detail" (telefone, CPF). Fica só o
+// código, a restrição e o começo da mensagem (auditoria 01/10, S12).
+export function registrarErro(onde: string, e: unknown) {
+  const x = (e ?? {}) as { code?: string; constraint?: string; table?: string; column?: string; message?: string; name?: string };
+  console.error(`[painel] ${onde}:`, JSON.stringify({
+    nome: x.name, codigo: x.code, restricao: x.constraint, tabela: x.table, coluna: x.column,
+    mensagem: typeof x.message === 'string' ? x.message.replace(/\d{6,}/g, '[número]').slice(0, 200) : String(e).slice(0, 200),
+  }));
 }

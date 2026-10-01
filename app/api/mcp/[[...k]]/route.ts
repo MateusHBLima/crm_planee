@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { ErroApi } from '@/lib/db';
+import { ErroApi, registrarErro } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo, RECURSOS } from '@/lib/api/recursos';
@@ -71,7 +71,7 @@ async function responder(msg: Rpc, chaveTexto: string | null, host: string | nul
         return ok(msg.id, { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] });
       } catch (e) {
         const m = e instanceof ErroApi ? e.message + (e.detalhe ? ` ${JSON.stringify(e.detalhe)}` : '') : 'Erro interno.';
-        if (!(e instanceof ErroApi)) console.error(e);
+        if (!(e instanceof ErroApi)) registrarErro('mcp', e);
         return ok(msg.id, { content: [{ type: 'text', text: m }], isError: true });
       }
     }
@@ -80,12 +80,22 @@ async function responder(msg: Rpc, chaveTexto: string | null, host: string | nul
   }
 }
 
+const MAX_CORPO = 256_000;
+const MAX_LOTE = 20;
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ k?: string[] }> }) {
   const k = (await ctx.params).k?.[0] ?? null;
   const chaveTexto = chaveDoCabecalho(req.headers.get('authorization')) ?? k;
+  // Pedido grande demais ou lote com muitas chamadas: recusa antes de tocar no banco (auditoria 01/10, S13).
+  if (Number(req.headers.get('content-length') || 0) > MAX_CORPO) return NextResponse.json(falha(null, -32600, 'Pedido grande demais.'), { status: 413 });
   let entrada: Rpc | Rpc[];
-  try { entrada = await req.json(); } catch { return NextResponse.json(falha(null, -32700, 'JSON inválido.'), { status: 400 }); }
+  try {
+    const texto = await req.text();
+    if (texto.length > MAX_CORPO) return NextResponse.json(falha(null, -32600, 'Pedido grande demais.'), { status: 413 });
+    entrada = JSON.parse(texto);
+  } catch { return NextResponse.json(falha(null, -32700, 'JSON inválido.'), { status: 400 }); }
   const lista = Array.isArray(entrada) ? entrada : [entrada];
+  if (lista.length > MAX_LOTE) return NextResponse.json(falha(null, -32600, `No máximo ${MAX_LOTE} chamadas por lote.`), { status: 400 });
   const respostas = [];
   for (const m of lista) {
     if (m.id === undefined || m.id === null) continue; // notificação: sem resposta

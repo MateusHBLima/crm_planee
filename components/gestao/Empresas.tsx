@@ -34,6 +34,7 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
   const [dominio, setDominio] = useState('');
   const [admin, setAdmin] = useState({ nome: '', email: '' });
   const [banco, setBanco] = useState('');
+  const [convite, setConvite] = useState<{ nome: string; codigo: string } | null>(null);
   const [nome, setNome] = useState<string | null>(null);
   const mudouModulos = [...modulos].sort().join() !== [...e.modulos].sort().join();
 
@@ -98,16 +99,30 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
           {e.admins.length === 0 && <span className={g.dica}>Nenhum admin ainda.</span>}
           {e.admins.map((a) => <span key={a} className={`${g.chip} ${g.chipSo}`}>{a}</span>)}
         </div>
-        <form className={g.linha} onSubmit={(ev) => { ev.preventDefault(); rodar(() => adicionarAdmin(e.id, admin.nome, admin.email), `${admin.nome.trim()} é admin de ${e.nome}.`, () => setAdmin({ nome: '', email: '' })); }}>
+        <form className={g.linha} onSubmit={(ev) => { ev.preventDefault(); const nomeAdmin = admin.nome.trim(); rodar(async () => {
+          const r = await adicionarAdmin(e.id, admin.nome, admin.email);
+          if (!r.ok) return r;
+          setConvite(r.dados.codigo ? { nome: nomeAdmin, codigo: r.dados.codigo } : null);
+          return { ok: true as const, dados: r.dados.empresas };
+        }, `${nomeAdmin} é admin de ${e.nome}.`, () => setAdmin({ nome: '', email: '' })); }}>
           <input aria-label="Nome do admin" className={g.entrada} placeholder="Nome" value={admin.nome} onChange={(ev) => setAdmin({ ...admin, nome: ev.target.value })} required maxLength={80} />
           <input aria-label="E-mail do admin" type="email" className={g.entrada} placeholder="e-mail" value={admin.email} onChange={(ev) => setAdmin({ ...admin, email: ev.target.value })} required maxLength={200} />
           <button type="submit" className={g.botaoSec} disabled={ocupado}>Adicionar admin</button>
         </form>
+        {convite && (
+          <div className={`${g.aviso} ${g.avisoOk}`} role="status">
+            <span>
+              Código de primeiro acesso de {convite.nome}: <strong className={g.codigo} data-convite>{convite.codigo}</strong>. Vale 7 dias.
+              Envie para a pessoa: ela cria a senha em &quot;Primeiro acesso&quot;. Este código não aparece de novo.
+            </span>
+            <button type="button" aria-label="Fechar código" onClick={() => setConvite(null)}><Icone nome="fechar" tamanho={14} /></button>
+          </div>
+        )}
       </div>
 
       <div className={g.bloco}>
         <h3 className={g.blocoTitulo}>Banco de dados</h3>
-        <p className={g.dica}>{e.banco_proprio ? 'Banco próprio (endereço guardado cifrado).' : 'Usa o banco padrão do painel.'}</p>
+        <p className={g.dica}>{e.banco_proprio ? 'Banco próprio (endereço guardado cifrado).' : 'Sem banco próprio. Só a empresa padrão do painel funciona assim; as outras só abrem o CRM depois que o banco delas for salvo aqui.'}</p>
         <form className={g.linha} onSubmit={(ev) => { ev.preventDefault(); rodar(() => definirBancoEmpresa(e.id, banco), 'Banco da empresa salvo.', () => setBanco('')); }}>
           <input aria-label="Connection string do banco" type="password" autoComplete="off" className={g.entrada} placeholder="postgresql://..." value={banco} onChange={(ev) => setBanco(ev.target.value)} required />
           <button type="submit" className={g.botaoSec} disabled={ocupado}>Salvar banco</button>

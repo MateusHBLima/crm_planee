@@ -65,6 +65,13 @@ async function auditar(c: PoolClient, chave: Chave, acao: string, recurso: strin
   );
 }
 
+// CPF/CNPJ inteiro não sai pela API nem pelo MCP: só os 2 últimos dígitos (auditoria 01/10, S6). O filtro por
+// documento continua funcionando; quem precisa do número inteiro olha no painel.
+function protegerDoc<T extends Record<string, unknown> | undefined>(tabela: string, linha: T): T {
+  if (tabela !== 'contatos' || !linha || !linha.documento) return linha;
+  return { ...linha, documento: '***' + String(linha.documento).replace(/\D/g, '').slice(-2) };
+}
+
 export async function listar(chave: Chave, nome: string, filtros: Record<string, string> = {}, limite = 50, deslocamento = 0) {
   exigirEscopo(chave, 'leitura');
   const r = exigirRecurso(nome);
@@ -82,7 +89,7 @@ export async function listar(chave: Chave, nome: string, filtros: Record<string,
   const sql = `select * from ${r.tabela} ${where.length ? 'where ' + where.join(' and ') : ''} order by ${r.ordem} limit ${lim} offset ${off}`;
   try {
     const res = await bancoDe(chave).query(sql, vals);
-    return { itens: res.rows, limite: lim, deslocamento: off };
+    return { itens: res.rows.map((x) => protegerDoc(r.tabela, x)), limite: lim, deslocamento: off };
   } catch (e) { traduzErroBanco(e); }
 }
 
@@ -92,7 +99,7 @@ export async function obter(chave: Chave, nome: string, id: string) {
   validarId(r, id);
   const res = await bancoDe(chave).query(`select * from ${r.tabela} where id = $1`, [id]);
   if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
-  return res.rows[0];
+  return protegerDoc(r.tabela, res.rows[0]);
 }
 
 export async function criar(chave: Chave, nome: string, corpo: unknown) {
@@ -113,7 +120,7 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
     return await transacao(async (c) => {
       const res = await c.query(`insert into ${r.tabela} (${cols.join(', ')}) values (${ph}) returning *`, vals);
       await auditar(c, chave, 'criar', r.nome, String(res.rows[0].id), dados);
-      return res.rows[0];
+      return protegerDoc(r.tabela, res.rows[0]);
     }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
@@ -135,7 +142,7 @@ export async function atualizar(chave: Chave, nome: string, id: string, corpo: u
       const res = await c.query(`update ${r.tabela} set ${sets.join(', ')} where id = $1 returning *`, [id, ...Object.values(dados)]);
       if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
       await auditar(c, chave, 'atualizar', r.nome, id, dados);
-      return res.rows[0];
+      return protegerDoc(r.tabela, res.rows[0]);
     }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
@@ -178,7 +185,7 @@ export async function arquivar(chave: Chave, nome: string, id: string) {
     const res = await c.query(`update ${r.tabela} set arquivado = true, atualizado_em = now() where id = $1 returning *`, [id]);
     if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
     await auditar(c, chave, 'arquivar', r.nome, id, null);
-    return res.rows[0];
+    return protegerDoc(r.tabela, res.rows[0]);
   }, bancoDe(chave));
 }
 
