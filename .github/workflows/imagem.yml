@@ -28,13 +28,14 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: postgres
+          # Contêiner descartável, só acessível ao job: sem senha (evita alerta de segredo no repositório).
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: painel_teste
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/painel_teste
+      DATABASE_URL: postgres://postgres@localhost:5432/painel_teste
       CHROMIUM_PATH: /usr/bin/google-chrome
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
