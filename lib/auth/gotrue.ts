@@ -52,15 +52,30 @@ export async function criarConta(email: string, senha: string): Promise<{ tokens
 export const renovarSessao = (refresh: string) => token('refresh_token', { refresh_token: refresh });
 
 // Confere o token no Supabase Auth (assinatura e validade) e devolve o e-mail e o id do usuário.
+// Quem é o dono do token. O Auth fica longe do servidor do painel (outra região), e perguntar a cada clique
+// custava ~0,3 s. Guardamos a resposta por até 60 s (nunca além do vencimento do token). O "ativo" da pessoa
+// continua sendo conferido no banco a cada pedido (lib/sessao.ts), então desativar alguém vale na hora.
+const CACHE_MS = 60_000;
+const cacheToken = new Map<string, { u: { id: string; email: string }; ate: number }>();
+
 export async function usuarioDoToken(acesso: string): Promise<{ id: string; email: string } | null> {
+  const agora = Date.now();
+  const c = cacheToken.get(acesso);
+  if (c && c.ate > agora) return c.u;
   const { url, chave } = base();
   const r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: chave, authorization: `Bearer ${acesso}` }, cache: 'no-store' });
-  if (!r.ok) return null;
+  if (!r.ok) { cacheToken.delete(acesso); return null; }
   const j = (await r.json()) as { id?: string; email?: string };
-  return j.id && j.email ? { id: j.id, email: j.email } : null;
+  if (!j.id || !j.email) return null;
+  const u = { id: j.id, email: j.email };
+  const vence = agora + segundosRestantes(acesso) * 1000;
+  if (cacheToken.size > 500) for (const [k, v] of cacheToken) if (v.ate <= agora) cacheToken.delete(k);
+  if (cacheToken.size <= 1000) cacheToken.set(acesso, { u, ate: Math.min(agora + CACHE_MS, vence) });
+  return u;
 }
 
 export async function encerrarSessao(acesso: string): Promise<void> {
+  cacheToken.delete(acesso);
   try {
     const { url, chave } = base();
     await fetch(`${url}/auth/v1/logout`, { method: 'POST', headers: { apikey: chave, authorization: `Bearer ${acesso}` }, cache: 'no-store' });
