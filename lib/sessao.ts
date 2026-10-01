@@ -4,7 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { bancoConfigurado, central } from '@/lib/db';
 import { COOKIE_ACESSO, usuarioDoToken } from '@/lib/auth/gotrue';
-import { COOKIE_EMPRESA, empresaDoDominio, hostDeCabecalhos, type Empresa } from '@/lib/empresa';
+import { COOKIE_EMPRESA, hostDeCabecalhos, type Empresa } from '@/lib/empresa';
 import { efetivas, type Nivel, type Permissao } from '@/lib/permissoes';
 import type { Chave } from '@/lib/api/auth';
 
@@ -31,24 +31,34 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
   try { auth = await usuarioDoToken(acesso); } catch { auth = null; }
   if (!auth) return { usuario: null, motivo: 'sessao' };
 
-  const db = central();
-  const p = await db.query(
-    `update painel_usuarios set auth_id = coalesce(auth_id, $2), ultimo_acesso = now()
-      where lower(email) = lower($1) and ativo and (auth_id is null or auth_id = $2)
-      returning id, nome, email, master`,
-    [auth.email, auth.id],
+  // Uma ida só ao banco central: a pessoa, os vínculos dela, a lista de empresas (se for master) e a empresa
+  // dona do endereço acessado. Cada ida custava ~0,1 s (o banco fica em outra região).
+  const host = hostDeCabecalhos(await headers());
+  const r = await central().query(
+    `with p as (
+       update painel_usuarios set auth_id = coalesce(auth_id, $2), ultimo_acesso = now()
+        where lower(email) = lower($1) and ativo and (auth_id is null or auth_id = $2)
+        returning id, nome, email, master),
+     v as (
+       select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado, v.nivel, v.permissoes as permissoes_vinculo
+         from painel_vinculos v join empresas e on e.id = v.empresa_id join p on p.id = v.usuario_id
+        where v.ativo and e.ativo),
+     t as (
+       select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado from empresas e where (select master from p)),
+     d as (
+       select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado
+         from empresa_dominios d join empresas e on e.id = d.empresa_id where d.dominio = $3)
+     select (select row_to_json(p) from p) as pessoa,
+            coalesce((select json_agg(v order by v.nome) from v), '[]'::json) as vinculos,
+            coalesce((select json_agg(t order by t.ativo desc, t.nome) from t), '[]'::json) as todas,
+            (select row_to_json(d) from d limit 1) as fixa`,
+    [auth.email, auth.id, host],
   );
-  if (!p.rowCount) return { usuario: null, motivo: 'sessao' };
-  const pessoa = p.rows[0] as { id: string; nome: string; email: string; master: boolean };
-
-  const vinculos = (await db.query(
-    `select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado, v.nivel, v.permissoes as permissoes_vinculo
-       from painel_vinculos v join empresas e on e.id = v.empresa_id
-      where v.usuario_id = $1 and v.ativo and e.ativo
-      order by e.nome`, [pessoa.id],
-  )).rows as Vinculo[];
-
-  const fixa = await empresaDoDominio(hostDeCabecalhos(await headers()));
+  const linha = r.rows[0] as { pessoa: { id: string; nome: string; email: string; master: boolean } | null; vinculos: Vinculo[]; todas: Empresa[]; fixa: Empresa | null };
+  if (!linha?.pessoa) return { usuario: null, motivo: 'sessao' };
+  const pessoa = linha.pessoa;
+  const vinculos = linha.vinculos;
+  const fixa = linha.fixa;
   let empresa: Empresa | null = null;
   let vinculo: Vinculo | undefined;
   let lista: { id: string; nome: string }[];
@@ -61,9 +71,7 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
     lista = [{ id: fixa.id, nome: fixa.nome }];
   } else {
     // Endereço geral (adm, localhost, link de teste): a pessoa escolhe entre as empresas dela.
-    const candidatas: Empresa[] = pessoa.master
-      ? (await db.query('select id, nome, ativo, modulos, banco_url_cifrado from empresas order by ativo desc, nome')).rows
-      : vinculos;
+    const candidatas: Empresa[] = pessoa.master ? linha.todas : vinculos;
     if (!pessoa.master && !candidatas.length) return { usuario: null, motivo: 'empresa' };
     const pedida = (await cookies()).get(COOKIE_EMPRESA)?.value;
     // O master entra na visão da Planee (sem empresa) até escolher uma no seletor.
