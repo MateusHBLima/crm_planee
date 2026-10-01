@@ -31,7 +31,7 @@ Quando a especificação e as decisões divergirem, **as decisões valem** (a es
 4. **Confirme antes de mudar.** Mostre o que vai fazer e espere o OK antes de alterar banco, workflow ou decisão.
 5. **Verifique relendo.** Depois de gravar, releia do banco. "Está configurado para gravar" não é prova.
 6. **Dados de saúde (LGPD).** Nada de dado real de paciente em seed, teste, print ou commit. Use dados fictícios. CPF aparece mascarado para o papel `planee`.
-7. **O painel não fala com a Meta.** Todo envio de mensagem passa por webhook do n8n. O painel nunca insere em `mensagens_gemini_cliente`.
+7. **O painel não fala com a Meta.** Quem recebe da Meta é o receptor (`servicos/receptor`, decisão 28); todo envio de mensagem passa por webhook do n8n. O painel nunca insere em `mensagens_gemini_cliente`.
 8. **O agente não depende do painel.** Se o painel cair, a IA continua atendendo.
 9. **Nada específico de cliente no código** (decisão 26). Cada cliente é uma empresa no banco central, com domínio, módulos e banco próprios; diferença entre clientes é configuração, nunca `if (cliente === ...)`. Todo acesso a dado de empresa confere no servidor que o usuário pertence a ela.
 10. **O código só conhece o modelo padrão** (decisão 22). Tabelas e colunas de `supabase/modelo.md`; adaptação de banco antigo é view no banco do cliente.
