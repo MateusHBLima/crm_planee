@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Cartao, Etapa, Evento, Quadro as TQuadro } from '@/lib/painel/crm';
 import { anotarAtendimento, carregarDetalhe } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
-import { Acoes, EtapaPill } from './Quadro';
-import { cpfBonito, ha, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
+import { Acoes, EtapaPill, Relativo } from './Quadro';
+import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
@@ -33,12 +33,15 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocup
     return () => { vivo = false; };
   }, [k.id, assinatura, onErro]);
 
+  // Foco só ao abrir (U1): com onFechar novo a cada desenho, o foco voltava ao painel no meio da nota.
+  const fecharRef = useRef(onFechar);
+  fecharRef.current = onFechar;
   useEffect(() => {
     painel.current?.focus();
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') fecharRef.current(); };
     document.addEventListener('keydown', esc);
     return () => document.removeEventListener('keydown', esc);
-  }, [onFechar]);
+  }, [k.id]);
 
   const salvarNota = () => iniciar(async () => {
     const r = await anotarAtendimento(k.id, nota);
@@ -52,7 +55,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocup
 
   return (
     <div className={c.fundoDetalhe} onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}>
-      <aside ref={painel} tabIndex={-1} className={c.detalhe} aria-label={`Atendimento de ${k.nome || 'contato sem nome'}`}>
+      <aside ref={painel} tabIndex={-1} role="dialog" aria-modal="true" className={c.detalhe} aria-label={`Atendimento de ${k.nome || 'contato sem nome'}`}>
         <header className={c.detTopo}>
           <div className={c.detTitulo}>
             <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
@@ -85,7 +88,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocup
             <p className={c.detResumo}>{k.resumo || 'Sem resumo.'}</p>
             <p className={c.detMeta}>
               Aberto {fmt.quando(k.aberto_em)}{k.aberto_por ? ` por ${k.aberto_por}` : ''}
-              {k.etapa !== 'finalizado' ? ` · ${ha(k.aberto_em)}` : k.finalizado_em ? ` · finalizado ${fmt.quando(k.finalizado_em)}` : ''}
+              {k.etapa !== 'finalizado' ? <> · <Relativo de={k.aberto_em} /></> : k.finalizado_em ? ` · finalizado ${fmt.quando(k.finalizado_em)}` : ''}
               {k.responsavel ? ` · responsável ${k.responsavel}` : ''}
             </p>
           </section>
@@ -96,7 +99,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocup
             <div className={c.detCampos}>
               <label className={c.campo}>
                 <span>Etapa</span>
-                <select id="det-etapa" value={k.etapa} disabled={ocupado || !podeEditar} onChange={(e) => onMover(k.id, e.target.value as Etapa)}>
+                <select id="det-etapa" value={k.etapa} disabled={ocupado || !podeEditar || k.sombra} onChange={(e) => onMover(k.id, e.target.value as Etapa)}>
                   {(Object.keys(quadro.etapas) as Etapa[]).map((e) => <option key={e} value={e}>{quadro.etapas[e]}</option>)}
                 </select>
               </label>

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { ErroApi } from '@/lib/db';
+import { ErroApi, registrarErro } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo } from '@/lib/api/recursos';
@@ -11,7 +11,7 @@ type Ctx = { params: Promise<{ caminho?: string[] }> };
 
 function erro(e: unknown) {
   if (e instanceof ErroApi) return NextResponse.json({ erro: e.message, detalhe: e.detalhe }, { status: e.status });
-  console.error(e);
+  registrarErro('api', e);
   return NextResponse.json({ erro: 'Erro interno.' }, { status: 500 });
 }
 

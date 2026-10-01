@@ -3,7 +3,7 @@ import { cache } from 'react';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { bancoConfigurado, central } from '@/lib/db';
-import { COOKIE_ACESSO, usuarioDoToken } from '@/lib/auth/gotrue';
+import { COOKIE_ACESSO, mfaExigido, nivelDaSessao, usuarioDoToken } from '@/lib/auth/gotrue';
 import { COOKIE_EMPRESA, hostDeCabecalhos, type Empresa } from '@/lib/empresa';
 import { efetivas, type Nivel, type Permissao } from '@/lib/permissoes';
 import type { Chave } from '@/lib/api/auth';
@@ -20,7 +20,7 @@ export type Usuario = {
   permissoes: Permissao[];
 };
 
-export type Sessao = { usuario: Usuario } | { usuario: null; motivo: 'sessao' | 'empresa' };
+export type Sessao = { usuario: Usuario } | { usuario: null; motivo: 'sessao' | 'empresa' | 'mfa' };
 
 type Vinculo = Empresa & { nivel: 'admin' | 'membro'; permissoes_vinculo: string[] };
 
@@ -57,6 +57,8 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
   const linha = r.rows[0] as { pessoa: { id: string; nome: string; email: string; master: boolean } | null; vinculos: Vinculo[]; todas: Empresa[]; fixa: Empresa | null };
   if (!linha?.pessoa) return { usuario: null, motivo: 'sessao' };
   const pessoa = linha.pessoa;
+  // O master (todas as clínicas) só passa com o segundo fator: senha sozinha não abre nenhuma tela.
+  if (pessoa.master && mfaExigido() && nivelDaSessao(acesso) !== 'aal2') return { usuario: null, motivo: 'mfa' };
   const vinculos = linha.vinculos;
   const fixa = linha.fixa;
   let empresa: Empresa | null = null;
@@ -97,7 +99,7 @@ export async function usuarioAtual(): Promise<Usuario | null> {
 
 export async function exigirUsuario(): Promise<Usuario> {
   const s = await sessaoAtual();
-  if (!s.usuario) redirect(`/entrar?motivo=${s.motivo}`);
+  if (!s.usuario) redirect(s.motivo === 'mfa' ? '/entrar/verificacao' : `/entrar?motivo=${s.motivo}`);
   return s.usuario;
 }
 

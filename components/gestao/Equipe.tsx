@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { MODELOS, NOME_NIVEL, PERMISSOES } from '@/lib/permissoes';
-import { adicionarPessoa, atualizarPessoa } from '@/lib/painel/acoes-gestao';
+import { adicionarPessoa, atualizarPessoa, novoConvite } from '@/lib/painel/acoes-gestao';
 import type { Pessoa } from '@/lib/painel/gestao';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
@@ -46,6 +46,7 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
   const [novo, setNovo] = useState({ nome: '', email: '', nivel: 'membro', permissoes: MODELOS.secretaria.permissoes.filter((p) => empresa.modulos.includes(p)) as string[] });
   const [editando, setEditando] = useState<string | null>(null);
   const [permsEdit, setPermsEdit] = useState<string[]>([]);
+  const [convite, setConvite] = useState<{ nome: string; codigo: string } | null>(null);
 
   const rodar = (fn: () => Promise<Resposta<Pessoa[]>>, ok: string, depois?: () => void) => iniciar(async () => {
     const r = await fn();
@@ -53,6 +54,14 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
     setPessoas(r.dados); setAviso({ tipo: 'ok', texto: ok }); depois?.();
   });
 
+  // Código de primeiro acesso: aparece uma vez, aqui, para o admin enviar à pessoa (só o hash fica no banco).
+  const gerarCodigo = (id: string, nome: string) => iniciar(async () => {
+    const r = await novoConvite(id);
+    if (!r.ok) { if (r.sair) window.location.href = '/entrar?motivo=sessao'; setAviso({ tipo: 'erro', texto: r.erro }); return; }
+    setConvite({ nome, codigo: r.dados }); setAviso(null);
+  });
+
+  const r0 = (nome: string) => `${nome} foi adicionada à equipe.`;
   const nomeDe = (id: string) => PERMISSOES.find((p) => p.id === id)?.nome ?? id;
 
   return (
@@ -63,7 +72,8 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
           <h1 className={g.titulo}>Equipe</h1>
           <p className={g.sub}>
             Quem entra no painel desta empresa e o que cada pessoa pode fazer. A pessoa entra em {endereco} com o e-mail
-            cadastrado; no primeiro acesso, ela cria a senha em &quot;Primeiro acesso&quot;.
+            cadastrado. No primeiro acesso, ela cria a senha em &quot;Primeiro acesso&quot; com o código que aparece aqui
+            quando você a adiciona (vale 7 dias; dá para gerar outro).
           </p>
         </div>
       </div>
@@ -75,9 +85,25 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
         </div>
       )}
 
+      {convite && (
+        <div className={`${g.aviso} ${g.avisoOk}`} role="status">
+          <span>
+            Código de primeiro acesso de {convite.nome}: <strong className={g.codigo} data-convite>{convite.codigo}</strong>. Vale 7 dias.
+            Envie para a pessoa: ela cria a senha em &quot;Primeiro acesso&quot;. Este código não aparece de novo.
+          </span>
+          <button type="button" aria-label="Fechar código" onClick={() => setConvite(null)}><Icone nome="fechar" tamanho={14} /></button>
+        </div>
+      )}
+
       <form className={g.cartao} aria-labelledby="titulo-novo" onSubmit={(e) => {
         e.preventDefault();
-        rodar(() => adicionarPessoa(novo), `${novo.nome.trim()} foi adicionada à equipe.`, () => setNovo({ ...novo, nome: '', email: '' }));
+        const nome = novo.nome.trim();
+        rodar(async () => {
+          const r = await adicionarPessoa(novo);
+          if (!r.ok) return r;
+          setConvite(r.dados.codigo ? { nome, codigo: r.dados.codigo } : null);
+          return { ok: true as const, dados: r.dados.pessoas };
+        }, r0(nome), () => setNovo({ ...novo, nome: '', email: '' }));
       }}>
         <h2 id="titulo-novo" className={g.blocoTitulo}>Adicionar pessoa</h2>
         <div className={g.linha}>
@@ -132,6 +158,11 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
                     <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado}
                       onClick={() => rodar(() => atualizarPessoa(p.id, { nivel: p.nivel === 'admin' ? 'membro' : 'admin' }), `${p.nome} agora é ${p.nivel === 'admin' ? 'membro' : 'admin'}.`)}>
                       {p.nivel === 'admin' ? 'Tornar membro' : 'Tornar admin'}
+                    </button>
+                  )}
+                  {podeMexer && p.ativo && !p.ja_entrou && (
+                    <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado} onClick={() => gerarCodigo(p.id, p.nome)}>
+                      Novo código
                     </button>
                   )}
                   {podeMexer && (

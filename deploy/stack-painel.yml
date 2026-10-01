@@ -16,6 +16,8 @@ services:
       - N8N_WEBHOOK_PAINEL_RETOMAR=${N8N_WEBHOOK_PAINEL_RETOMAR:-}
       - N8N_WEBHOOK_SEGREDO=${N8N_WEBHOOK_SEGREDO:-}
       - PAINEL_FUSO=America/Sao_Paulo
+      - EMPRESA_BANCO_PADRAO=${EMPRESA_BANCO_PADRAO:-teste}
+      - PAINEL_MFA_MASTER=${PAINEL_MFA_MASTER:-1}
     networks:
       - network_public
     deploy:

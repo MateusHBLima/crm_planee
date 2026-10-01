@@ -1,10 +1,13 @@
 # Decisão 27: cada merge na main gera a imagem do painel no GitHub (ghcr.io).
+# Auditoria 01/10 (I1): antes de publicar, roda a suíte completa (testes/painel/rodar.sh) com Postgres e Auth falso.
+# Em PR, só os testes rodam (o resultado aparece no PR antes do merge). Imagem só da main.
 # Se o segredo PORTAINER_WEBHOOK_PAINEL existir, o Portainer é avisado e atualiza o serviço sozinho.
 name: Imagem do painel
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -12,11 +15,54 @@ permissions:
   packages: write
 
 concurrency:
-  group: imagem-painel
+  group: imagem-painel-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: painel_teste
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/painel_teste
+      CHROMIUM_PATH: /usr/bin/google-chrome
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependências
+        run: npm ci
+
+      - name: Testes do painel (8 etapas)
+        run: bash testes/painel/rodar.sh
+
+      - name: Capturas dos testes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-testes
+          path: testes/painel/saida
+          if-no-files-found: ignore
+
   imagem:
+    needs: testes
+    # Só a main publica: um disparo manual em outra branch não pode gerar "latest" (auditoria 01/10, I10).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -17,6 +17,11 @@ export function FormPrimeiro() {
         <input id="email" name="email" type="email" autoComplete="username" required defaultValue={estado.email} autoFocus />
       </label>
       <label className={e.campo}>
+        <span>Código de primeiro acesso</span>
+        <input id="codigo" name="codigo" type="text" autoComplete="one-time-code" required placeholder="ABCD-EFGH" maxLength={12}
+          autoCapitalize="characters" spellCheck={false} />
+      </label>
+      <label className={e.campo}>
         <span>Nova senha (mínimo 8 caracteres)</span>
         <input id="senha" name="senha" type="password" autoComplete="new-password" required minLength={8} />
       </label>

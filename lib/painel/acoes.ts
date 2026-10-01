@@ -1,6 +1,6 @@
 'use server';
 
-import { ErroApi } from '@/lib/db';
+import { ErroApi, registrarErro } from '@/lib/db';
 import { usuarioAtual } from '@/lib/sessao';
 import * as crm from './crm';
 
@@ -16,7 +16,7 @@ async function comUsuario<T>(fn: (u: NonNullable<Awaited<ReturnType<typeof usuar
     return { ok: true, dados: await fn(u) };
   } catch (e) {
     if (e instanceof ErroApi) return { ok: false, erro: e.message };
-    console.error(e);
+    registrarErro('tela', e);
     return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
   }
 }
@@ -33,8 +33,8 @@ export async function assumirAtendimento(id: string) {
   return comUsuario(async (u) => { await crm.assumir(u, id); return crm.lerQuadro(u); });
 }
 
-export async function moverAtendimento(id: string, etapa: crm.Etapa) {
-  return comUsuario(async (u) => { await crm.mover(u, id, etapa); return crm.lerQuadro(u); });
+export async function moverAtendimento(id: string, etapa: crm.Etapa, de?: crm.Etapa) {
+  return comUsuario(async (u) => { await crm.mover(u, id, etapa, de); return crm.lerQuadro(u); });
 }
 
 export async function mudarAssunto(id: string, topico: string) {

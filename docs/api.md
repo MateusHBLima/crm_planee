@@ -34,7 +34,7 @@ Dois atalhos pelo telefone, para o agente não precisar saber ids:
 | `GET /api/v1/ficha?telefone=5547...` | `ficha_do_contato` | `leitura` | Tudo o que o CRM sabe do telefone: contato (nome, final do CPF com 3 dígitos, desde quando), atendimentos abertos e recentes (assunto, etapa, resumo, responsável), notas, oportunidades do funil (etapa, interesse, valor) e a lista `etapas_funil`. Telefone com ou sem o 9 e com ou sem 55. `encontrado: false` quando o número não é de ninguém. |
 | `POST /api/v1/funil` `{"telefone","etapa_id","interesse"?,"valor"?,"nome"?}` | `mover_no_funil` | `crm` | Põe o telefone na etapa: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). Chamar de novo move a mesma oportunidade; depois de ganho ou perdido, a próxima chamada abre outra. |
 
-O CPF inteiro nunca sai pela ficha (LGPD). Toda mudança fica em `painel_auditoria` com a chave que fez.
+O CPF inteiro nunca sai pela API nem pelo MCP (LGPD): na ficha vem só o final (3 dígitos) e em `contatos` (listar, obter, criar, atualizar) o campo `documento` vem como `***` + os 2 últimos dígitos. O filtro `documento` continua aceitando o número inteiro. O MCP aceita no máximo 20 chamadas por lote. Toda mudança fica em `painel_auditoria` com a chave que fez.
 
 ## Painel → n8n
 

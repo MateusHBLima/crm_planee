@@ -30,8 +30,9 @@ Se a versão nova não passar na verificação de saúde, o Swarm volta sozinho 
 
 1. **DNS:** registro `A` de `adm.planeelabia.com` para o IP do `Manager-01` (GoDaddy).
 2. **Imagem pública:** depois da primeira execução do workflow, GitHub → Packages → `crm_planee` → Package settings → Change visibility → Public. A imagem não tem nenhuma chave; tudo vem das variáveis da stack.
-3. **Banco:** rodar as migrações 001 a 005 no Supabase (004 no banco central; 005 em todo banco de dados de empresa). No teste, os dois são o mesmo.
+3. **Banco:** rodar as migrações **001, 003, 004, 005 e 006** (004 e 006 no banco central; 001, 003 e 005 em todo banco de dados de empresa). **Nunca a 002** num banco real: ela é a semente fictícia dos testes. A 004 cria a empresa `teste`; no central de produção, renomeie ou desative depois de cadastrar a empresa real. No teste, central e dados são o mesmo banco.
 4. **Stack:** Portainer → Stacks → Add stack → nome `painel` → colar `deploy/stack-painel.yml` → em **Environment variables**, cadastrar `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `PAINEL_CHAVE_CIFRA` (32+ caracteres, gerada uma vez; sem ela, empresa não pode ter banco próprio). `CENTRAL_DATABASE_URL` só quando o banco central for separado → **Deploy the stack**.
+   Opcionais: `EMPRESA_BANCO_PADRAO` (padrão `teste`: ids das empresas que podem usar o banco do `DATABASE_URL`; qualquer outra empresa sem banco próprio não abre o CRM) e `PAINEL_MFA_MASTER=0` (desliga o segundo fator do master; só para emergência).
 5. **Atualização automática:** Portainer → Stacks → Add stack → nome `atualizador` → colar `deploy/stack-atualizador.yml` → **Deploy the stack**. O painel já tem o rótulo `shepherd.enable=true`.
 6. **Domínios pelo painel:** no serviço do Traefik (stack do Traefik no Portainer), acrescentar aos argumentos:
    ```
@@ -58,3 +59,24 @@ Nenhum desses passos é commit nem mexe na stack. Empresa desativada sai do Trae
 ## Rede e Traefik
 
 O Traefik do manager é a versão 3, com o provedor `swarm`: rede `network_public`, entrypoint `websecure` (o `web` redireciona para ele) e resolvedor de certificado `letsencryptresolver` (desafio HTTP). A stack usa esses nomes, conferidos em 30/09. As rotas de domínio de empresa usam o serviço `painel@swarm`; se algum nome mudar, as variáveis `TRAEFIK_SERVICO`, `TRAEFIK_ENTRYPOINT` e `TRAEFIK_CERTRESOLVER` da stack ajustam `/api/traefik`.
+
+
+## Segundo fator do master (auditoria 01/10)
+
+A conta da Planee (master) entra com senha **e** o código de um aplicativo autenticador (Google Authenticator,
+Microsoft Authenticator, 1Password). Na primeira entrada depois da atualização, o painel mostra um QR para cadastrar.
+Usa o MFA do próprio Supabase Auth (TOTP, ligado por padrão nos projetos do Supabase).
+
+**Perdeu o celular:** no Supabase do painel → SQL Editor, apague o fator e entre de novo (o QR aparece outra vez):
+
+```sql
+delete from auth.mfa_factors where user_id = (select id from auth.users where email = 'SEU_EMAIL');
+```
+
+Em último caso, `PAINEL_MFA_MASTER=0` na stack desliga a exigência até o fator ser cadastrado de novo.
+
+## Primeiro acesso por código (auditoria 01/10)
+
+Quem cadastra uma pessoa (a Planee em Empresas, o admin em Equipe) recebe na hora um **código de primeiro acesso**
+(8 letras e números, vale 7 dias) para enviar a ela. Sem o código, ninguém cria a senha de um e-mail cadastrado.
+Perdeu ou venceu: botão **Novo código** na Equipe.

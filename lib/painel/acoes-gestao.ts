@@ -1,7 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { ErroApi } from '@/lib/db';
+import { ErroApi, registrarErro } from '@/lib/db';
 import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
 import { usuarioAtual, type Usuario } from '@/lib/sessao';
 import * as g from './gestao';
@@ -16,7 +16,7 @@ async function comUsuario<T>(fn: (u: Usuario) => Promise<T>): Promise<Resposta<T
     return { ok: true, dados: await fn(u) };
   } catch (e) {
     if (e instanceof ErroApi) return { ok: false, erro: e.message };
-    console.error(e);
+    registrarErro('gestao', e);
     return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
   }
 }
@@ -59,14 +59,17 @@ export async function adicionarAdmin(empresa: string, nome: string, email: strin
     if (u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee (master) faz isso.');
     const e = await empresaPorId(empresa);
     if (!e) throw new ErroApi(404, 'Empresa não encontrada.');
-    await g.adicionarPessoa({ ...u, empresa: e }, { nome, email, nivel: 'admin', permissoes: [] });
-    return g.listarEmpresas(u);
+    const codigo = await g.adicionarPessoa({ ...u, empresa: e }, { nome, email, nivel: 'admin', permissoes: [] });
+    return { empresas: await g.listarEmpresas(u), codigo };
   });
 }
 
 export async function carregarEquipe() { return comUsuario((u) => g.listarEquipe(u)); }
 export async function adicionarPessoa(dados: { nome: string; email: string; nivel: string; permissoes: string[] }) {
-  return comUsuario(async (u) => { await g.adicionarPessoa(u, dados); return g.listarEquipe(u); });
+  return comUsuario(async (u) => { const codigo = await g.adicionarPessoa(u, dados); return { pessoas: await g.listarEquipe(u), codigo }; });
+}
+export async function novoConvite(id: string) {
+  return comUsuario((u) => g.novoConvite(u, id));
 }
 export async function atualizarPessoa(id: string, dados: { nivel?: string; permissoes?: string[]; ativo?: boolean }) {
   return comUsuario(async (u) => { await g.atualizarPessoa(u, id, dados); return g.listarEquipe(u); });

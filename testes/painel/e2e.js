@@ -12,6 +12,7 @@ const res = []; const ok = (n, c, extra='') => { res.push((c ? 'OK   ' : 'FALHA'
 async function entrar(p, email, senha='senha123') {
   await p.goto(B + '/crm'); await p.fill('#email', email); await p.fill('#senha', senha);
   await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
+  if (p.url().includes('/entrar/verificacao')) { await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800); }
 }
 (async () => {
   const b = await lancar();
@@ -25,7 +26,7 @@ async function entrar(p, email, senha='senha123') {
   await p.screenshot({ path: out + '01_quadro_claro.png' });
   const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox e CRM', nav.join(',') === 'Inbox,CRM', nav.join(','));
   const cols = await p.$$eval('section[aria-label]', (s) => s.map((x) => x.getAttribute('aria-label'))); ok('colunas por assunto', cols.includes('Receita') && cols.includes('Valores e pagamento'), cols.join('|'));
-  ok('selo sombra aparece', (await p.locator('text=sombra').count()) >= 2);
+  ok('secretária não tem filtro de sombra (cartão sombra é só da Planee)', (await p.locator('button:has-text("Só sombra")').count()) === 0);
   // Assumir o cartão da Rita
   const rita = p.locator('article', { hasText: 'Rita Ficticia' }); await rita.getByRole('button', { name: 'Assumir' }).click(); await p.waitForTimeout(1500);
   ok('Assumir muda para Em atendimento', (await rita.textContent()).includes('Em atendimento'));
@@ -47,10 +48,8 @@ async function entrar(p, email, senha='senha123') {
   ok('Finalizar tira do quadro', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 0);
   await p.click('text=/Mostrar finalizados hoje/'); await p.waitForTimeout(300);
   ok('Mostrar finalizados traz de volta', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1);
-  // Filtro sombra e busca
-  await p.click('button:has-text("Só sombra")'); await p.waitForTimeout(200);
-  ok('filtro só sombra', (await p.locator('article', { hasText: 'Pede encaixe' }).count()) === 0 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) >= 1);
-  await p.click('button:has-text("Todos")'); await p.fill('#busca-crm', '0012'); await p.waitForTimeout(200);
+  // Busca
+  await p.fill('#busca-crm', '0012'); await p.waitForTimeout(200);
   ok('busca por final do telefone', (await p.locator('article').count()) === 1, String(await p.locator('article').count()));
   await p.fill('#busca-crm', '');
   // concorrência: outra pessoa já assumiu
@@ -73,8 +72,22 @@ async function entrar(p, email, senha='senha123') {
   // sair
   await p.click('button[aria-label="Sair do painel"]'); await p.waitForTimeout(800); ok('Sair volta ao login', p.url().includes('/entrar'));
   await p.goto(B + '/crm'); ok('depois de sair não entra', p.url().includes('/entrar'));
+  // planee (master): senha + autenticador (MFA). Primeira vez: cadastra o autenticador pelo QR.
+  await p.goto(B + '/empresas'); await p.fill('#email', 'planee@teste.local'); await p.fill('#senha', 'senha123');
+  await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
+  ok('master com senha certa ainda cai na verificação', p.url().includes('/entrar/verificacao'), p.url());
+  ok('primeira vez: mostra o QR do autenticador', (await p.locator('img[alt^="QR"]').count()) === 1 && (await p.locator('[data-segredo]').count()) === 1);
+  await p.goto(B + '/crm'); ok('sem o código, nenhuma tela abre', p.url().includes('/entrar/verificacao'), p.url());
+  await p.fill('#codigo', '000000'); await p.click('button[type=submit]'); await p.waitForTimeout(800);
+  ok('código errado é recusado', ((await p.textContent('[role=alert]')) || '').includes('Código incorreto'));
+  await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
+  ok('código certo entra', !p.url().includes('/entrar'), p.url());
+  await p.click('button[aria-label="Sair do painel"]'); await p.waitForTimeout(800);
+  await p.goto(B + '/crm'); await p.fill('#email', 'planee@teste.local'); await p.fill('#senha', 'senha123');
+  await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
+  ok('depois: só pede o código, sem QR', p.url().includes('/entrar/verificacao') && (await p.locator('img[alt^="QR"]').count()) === 0, p.url());
+  await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800);
   // planee: CPF mascarado
-  await entrar(p, 'planee@teste.local');
   ok('master entra na visão da Planee, fora de empresa', p.url().endsWith('/empresas') && (await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim()))).join(',') === 'Empresas,Interno Planee', p.url());
   ok('seletor mostra a visão geral e as empresas', (await p.$$eval('#trocar-empresa option', (os) => os.map((o) => o.textContent))).join('|').startsWith('Planee — visão geral|'));
   await p.goto(B + '/crm'); ok('sem empresa, o CRM não abre', p.url().endsWith('/empresas'), p.url());

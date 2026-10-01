@@ -13,6 +13,7 @@ const nav = (p) => p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())
 async function entrar(p, base, email, senha = 'senha123', destino = '/crm') {
   await p.goto(base + destino); await p.fill('#email', email); await p.fill('#senha', senha);
   await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(700);
+  if (p.url().includes('/entrar/verificacao')) { await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800); }
 }
 const aviso = async (p) => ((await p.locator('main [role=status], main [role=alert]').first().textContent().catch(() => '')) || '').trim();
 
@@ -38,6 +39,16 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   await cartao.getByLabel('Nome do admin').fill('Admin Outra'); await cartao.getByLabel('E-mail do admin').fill('Admin2@Teste.local');
   await cartao.getByRole('button', { name: 'Adicionar admin' }).click(); await p.waitForTimeout(1000);
   ok('admin cadastrado (e-mail em minúsculas)', sql("select v.nivel from painel_vinculos v join painel_usuarios u on u.id=v.usuario_id where u.email='admin2@teste.local' and v.empresa_id='clinica-outra'") === 'admin');
+  const codigoAdmin = ((await cartao.locator('[data-convite]').textContent().catch(() => '')) || '').trim();
+  ok('cadastro mostra o código de primeiro acesso (só o hash fica no banco)', /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(codigoAdmin)
+    && sql("select convite_hash is not null and convite_expira > now() from painel_usuarios where email='admin2@teste.local'") === 't'
+    && !sql("select coalesce(convite_hash,'') from painel_usuarios where email='admin2@teste.local'").includes(codigoAdmin.replace('-', '')), codigoAdmin);
+  // Empresa nova ainda sem banco próprio não abre o banco padrão (dados de outra empresa)
+  await p.goto(GERAL + '/empresas'); // o seletor só lista a empresa nova depois de recarregar
+  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'clinica-outra')]); await p.waitForTimeout(800);
+  ok('empresa sem banco próprio não vê o banco padrão', ((await p.textContent('main')) || '').includes('banco desta empresa ainda não foi configurado')
+    && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0);
+  await p.selectOption('#trocar-empresa', ''); await p.waitForTimeout(1200); await p.goto(GERAL + '/empresas');
   await cartao.getByLabel('Connection string do banco').fill(process.env.OUTRA_DATABASE_URL); await cartao.getByRole('button', { name: 'Salvar banco' }).click(); await p.waitForTimeout(1000);
   const cif = sql("select banco_url_cifrado from empresas where id='clinica-outra'");
   ok('banco da empresa guardado cifrado', cif.startsWith('v1:') && !cif.includes('postgres'), cif.slice(0, 12));
@@ -67,10 +78,13 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   [ctx, p] = await novo();
   await p.goto(OUTRA + '/entrar'); ok('login mostra o nome da empresa do domínio', ((await p.textContent('main')) || '').includes('Clínica Outra'));
   await p.click('text=Primeiro acesso? Crie sua senha'); await p.waitForURL(/primeiro-acesso/); await p.waitForSelector('#repete');
-  await p.fill('#email', 'naocadastrado@teste.local'); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
+  await p.fill('#email', 'naocadastrado@teste.local'); await p.fill('#codigo', codigoAdmin); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
   await p.click('button[type=submit]'); await p.waitForTimeout(800);
-  ok('primeiro acesso recusa e-mail não cadastrado', (await aviso(p)).includes('ainda não foi cadastrado'), await aviso(p));
-  await p.fill('#email', 'admin2@teste.local'); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
+  ok('primeiro acesso recusa e-mail não cadastrado (mensagem que não revela nada)', (await aviso(p)).includes('código de primeiro acesso inválido'), await aviso(p));
+  await p.fill('#email', 'admin2@teste.local'); await p.fill('#codigo', 'ABCD-EFGH'); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
+  await p.click('button[type=submit]'); await p.waitForTimeout(800);
+  ok('sem o código certo, ninguém cria a senha de um e-mail cadastrado', (await aviso(p)).includes('código de primeiro acesso inválido') && sql("select auth_id is null from painel_usuarios where email='admin2@teste.local'") === 't', await aviso(p));
+  await p.fill('#email', 'admin2@teste.local'); await p.fill('#codigo', codigoAdmin.toLowerCase()); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
   await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(1000);
   ok('admin cria a senha e entra', p.url().endsWith('/crm'), p.url());
   ok('admin só vê o que a empresa tem (CRM) e a Equipe', (await nav(p)) === 'CRM,Equipe', await nav(p));

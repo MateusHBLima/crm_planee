@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash, randomInt } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { central, ErroApi, transacao } from '@/lib/db';
 import { cifrar, cifraConfigurada } from '@/lib/cifra';
@@ -37,6 +38,24 @@ const nomeValido = (n: unknown, campo: string) => {
   if (s.length < 2 || s.length > 80) throw new ErroApi(400, `${campo}: use de 2 a 80 caracteres.`);
   return s;
 };
+
+// ---- Código de primeiro acesso (auditoria 01/10, S2) ----
+// Quem cadastra a pessoa recebe um código de 8 letras/números, válido por 7 dias, e envia para ela.
+// Só o hash fica no banco. Sem o código, ninguém cria a senha de um e-mail que não é seu.
+const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O, 1/I
+export const DIAS_CONVITE = 7;
+export const normalizarCodigo = (c: unknown) => String(c ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+export const hashCodigo = (c: string) => createHash('sha256').update('convite:' + normalizarCodigo(c)).digest('hex');
+
+async function gerarConvite(c: PoolClient, usuarioId: string): Promise<string> {
+  let s = '';
+  for (let i = 0; i < 8; i++) s += ALFABETO[randomInt(ALFABETO.length)];
+  const codigo = `${s.slice(0, 4)}-${s.slice(4)}`;
+  await c.query(
+    `update painel_usuarios set convite_hash = $2, convite_expira = now() + make_interval(days => $3) where id = $1`,
+    [usuarioId, hashCodigo(codigo), DIAS_CONVITE]);
+  return codigo;
+}
 
 // ---- Empresas (master) ----
 
@@ -161,25 +180,27 @@ function permissoesPermitidas(u: Usuario, lista: unknown): Permissao[] {
   return pedidas;
 }
 
-export async function adicionarPessoa(u: Usuario, dados: { nome: unknown; email: unknown; nivel: unknown; permissoes: unknown }) {
+// Devolve o código de primeiro acesso quando a pessoa ainda não tem senha (null se ela já entra no painel).
+export async function adicionarPessoa(u: Usuario, dados: { nome: unknown; email: unknown; nivel: unknown; permissoes: unknown }): Promise<string | null> {
   const empresa = exigirGestorDaEmpresa(u);
   const nome = nomeValido(dados.nome, 'Nome');
   const email = String(dados.email ?? '').trim().toLowerCase();
   if (!EMAIL.test(email) || email.length > 200) throw new ErroApi(400, 'E-mail inválido.');
   const nivel = nivelPermitido(u, dados.nivel);
   const permissoes = nivel === 'admin' ? [] : permissoesPermitidas(u, dados.permissoes);
-  await transacao(async (c) => {
+  return transacao(async (c) => {
     const p = await c.query(
       `insert into painel_usuarios (email, nome) values ($1, $2)
        on conflict (email) do update set nome = painel_usuarios.nome
-       returning id, master`, [email, nome]);
-    const { id, master } = p.rows[0];
+       returning id, master, auth_id`, [email, nome]);
+    const { id, master, auth_id } = p.rows[0];
     if (master) throw new ErroApi(409, 'Esse e-mail é da Planee (master) e já vê todas as empresas.');
     const v = await c.query(
       `insert into painel_vinculos (usuario_id, empresa_id, nivel, permissoes) values ($1,$2,$3,$4)
        on conflict (usuario_id, empresa_id) do nothing`, [id, empresa, nivel, permissoes]);
     if (!v.rowCount) throw new ErroApi(409, 'Essa pessoa já está na equipe desta empresa.');
     await auditar(c, u, empresa, 'adicionar_pessoa', email, { nivel, permissoes });
+    return auth_id ? null : gerarConvite(c, id);
   }, central());
 }
 
@@ -203,5 +224,22 @@ export async function atualizarPessoa(u: Usuario, usuarioId: string, dados: { ni
     if (!sets.length) return;
     await c.query(`update painel_vinculos set ${sets.join(', ')}, atualizado_em = now() where usuario_id = $1 and empresa_id = $2`, vals);
     await auditar(c, u, empresa, 'atualizar_pessoa', usuarioId, det);
+  }, central());
+}
+
+// Código novo para quem ainda não criou a senha (perdeu ou venceu). Mesmas regras de quem pode mexer na pessoa.
+export async function novoConvite(u: Usuario, usuarioId: string): Promise<string> {
+  const empresa = exigirGestorDaEmpresa(u);
+  if (!/^[0-9a-f-]{36}$/i.test(usuarioId)) throw new ErroApi(400, 'Pessoa inválida.');
+  return transacao(async (c) => {
+    const r = await c.query(
+      `select v.nivel, p.auth_id, p.email from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
+        where v.usuario_id = $1 and v.empresa_id = $2 and v.ativo and p.ativo`, [usuarioId, empresa]);
+    if (!r.rowCount) throw new ErroApi(404, 'Essa pessoa não está ativa na equipe desta empresa.');
+    if (r.rows[0].nivel === 'admin' && u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee gera o código de um admin.');
+    if (r.rows[0].auth_id) throw new ErroApi(409, 'Essa pessoa já criou a senha e entra normalmente.');
+    const codigo = await gerarConvite(c, usuarioId);
+    await auditar(c, u, empresa, 'novo_convite', r.rows[0].email, null);
+    return codigo;
   }, central());
 }
