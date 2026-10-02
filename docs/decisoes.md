@@ -71,6 +71,21 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - Endereço da Planee: `adm.planeelabia.com`.
     - Sem Vercel (retirada em 30/09): o painel, a API e o conector ficam só em `adm.planeelabia.com` (e nos domínios das empresas). Antes do PR, cada branch passa pelos testes locais (`testes/painel/rodar.sh`). Passo a passo em `docs/producao.md`.
 
+## 01/10/2026 — receptor próprio do WhatsApp
+
+28. **O WhatsApp chega por um receptor em código próprio, não pelo n8n.** Pedido do Mateus: código puro, sob controle total, que nunca pare.
+    - **Fonte:** só a API oficial (Cloud API com coexistência). Gateway não oficial (Baileys, WA-AKG etc.) está fora: arrisca o número da clínica.
+    - **Receptor** (`servicos/receptor`): serviço próprio no Swarm, separado do painel, com 2 réplicas. É o endereço de webhook da Meta para os números cadastrados em `whatsapp_numeros`, trocado número a número (override da Meta).
+    - **O que ele faz:** confere a assinatura da Meta, guarda o evento bruto antes de tudo (`wa_eventos`, banco central) e repassa o corpo idêntico para o n8n da Sara. Depois espelha no banco da empresa: contatos, conversas, mensagens, reações, edições, apagadas, status, histórico da conexão e agenda do celular.
+    - **Disponibilidade:**
+      - banco central fora: o receptor guarda num arquivo local (spool) e a Sara continua recebendo;
+      - n8n fora: o receptor refaz o repasse por até 1 hora;
+      - painel fora: nada muda (regra 8).
+    - **Repasse para a Sara:** só os campos que ela já recebia (`messages` e `smb_message_echoes`, em `REPASSAR_CAMPOS`). Histórico da conexão e agenda do celular ficam só no painel, para milhares de mensagens antigas não virarem atendimento.
+    - **A Sara continua no n8n.** O que ela manda pela API é registrado no receptor (`POST /whatsapp/envio`), porque a Meta só devolve o status.
+    - **Mídias:** o receptor baixa pela Meta e guarda no Supabase Storage, numa pasta privada.
+    - **Ainda não decidido:** o envio pelo painel (fase 1.3) vai pelo receptor ou pelo n8n.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

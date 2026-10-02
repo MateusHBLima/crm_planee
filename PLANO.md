@@ -52,6 +52,7 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 
 ## Fase 1 — Leitura (nada escreve)
 
+- [x] **1.1a Receptor do WhatsApp (decisão 28).** Recebe os eventos oficiais (mensagens, ecos do celular, status, reações, edições, apagadas, histórico da conexão e agenda), repassa para a Sara e espelha no banco da empresa. 18 testes em `servicos/receptor`. Passo a passo em `docs/whatsapp.md`.
 - [ ] **1.1 Inbox somente leitura, em tempo real.** Lista com as quatro abas, busca, conversa com bolhas por autor, ficha lateral. Realtime para mensagens novas, escutando só a conversa aberta e a lista.
 - [x] **1.2 CRM somente leitura.** Quadro de atendimento por assunto, funil comercial, contatos, lidos das tabelas.
   *Feito em 29/09:* quadro, comercial e contatos lidos pela mesma camada da API (PR #5), com teste de ponta a ponta.

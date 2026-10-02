@@ -1,0 +1,16 @@
+{
+  "name": "planee-receptor-whatsapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Receptor do webhook oficial do WhatsApp (Cloud API, coexistência): guarda tudo, repassa para o n8n da Sara e espelha no banco da empresa.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --test-concurrency=1 testes/*.test.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

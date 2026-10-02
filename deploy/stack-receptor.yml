@@ -1,0 +1,74 @@
+# Stack do receptor do WhatsApp no Portainer (decisão 28). Passo a passo em docs/whatsapp.md.
+# Os valores ficam só no Portainer (Environment variables da stack), nunca aqui.
+# Rota: adm.planeelabia.com/whatsapp/* vai para o receptor (regra mais longa que a do painel, então tem prioridade).
+
+version: "3.8"
+
+services:
+  receptor:
+    image: ghcr.io/mateushblima/crm_planee-receptor:${VERSAO:-latest}
+    environment:
+      - CENTRAL_DATABASE_URL=${CENTRAL_DATABASE_URL:-}
+      - DATABASE_URL=${DATABASE_URL}
+      - PAINEL_CHAVE_CIFRA=${PAINEL_CHAVE_CIFRA:-}
+      - EMPRESA_BANCO_PADRAO=${EMPRESA_BANCO_PADRAO:-teste}
+      - META_APP_SECRET=${META_APP_SECRET}
+      - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
+      - META_TOKEN=${META_TOKEN:-}
+      - ENCAMINHAR_PADRAO=${ENCAMINHAR_PADRAO:-}
+      - REPASSAR_CAMPOS=${REPASSAR_CAMPOS:-messages,smb_message_echoes}
+      - RECEPTOR_CHAVE_INTERNA=${RECEPTOR_CHAVE_INTERNA:-}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      - WA_BUCKET=${WA_BUCKET:-whatsapp}
+      - WA_RETER_DIAS=${WA_RETER_DIAS:-30}
+    volumes:
+      - receptor_spool:/dados
+    networks:
+      - network_public
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.planee.papel == painel
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 3s
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+        reservations:
+          memory: 96M
+      labels:
+        - shepherd.enable=true
+        - traefik.enable=true
+        - traefik.http.routers.receptor.rule=Host(`adm.planeelabia.com`) && PathPrefix(`/whatsapp`)
+        - traefik.http.routers.receptor.entrypoints=websecure
+        - traefik.http.routers.receptor.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.receptor.service=receptor
+        - traefik.http.services.receptor.loadbalancer.server.port=3010
+        - traefik.swarm.network=network_public
+
+volumes:
+  receptor_spool:
+
+networks:
+  network_public:
+    external: true
+    name: network_public
