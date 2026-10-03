@@ -2,11 +2,13 @@ import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { Shell } from '@/components/Shell';
 import { Crm } from '@/components/crm/Crm';
+import { Inbox } from '@/components/inbox/Inbox';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
 import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { lerConfigCrm, lerQuadro } from '@/lib/painel/crm';
+import { listarConversas } from '@/lib/painel/inbox';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { listarEmpresas, listarEquipe } from '@/lib/painel/gestao';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
@@ -37,6 +39,16 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   const tentar = async <T,>(fn: () => Promise<T>): Promise<T | { erro: string }> => {
     try { return await fn(); } catch (e) { if (e instanceof ErroApi) return { erro: e.message }; throw e; }
   };
+
+  if (atual.id === 'inbox') {
+    const lista = await tentar(() => listarConversas(usuario));
+    if ('erro' in lista) return aviso(lista.erro);
+    return (
+      <Shell atual={atual.id} usuario={usuario} largo>
+        <Inbox key={usuario.empresa?.id} inicial={lista} mascarado={usuario.master} />
+      </Shell>
+    );
+  }
 
   if (atual.id === 'crm') {
     const quadro = await tentar(() => lerQuadro(usuario));
@@ -84,7 +96,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <h1 className={p.titulo}>{atual.nome}</h1>
       <div className={p.cartao}>
         <p className={p.texto}>{atual.descricao}</p>
-        <p className={p.dica}>Esta tela ainda está em construção. O CRM já funciona.</p>
+        <p className={p.dica}>Esta tela ainda está em construção. A inbox e o CRM já funcionam.</p>
       </div>
     </Shell>
   );

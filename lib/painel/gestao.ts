@@ -1,6 +1,6 @@
 import 'server-only';
 import { createHash, randomInt } from 'node:crypto';
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { central, ErroApi, transacao } from '@/lib/db';
 import { cifrar, cifraConfigurada } from '@/lib/cifra';
 import { limparPermissoes, type Nivel, type Permissao } from '@/lib/permissoes';
@@ -26,7 +26,8 @@ function exigirGestorDaEmpresa(u: Usuario): string {
   return u.empresa.id;
 }
 
-async function auditar(c: PoolClient, u: Usuario, empresa: string | null, acao: string, alvo: string | null, detalhe: unknown) {
+// Também usado pela inbox (acesso do master a conversa), fora de transação: aceita o pool do banco central.
+export async function auditar(c: Pool | PoolClient, u: Usuario, empresa: string | null, acao: string, alvo: string | null, detalhe: unknown) {
   await c.query(
     'insert into central_auditoria (usuario_id, empresa_id, acao, alvo, detalhe) values ($1,$2,$3,$4,$5)',
     [u.id, empresa, acao, alvo, detalhe === undefined ? null : JSON.stringify(detalhe)],
