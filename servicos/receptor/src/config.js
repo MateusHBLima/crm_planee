@@ -10,7 +10,8 @@ export const config = {
   padraoUrl: env.DATABASE_URL || '',
   empresasNoPadrao: (env.EMPRESA_BANCO_PADRAO ?? 'teste').split(',').map((s) => s.trim()).filter(Boolean),
   chaveCifra: env.PAINEL_CHAVE_CIFRA || '',
-  appSecret: env.META_APP_SECRET || '',
+  // Um segredo por app da Meta que entrega para cá, separados por vírgula (ex.: app da Planee e app da clínica).
+  appSecrets: (env.META_APP_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean),
   verifyToken: env.META_VERIFY_TOKEN || '',
   chaveInterna: env.RECEPTOR_CHAVE_INTERNA || '', // a Sara (n8n) usa para registrar o que mandou
   metaToken: env.META_TOKEN || '',
