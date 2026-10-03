@@ -278,6 +278,11 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // Janela de 24 h fechada: caixa desligada com o motivo, e a ação recusa mesmo chamada direto
   await item(p, 'Carlos Ficticio').getByRole('button').click();
   await conversa(p).getByText('Obrigado, até mais').first().waitFor({ timeout: 8000 }).catch(() => {});
+  const linkFora = conversa(p).locator('footer a', { hasText: 'Abrir no WhatsApp' });
+  ok('fora da janela: botão "Abrir no WhatsApp" leva ao WhatsApp Web oficial na conversa do contato',
+    (await linkFora.getAttribute('href').catch(() => '')) === `https://web.whatsapp.com/send?phone=${CARLOS}`
+    && (await linkFora.getAttribute('target').catch(() => '')) === 'whatsapp-clinica'
+    && (await conversa(p).locator('header a', { hasText: 'Abrir no WhatsApp' }).count()) === 1);
   ok('fora da janela: caixa desligada com a explicação', (await p.locator('#resposta-inbox').isDisabled())
     && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.').count()) === 1
     && (await p.getByRole('button', { name: 'Enviar', exact: true }).isDisabled()));
@@ -293,6 +298,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia', semPermDono.slice(0, 160));
   await p.goto(GERAL + '/inbox'); await item(p, 'Beatriz Ficticia').getByRole('button').click(); await p.waitForTimeout(1500);
   ok('sem inbox.responder: a caixa some', (await p.locator('#resposta-inbox').count()) === 0 && (await p.getByText(/Somente leitura/).count()) === 1);
+  ok('sem inbox.responder: sem "Abrir no WhatsApp"', (await p.getByText('Abrir no WhatsApp').count()) === 0);
   ok('sem inbox.responder: sem botão Assumir, mas vê quem atende', (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 0
     && ((await cab().textContent()) || '').includes('Sara atendendo'));
   await ctx.close();

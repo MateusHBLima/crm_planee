@@ -55,6 +55,9 @@
 .dono[data-dono='equipe'] { background: var(--eq-bg); color: var(--eq-ink); }
 .botaoDono { flex-shrink: 0; height: 34px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--ink); }
 .botaoDono:hover:not(:disabled) { background: var(--hover); }
+a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; }
+.foraJanelaBloco { display: flex; align-items: center; gap: 10px; }
+.foraJanelaBloco .foraJanela { flex-grow: 1; }
 .tagEquipe { flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: var(--eq-bg); color: var(--eq-ink); display: inline-flex; align-items: center; }
 
 .mensagens { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 18px 28px 22px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }

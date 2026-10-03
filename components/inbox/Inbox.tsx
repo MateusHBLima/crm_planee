@@ -18,6 +18,9 @@ type Aberta = Omit<ConversaAberta, 'fuso'>;
 type Pendente = { chave: string; wamid: string; texto: string; em: string };
 const FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
 const chaveDe = (k: Chave) => k.numero_id + ':' + k.wa_id;
+// WhatsApp Web oficial da clínica, já na conversa do contato. Fora das 24 h a equipe manda por ali (sem modelo);
+// a mensagem volta para a Inbox pelo eco da coexistência e a Sara fica pausada pela regra do celular.
+const linkWhatsApp = (waId: string) => `https://web.whatsapp.com/send?phone=${encodeURIComponent(waId)}`;
 
 const AUTOR: Record<Mensagem['origem'], string> = { contato: '', api: 'Sara', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
 const MIDIA: Record<string, string> = {
@@ -291,6 +294,12 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                     </span>
                   </div>
                   {podeResponder && (
+                    <a className={c.botaoDono} href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
+                      title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
+                      Abrir no WhatsApp
+                    </a>
+                  )}
+                  {podeResponder && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
                       onClick={() => trocarDono(atual.dono === 'humano' ? 'ia' : 'humano')}
                       title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa até você devolver'}>
@@ -328,7 +337,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
               ))}
             </div>
             {podeResponder && atual && (
-              <Compositor key={chaveDe(aberta)} janelaAberta={atual.janela_aberta} onEnviar={enviar} />
+              <Compositor key={chaveDe(aberta)} janelaAberta={atual.janela_aberta} onEnviar={enviar} link={linkWhatsApp(atual.wa_id)} />
             )}
           </>
         )}
@@ -348,7 +357,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
 }
 
 // Caixa de resposta: Enter envia, Shift+Enter quebra a linha. Fora da janela de 24 h fica desligada, com o motivo.
-function Compositor({ janelaAberta, onEnviar }: { janelaAberta: boolean; onEnviar: (texto: string) => Promise<string | null> }) {
+function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; onEnviar: (texto: string) => Promise<string | null>; link: string }) {
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -361,7 +370,12 @@ function Compositor({ janelaAberta, onEnviar }: { janelaAberta: boolean; onEnvia
   };
   return (
     <footer className={c.compositor}>
-      {!janelaAberta && <p className={c.foraJanela}>{FORA_DA_JANELA}</p>}
+      {!janelaAberta && (
+        <div className={c.foraJanelaBloco}>
+          <p className={c.foraJanela}>{FORA_DA_JANELA}</p>
+          <a className={c.botaoDono} href={link} target="whatsapp-clinica" rel="noopener noreferrer">Abrir no WhatsApp</a>
+        </div>
+      )}
       <div className={c.caixa} data-desligada={janelaAberta ? undefined : 'true'}>
         <label htmlFor="resposta-inbox" className={c.visivelLeitor}>Resposta</label>
         <textarea id="resposta-inbox" value={texto} maxLength={4096} disabled={!janelaAberta || enviando}
