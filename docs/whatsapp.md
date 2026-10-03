@@ -30,6 +30,7 @@ No teste, o banco central e o banco da empresa são o mesmo Supabase (`dyembfton
 
 1. `supabase/migrations/007_whatsapp_central.sql`
 2. `supabase/migrations/008_whatsapp_dados.sql`
+3. `supabase/migrations/009_whatsapp_dono.sql` (quem atende a conversa, item 11)
 
 Confira (tem que voltar 6 linhas):
 
@@ -38,7 +39,12 @@ select table_name from information_schema.tables
  where table_name in ('whatsapp_numeros','wa_eventos','wa_contatos','wa_conversas','wa_mensagens','wa_reacoes');
 ```
 
-Em produção, a 007 vai no banco central e a 008 no banco de cada empresa que tiver WhatsApp.
+Em produção, a 007 vai no banco central e a 008 e a 009 no banco de cada empresa que tiver WhatsApp. A 009 entra **antes** de subir o painel com a Inbox nova: sem ela, a Inbox avisa "Falta atualizar o espelho do WhatsApp (migração 009)". Conferência da 009 (tem que voltar 3 linhas):
+
+```sql
+select column_name from information_schema.columns
+ where table_name = 'wa_conversas' and column_name in ('dono','dono_em','dono_por');
+```
 
 ## 2. Storage
 
@@ -193,6 +199,39 @@ O painel espera até 15 s. **O workflow do n8n deve:**
 4. responder `{ "ok": true, "wamid": "<o mesmo wamid>" }`. Se a Meta recusar: `{ "ok": false, "erro": "<código Meta>" }`.
 
 Qualquer outra resposta (erro HTTP, JSON diferente, mais de 15 s) aparece na tela como falha curta, sem repassar o corpo. Até o espelho trazer o `wamid`, a tela mostra a bolha "enviando…".
+
+## 11. Quem atende: Assumir e Devolver pra Sara
+
+Cada conversa tem um dono em `wa_conversas.dono` (migração 009): `ia` (a Sara) ou `humano` (a equipe). Quem tem `inbox.responder` vê no cabeçalho da conversa quem está atendendo e um botão:
+
+| Situação | Cabeçalho | Botão | A Sara |
+|---|---|---|---|
+| `dono = ia`, sem resposta recente pelo celular | Sara atendendo | Assumir | responde |
+| `dono = ia`, equipe respondeu pelo celular há menos de `SARA_PAUSA_CELULAR_MIN` (padrão 7) min | Sara pausada até hh:mm (resposta pelo celular) | Assumir | quieta até o horário |
+| `dono = humano` | Equipe atendendo · nome | Devolver pra Sara | quieta até alguém devolver |
+
+Responder pelo painel também assume a conversa. Assumir e devolver vão para `central_auditoria` (`assumir_conversa`, `devolver_conversa`, alvo `numero_id:4 últimos dígitos`). A pausa pelo celular é a mesma regra de hoje (eco `smb_message_echoes`) e não muda o dono.
+
+**A Sara pergunta ao receptor antes de responder** (credencial Header Auth `x-receptor-chave` com a `RECEPTOR_CHAVE_INTERNA`, a mesma do item 8):
+
+```
+GET https://adm.planeelabia.com/whatsapp/atendimento?numero=<phone_number_id>&wa_id=<número do contato, só dígitos>
+x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
+→ 200 { "sara_responde": true|false, "motivo": "ia"|"equipe_assumiu"|"equipe_no_celular",
+        "dono": "ia"|"humano", "por": "<nome>"|null, "desde": "<iso>"|null, "pausa_ate": "<iso>"|null }
+```
+
+O número é achado com e sem o 9. Conversa que o espelho ainda não conhece responde `sara_responde: true`. **No n8n:** um nó HTTP logo antes de a Sara responder, com tempo limite de 3 s e "continuar em caso de erro"; só fica quieta se a resposta for 200 com `sara_responde: false`. Qualquer erro (receptor fora, 401, 404, 503) = a Sara responde, porque o agente não depende do painel (regra 8 do `CLAUDE.md`). Este pedido substitui o bloqueio de 7 minutos no Redis (tarefa 2.5).
+
+**Devolver com o contato esperando:** se a última mensagem da conversa é do contato, o painel avisa o n8n para a Sara responder já (sem o endereço, ela responde na próxima mensagem do contato):
+
+```
+POST <N8N_WEBHOOK_PAINEL_RETOMAR>
+x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
+{ "evento": "conversa_devolvida", "empresa": "<id>", "numero_id": "<phone_number_id>", "wa_id": "<contato>", "por": "<nome>" }
+```
+
+É o mesmo webhook do aviso `atendimento_finalizado` do CRM (`docs/api.md`); o n8n separa pelo campo `evento`.
 
 ## Retenção (LGPD)
 

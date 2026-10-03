@@ -21,6 +21,9 @@ async function consultar<T>(fn: () => Promise<T>): Promise<T> {
     if ((e as { code?: string }).code === '42P01') {
       throw new ErroApi(503, 'O espelho do WhatsApp ainda não foi instalado no banco desta empresa (migração 008).');
     }
+    if ((e as { code?: string }).code === '42703') {
+      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migração 009).');
+    }
     throw e;
   }
 }
@@ -30,6 +33,8 @@ const JANELA_MS = 24 * 60 * 60 * 1000;
 const POR_PAGINA = 100;
 const ID_NUMERO = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SO_DIGITOS = /^\d{5,20}$/;
+// Minutos que a Sara fica quieta depois de resposta pelo celular (o receptor usa a mesma variável).
+const PAUSA_CELULAR_MS = () => (Number(process.env.SARA_PAUSA_CELULAR_MIN) || 7) * 60_000;
 
 // O receptor grava o nome do tipo quando a mensagem não tem texto (resumo da lista); a tela mostra em português.
 const RESUMO_TIPO: Record<string, string> = {
@@ -37,10 +42,13 @@ const RESUMO_TIPO: Record<string, string> = {
   contacts: 'Contato', unsupported: 'Tipo de mensagem não suportado', desconhecido: 'Mensagem da Sara',
 };
 
+// Quem atende: 'ia' (Sara) ou 'humano' (equipe assumiu no painel). pausa_ate: a equipe respondeu pelo celular e
+// a Sara fica quieta até esse horário (mesma regra do receptor, GET /whatsapp/atendimento).
 export type Conversa = {
   numero_id: string; wa_id: string; nome: string | null;
   ultima_em: string | null; ultima_resumo: string | null; ultima_direcao: string | null;
   nao_lidas: number; janela_aberta: boolean;
+  dono: 'ia' | 'humano'; dono_por: string | null; dono_em: string | null; pausa_ate: string | null;
 };
 export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string };
 
@@ -58,16 +66,21 @@ function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
   if (resumo && RESUMO_TIPO[resumo]) resumo = RESUMO_TIPO[resumo];
   if (resumo && u.master) resumo = mascararTexto(resumo);
   const entrada = r.ultima_entrada_em ? new Date(r.ultima_entrada_em as string).getTime() : 0;
+  const pausa = r.celular_em ? new Date(r.celular_em as string).getTime() + PAUSA_CELULAR_MS() : 0;
   return {
     numero_id: String(r.numero_id), wa_id: String(r.wa_id), nome: (r.nome as string | null) ?? null,
     ultima_em: iso(r.ultima_em), ultima_resumo: resumo, ultima_direcao: (r.ultima_direcao as string | null) ?? null,
     nao_lidas: Number(r.nao_lidas) || 0, janela_aberta: entrada > 0 && Date.now() - entrada < JANELA_MS,
+    dono: r.dono === 'humano' ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
+    pausa_ate: pausa > Date.now() ? new Date(pausa).toISOString() : null,
   };
 }
 
 const SELECT_CONVERSA = `
   select c.numero_id, c.wa_id, coalesce(nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
-         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas
+         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em,
+         (select max(m.enviada_em) from wa_mensagens m
+           where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
 
 export async function listarConversas(u: Usuario, busca?: string): Promise<ListaConversas> {
@@ -202,6 +215,9 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   const url = process.env.N8N_WEBHOOK_PAINEL_ENVIAR;
   if (!url) throw new ErroApi(503, 'Envio pelo painel ainda não configurado.');
 
+  // Quem responde pelo painel assume a conversa: a Sara não fala junto. Devolver é um clique.
+  await assumirAoEnviar(u, banco, numeroId, waId);
+
   const alvo = `${numeroId}:${waId.slice(-4)}`;
   const registrar = (resultado: string) => auditar(central(), u, u.empresa!.id, 'enviar_mensagem', alvo, { resultado }).catch(() => undefined);
   const ctrl = new AbortController();
@@ -233,4 +249,45 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   // Só o código da Meta (números e letras), nunca o resto da resposta.
   const codigo = resposta && resposta.ok === false && resposta.erro != null ? String(resposta.erro).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 20) : '';
   throw new ErroApi(502, codigo ? `A Meta recusou o envio (código ${codigo}).` : 'O serviço de envio não confirmou a mensagem. Tente de novo em instantes.');
+}
+
+// ---- Quem atende: assumir e devolver para a Sara (fase 2.1, versão da Inbox) ----
+
+const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, extra?: Record<string, unknown>) =>
+  auditar(central(), u, u.empresa!.id, acao, `${numeroId}:${waId.slice(-4)}`, extra).catch(() => undefined);
+
+async function assumirAoEnviar(u: Usuario, banco: ReturnType<typeof db>, numeroId: string, waId: string) {
+  const r = await consultar(() => banco.query(
+    `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3
+      where numero_id = $1 and wa_id = $2 and dono <> 'humano' returning 1`, [numeroId, waId, u.nome]));
+  if (r.rowCount) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true });
+}
+
+// Assumir: a Sara fica quieta nesta conversa até alguém devolver. Devolver: a Sara volta a responder; se a última
+// mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR) para ela responder já. Só quem pode responder.
+export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano'): Promise<Conversa> {
+  validar(numeroId, waId);
+  if (dono !== 'ia' && dono !== 'humano') throw new ErroApi(400, 'Escolha assumir ou devolver.');
+  const banco = db(u);
+  if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para atender pelo painel nesta empresa.');
+  const r = await consultar(() => banco.query(
+    `update wa_conversas set dono = $3, dono_em = now(), dono_por = $4
+      where numero_id = $1 and wa_id = $2 and dono <> $3 returning ultima_direcao`, [numeroId, waId, dono, u.nome]));
+  if (r.rowCount) {
+    await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId);
+    if (dono === 'ia' && r.rows[0].ultima_direcao === 'entrada') await avisarDevolvida(u, numeroId, waId);
+  }
+  return lerConversaResumo(u, numeroId, waId);
+}
+
+// O aviso é extra: sem o endereço, ou com o n8n fora, a Sara responde na próxima mensagem do contato.
+async function avisarDevolvida(u: Usuario, numeroId: string, waId: string) {
+  const url = process.env.N8N_WEBHOOK_PAINEL_RETOMAR;
+  if (!url) return;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
+  await fetch(url, {
+    method: 'POST', signal: ctrl.signal,
+    headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
+    body: JSON.stringify({ evento: 'conversa_devolvida', empresa: u.empresa!.id, numero_id: numeroId, wa_id: waId, por: u.nome }),
+  }).catch(() => undefined).finally(() => clearTimeout(t));
 }

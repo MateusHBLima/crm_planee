@@ -1,6 +1,7 @@
-// Testes da Inbox (fases 1.1 e 2.3): lista, conversa, rótulos por origem, mídia, citação, reação,
+// Testes da Inbox (fases 1.1, 2.1 e 2.3): lista, conversa, rótulos por origem, mídia, citação, reação,
 // editada/apagada, não lidas, CPF mascarado e auditoria do master, isolamento entre empresas, permissão,
-// e a resposta pelo painel contra um n8n falso (webhook painel_enviar) que também faz o papel do receptor.
+// a resposta pelo painel contra um n8n falso (webhook painel_enviar) que também faz o papel do receptor,
+// e Assumir / Devolver pra Sara (com o aviso painel_retomar e a pausa por resposta no celular).
 // Roda pelo rodar.sh, depois do central.js (usa a Clínica Outra e o admin dela). Dados 100% fictícios.
 const { chromium } = require('playwright');
 const http = require('http');
@@ -45,6 +46,7 @@ const servidorN8n = http.createServer((req, res) => {
     n8n.pedidos.push({ url: req.url, segredo: req.headers['x-painel-segredo'], corpo: d });
     const responder = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (req.headers['x-painel-segredo'] !== process.env.N8N_WEBHOOK_SEGREDO) return responder({ ok: false, erro: 'segredo' });
+    if (req.url === '/painel-retomar') return responder({ ok: true });
     if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131047', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
     const wamid = `wamid.TESTE${++n8n.n}`;
     sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
@@ -212,6 +214,15 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const audE = sql(`select a.empresa_id || '|' || a.alvo || '|' || coalesce(a.detalhe::text, '') from central_auditoria a where a.acao = 'enviar_mensagem' order by a.id desc limit 1`);
   ok('envio registrado na auditoria central, sem o texto', Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`)) === audEnvioAntes + 1
     && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);
+  // Quem responde pelo painel assume a conversa (a Sara fica quieta)
+  await p.waitForTimeout(800);
+  ok('responder pelo painel assume a conversa no banco', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true');
+  const cab = () => p.locator('section[aria-label^="Conversa com"] header');
+  ok('cabeçalho mostra "Equipe atendendo · Amanda Teste" e o botão Devolver pra Sara',
+    ((await cab().textContent()) || '').includes('Equipe atendendo · Amanda Teste') && (await p.getByRole('button', { name: 'Devolver pra Sara' }).count()) === 1);
+  ok('lista marca a conversa com a equipe', (await item(p, 'Beatriz Ficticia').getByText('Equipe', { exact: true }).count()) === 1
+    && (await item(p, 'Carlos Ficticio').getByText('Equipe', { exact: true }).count()) === 0);
+  ok('assumir ao enviar fica na auditoria', sql(`select count(*) from central_auditoria where acao = 'assumir_conversa' and alvo = '${NUM}:1001' and detalhe::text like '%ao_enviar%'`) === '1');
   // Shift+Enter quebra a linha
   const nAntesShift = n8n.pedidos.length;
   await p.fill('#resposta-inbox', 'Linha 1'); await p.press('#resposta-inbox', 'Shift+Enter'); await p.type('#resposta-inbox', 'Linha 2'); await p.waitForTimeout(500);
@@ -224,6 +235,44 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131047)') && !respR.join('\n').includes('DADO_SENSIVEL')
     && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
+  // Devolver pra Sara: volta para a IA e, com a última mensagem do contato, avisa o n8n para ela responder já
+  sql(`update wa_conversas set ultima_direcao = 'entrada' where wa_id = '${BIA}'`);
+  const nRet = n8n.pedidos.filter((x) => x.url === '/painel-retomar').length;
+  let antesDono = acoesR.length;
+  await p.getByRole('button', { name: 'Devolver pra Sara' }).click();
+  await p.getByRole('button', { name: 'Assumir', exact: true }).waitFor({ timeout: 8000 }).catch(() => {});
+  const acaoDevolver = (acoesR[antesDono] || {}).id;
+  ok('Devolver pra Sara: banco volta para a IA e o cabeçalho mostra "Sara atendendo"',
+    sql(`select dono || '|' || dono_por from wa_conversas where wa_id='${BIA}'`) === 'ia|Amanda Teste' && ((await cab().textContent()) || '').includes('Sara atendendo'));
+  const ret = n8n.pedidos.filter((x) => x.url === '/painel-retomar');
+  const ultRet = ret[ret.length - 1] || { corpo: {} };
+  ok('devolver avisa o n8n (painel_retomar) com segredo e sem texto da conversa', ret.length === nRet + 1 && ultRet.segredo === 'segredo-n8n-de-teste'
+    && ultRet.corpo.evento === 'conversa_devolvida' && ultRet.corpo.numero_id === NUM && ultRet.corpo.wa_id === BIA && ultRet.corpo.por === 'Amanda Teste'
+    && ultRet.corpo.empresa === 'teste' && Object.keys(ultRet.corpo).length === 5, JSON.stringify(ultRet.corpo));
+  ok('devolver fica na auditoria', sql(`select count(*) from central_auditoria where acao = 'devolver_conversa' and alvo = '${NUM}:1001'`) === '1');
+  // Assumir pelo botão (sem enviar nada)
+  antesDono = acoesR.length;
+  await p.getByRole('button', { name: 'Assumir', exact: true }).click();
+  await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
+  const acaoAssumir = (acoesR[antesDono] || {}).id;
+  ok('Assumir pelo botão: equipe no banco, sem mandar mensagem', sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'humano'
+    && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1);
+  await p.screenshot({ path: out + '24_inbox_assumida.png' });
+  // Devolver com a última mensagem da clínica: não avisa o n8n (não há o que responder)
+  sql(`update wa_conversas set ultima_direcao = 'saida' where wa_id = '${BIA}'`);
+  const devolve2 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
+  ok('devolver sem mensagem do contato pendente não avisa o n8n', devolve2.startsWith('200') && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia'
+    && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1, devolve2.slice(0, 120));
+  // Equipe respondeu pelo celular agora: a Sara fica pausada (sem mudar o dono)
+  sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em) values ('${NUM}', '${DANI}', 'wamid.TDCEL', 'saida', 'celular', 'text', 'Respondi pelo celular', now() - interval '1 minute')`);
+  await item(p, 'Daniela Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Respondi pelo celular').waitFor({ timeout: 8000 }).catch(() => {});
+  const cabDani = ((await cab().textContent()) || '').replace(/\s+/g, ' ');
+  ok('resposta pelo celular: "Sara pausada até" com o botão Assumir', /Sara pausada até \d{2}:\d{2} \(resposta pelo celular\)/.test(cabDani)
+    && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1 && sql(`select dono from wa_conversas where wa_id='${DANI}'`) === 'ia', cabDani.slice(0, 160));
+  await p.screenshot({ path: out + '25_inbox_pausa_celular.png' });
+  await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
   const acaoEnviar = (acoesR.find((a) => a.corpo.includes('Resposta fictícia pelo painel')) || {}).id;
   ok('id da ação de enviar capturado', Boolean(acaoEnviar));
   // Janela de 24 h fechada: caixa desligada com o motivo, e a ação recusa mesmo chamada direto
@@ -239,8 +288,13 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`update painel_vinculos set permissoes = array_remove(permissoes, 'inbox.responder') where usuario_id = '${idAmanda}' and empresa_id = 'teste'`);
   const semPerm = await chamarAcao(p, acaoEnviar, [NUM, BIA, 'Tentativa sem permissão']);
   ok('sem inbox.responder: a ação recusa chamada direto', semPerm.includes('não tem permissão para responder') && n8n.pedidos.length === nPed, semPerm.slice(0, 160));
+  const semPermDono = await chamarAcao(p, acaoAssumir, [NUM, BIA]);
+  ok('sem inbox.responder: assumir recusa chamada direto', Boolean(acaoAssumir) && semPermDono.includes('não tem permissão para atender pelo painel')
+    && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia', semPermDono.slice(0, 160));
   await p.goto(GERAL + '/inbox'); await item(p, 'Beatriz Ficticia').getByRole('button').click(); await p.waitForTimeout(1500);
   ok('sem inbox.responder: a caixa some', (await p.locator('#resposta-inbox').count()) === 0 && (await p.getByText(/Somente leitura/).count()) === 1);
+  ok('sem inbox.responder: sem botão Assumir, mas vê quem atende', (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 0
+    && ((await cab().textContent()) || '').includes('Sara atendendo'));
   await ctx.close();
   sql(`update empresas set modulos = array_remove(modulos, 'inbox.responder') where id = 'teste'`);
 

@@ -14,6 +14,8 @@ export const config = {
   appSecrets: (env.META_APP_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean),
   verifyToken: env.META_VERIFY_TOKEN || '',
   chaveInterna: env.RECEPTOR_CHAVE_INTERNA || '', // a Sara (n8n) usa para registrar o que mandou
+  // Minutos que a Sara fica quieta depois que a equipe responde pelo celular (mesmo valor no painel).
+  pausaCelularMin: num(env.SARA_PAUSA_CELULAR_MIN, 7),
   metaToken: env.META_TOKEN || '',
   graphUrl: (env.META_GRAPH_URL || 'https://graph.facebook.com').replace(/\/+$/, ''),
   graphVersao: env.META_GRAPH_VERSAO || 'v23.0',

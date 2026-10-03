@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirConversa, carregarConversas, enviarMensagem } from '@/lib/painel/acoes-inbox';
+import { abrirConversa, assumirConversa, carregarConversas, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
 import c from './inbox.module.css';
 
-// Inbox (fases 1.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
-// para quem tem inbox.responder. Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto
+// Inbox (fases 1.1, 2.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
+// e os botões Assumir / Devolver pra Sara para quem tem inbox.responder. Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto
 // onde ela rolou. A resposta enviada aparece como "enviando…" até o receptor gravá-la no espelho.
 
 const ATUALIZA_MS = 10000;
@@ -73,6 +73,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   const [aviso, setAviso] = useState<string | null>(null);
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
   const [pendentes, setPendentes] = useState<Pendente[]>([]);
+  const [mudandoDono, setMudandoDono] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -159,9 +160,21 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     setPendentes((ps) => [...ps, { chave: chaveDe(k), wamid: r.dados.wamid, texto: texto.trim(), em: new Date().toISOString() }]);
     // Traz a conversa na hora (o receptor costuma gravar antes desta resposta voltar).
     const conv = await abrirConversa(k.numero_id, k.wa_id);
-    if (conv.ok && mesma(abertaRef.current, k)) aplicarAtualizacao(conv.dados);
+    if (conv.ok && mesma(abertaRef.current, k)) { aplicarAtualizacao(conv.dados); atualizarLinha(conv.dados.conversa); }
     return null;
-  }, [aplicarAtualizacao]);
+  }, [aplicarAtualizacao, atualizarLinha]);
+
+  // Assumir (a Sara fica quieta nesta conversa) ou devolver para a Sara.
+  const trocarDono = useCallback(async (dono: 'ia' | 'humano') => {
+    const k = abertaRef.current;
+    if (!k) return;
+    setMudandoDono(true); setAviso(null);
+    const d = tratar(await (dono === 'humano' ? assumirConversa : devolverConversa)(k.numero_id, k.wa_id));
+    setMudandoDono(false);
+    if (!d || !mesma(abertaRef.current, k)) return;
+    setDados((x) => (x ? { ...x, conversa: d } : x));
+    atualizarLinha(d);
+  }, [tratar, atualizarLinha]);
 
   // Busca no servidor (nome ou dígitos do número), com uma pausa curta enquanto a pessoa digita.
   const primeira = useRef(true);
@@ -232,6 +245,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                   </span>
                   <span className={c.itemLinha}>
                     <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
+                    {k.dono === 'humano' && <span className={c.tagEquipe} title={k.dono_por ? `Com a equipe: ${k.dono_por}` : 'Com a equipe'}>Equipe</span>}
                     {k.janela_aberta && <span className={c.janela} title="Janela de 24 h aberta: o contato escreveu nas últimas 24 horas">24h</span>}
                     {k.nao_lidas > 0 && <span className={c.naoLidas} aria-label={`${k.nao_lidas} não lidas`}>{k.nao_lidas}</span>}
                   </span>
@@ -269,8 +283,20 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                       <span className={c.pilula} data-aberta={atual.janela_aberta ? 'true' : 'false'}>
                         {atual.janela_aberta ? 'Janela de 24 h aberta' : 'Janela de 24 h fechada'}
                       </span>
+                      <span className={c.dono} data-dono={atual.dono === 'humano' ? 'equipe' : atual.pausa_ate ? 'pausa' : 'sara'}>
+                        {atual.dono === 'humano'
+                          ? `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}`
+                          : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
+                      </span>
                     </span>
                   </div>
+                  {podeResponder && (
+                    <button type="button" className={c.botaoDono} disabled={mudandoDono}
+                      onClick={() => trocarDono(atual.dono === 'humano' ? 'ia' : 'humano')}
+                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa até você devolver'}>
+                      {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? 'Devolver pra Sara' : 'Assumir'}
+                    </button>
+                  )}
                 </>
               )}
             </header>

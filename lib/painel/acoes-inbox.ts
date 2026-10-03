@@ -23,3 +23,12 @@ export async function abrirConversa(numeroId: string, waId: string, antesDeId?: 
 export async function enviarMensagem(numeroId: string, waId: string, texto: string) {
   return comUsuario((u) => inbox.enviarMensagem(u, numeroId, waId, texto), 'inbox');
 }
+
+// Assumir a conversa (a Sara fica quieta) ou devolver para a Sara. Devolve a linha da lista atualizada.
+export async function assumirConversa(numeroId: string, waId: string) {
+  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'humano'), 'inbox');
+}
+
+export async function devolverConversa(numeroId: string, waId: string) {
+  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'ia'), 'inbox');
+}
