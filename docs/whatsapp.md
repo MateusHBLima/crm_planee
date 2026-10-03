@@ -53,7 +53,7 @@ Supabase → **Storage → New bucket**. Nome `whatsapp`, **privado** (Public de
 | `DATABASE_URL` | a mesma da stack do painel |
 | `PAINEL_CHAVE_CIFRA` | a mesma da stack do painel (decifra o banco de cada empresa) |
 | `EMPRESA_BANCO_PADRAO` | `teste` (a mesma do painel) |
-| `META_APP_SECRET` | App Dashboard → **App settings → Basic → App secret** |
+| `META_APP_SECRET` | App Dashboard → **App settings → Basic → App secret**. Se os números chegam por mais de um app da Meta, coloque os segredos separados por vírgula |
 | `META_VERIFY_TOKEN` | um texto aleatório criado por você (ex.: `openssl rand -hex 16`). Ele é usado no passo 5 |
 | `META_TOKEN` | o token do sistema da Meta que já envia pelo número (baixa as mídias) |
 | `RECEPTOR_CHAVE_INTERNA` | outro texto aleatório. A Sara usa para registrar o que mandou (passo 8) |
@@ -162,7 +162,7 @@ O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depoi
 | Sintoma | Onde olhar |
 |---|---|
 | A Meta não aceita o override | `META_VERIFY_TOKEN` diferente do enviado, ou `/whatsapp/vivo` fora |
-| 401 nos logs do receptor ("assinatura inválida") | `META_APP_SECRET` errado (precisa ser o do app que assina o número) |
+| "assinatura inválida" nos logs do receptor | falta em `META_APP_SECRET` o segredo do app que entrega o número. O app que entrega é o do token usado no override |
 | `pendentes` subindo com erro "não cadastrado" | número sem linha em `whatsapp_numeros`. O evento espera o cadastro e entra sozinho |
 | A Sara parou de responder | `encaminhar_url` do número. Volte o override (passo 5) e confira `repasse_erro` em `wa_eventos` |
 | Mídia sem `caminho` | `META_TOKEN`, `SUPABASE_SERVICE_KEY` ou o bucket |

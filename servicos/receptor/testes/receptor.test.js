@@ -15,6 +15,7 @@ const DB = process.env.RECEPTOR_DB || 'postgres://postgres@localhost:5432/recept
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(DB)) throw new Error('RECEPTOR_DB precisa ser local.');
 const RAIZ = path.resolve(import.meta.dirname, '../../..');
 const SEGREDO = 'segredo-de-teste-do-app';
+const SEGREDO_OUTRO_APP = 'segredo-do-app-da-clinica';
 const NUM = '100000000000001';      // phone_number_id fictício
 const MEU = '5547900000000';        // número de exibição fictício da clínica
 const PAC = '5547911110001';        // paciente fictício
@@ -43,7 +44,7 @@ function subirReceptor(extra = {}) {
     cwd: path.resolve(import.meta.dirname, '..'),
     env: {
       PATH: process.env.PATH, PORTA: String(extra.PORTA || PORTA), CENTRAL_DATABASE_URL: extra.CENTRAL_DATABASE_URL || DB, DATABASE_URL: DB,
-      EMPRESA_BANCO_PADRAO: 'teste', META_APP_SECRET: SEGREDO, META_VERIFY_TOKEN: 'token-verificacao', RECEPTOR_CHAVE_INTERNA: 'chave-interna-teste',
+      EMPRESA_BANCO_PADRAO: 'teste', META_APP_SECRET: `${SEGREDO}, ${SEGREDO_OUTRO_APP}`, META_VERIFY_TOKEN: 'token-verificacao', RECEPTOR_CHAVE_INTERNA: 'chave-interna-teste',
       META_TOKEN: 'token-meta-falso', META_GRAPH_URL: 'http://127.0.0.1:3912', SUPABASE_URL: 'http://127.0.0.1:3913', SUPABASE_SERVICE_KEY: 'chave-storage-falsa',
       ENCAMINHAR_PADRAO: 'http://127.0.0.1:3911/padrao', SPOOL_DIR: extra.SPOOL_DIR || path.join(os.tmpdir(), 'receptor-spool-teste'),
       HOSTNAME: extra.HOSTNAME || 'teste', WA_INTERVALO_MS: '200',
@@ -306,4 +307,10 @@ test('a Sara registra o que mandou: a linha do status ganha o texto', async () =
 test('saúde: mostra a fila e o atraso', async () => {
   const r = await (await fetch(`${B}/whatsapp/saude`)).json();
   assert.equal(r.ok, true); assert.equal(typeof r.pendentes, 'number'); assert.equal(typeof r.atraso_s, 'number');
+});
+
+test('aceita a assinatura de qualquer um dos apps cadastrados', async () => {
+  const r = await enviar(msgEntrada('wamid.APP2', { type: 'text', text: { body: 'veio pelo outro app' } }), { segredo: SEGREDO_OUTRO_APP });
+  assert.equal(r.status, 200);
+  assert.equal((await q("select count(*)::int n from wa_eventos where corpo like '%veio pelo outro app%'"))[0].n, 1);
 });

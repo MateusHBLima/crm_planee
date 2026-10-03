@@ -3,12 +3,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 
 // X-Hub-Signature-256: "sha256=" + HMAC-SHA256(App Secret, corpo bruto). Sem isso, qualquer um poderia
-// inventar mensagens no painel.
+// inventar mensagens no painel. Cada app da Meta assina com o próprio segredo; vale qualquer um da lista.
 export function assinaturaValida(corpo, cabecalho) {
-  if (!config.appSecret || typeof cabecalho !== 'string' || !cabecalho.startsWith('sha256=')) return false;
-  const esperado = Buffer.from(createHmac('sha256', config.appSecret).update(corpo).digest('hex'));
+  if (!config.appSecrets.length || typeof cabecalho !== 'string' || !cabecalho.startsWith('sha256=')) return false;
   const veio = Buffer.from(cabecalho.slice(7));
-  return veio.length === esperado.length && timingSafeEqual(veio, esperado);
+  return config.appSecrets.some((segredo) => {
+    const esperado = Buffer.from(createHmac('sha256', segredo).update(corpo).digest('hex'));
+    return veio.length === esperado.length && timingSafeEqual(veio, esperado);
+  });
 }
 
 const graph = (caminho) => `${config.graphUrl}/${config.graphVersao}/${caminho}`;

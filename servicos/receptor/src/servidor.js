@@ -41,7 +41,7 @@ async function receberEvento(req, res) {
   let corpo;
   try { corpo = await lerCorpo(req); } catch (e) { return responder(res, e.status || 400, { erro: 'corpo inválido' }); }
   const assinatura = req.headers['x-hub-signature-256'];
-  if (!config.appSecret) return responder(res, 503, { erro: 'META_APP_SECRET não configurado' });
+  if (!config.appSecrets.length) return responder(res, 503, { erro: 'META_APP_SECRET não configurado' });
   if (!assinaturaValida(corpo, assinatura)) {
     log('aviso', 'assinatura inválida: evento recusado', { ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress });
     return responder(res, 401, { erro: 'assinatura inválida' });
