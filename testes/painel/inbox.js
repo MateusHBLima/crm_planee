@@ -1,7 +1,9 @@
-// Testes da Inbox somente leitura (fase 1.1): lista, conversa, rótulos por origem, mídia, citação, reação,
-// editada/apagada, não lidas, CPF mascarado e auditoria do master, isolamento entre empresas, permissão.
+// Testes da Inbox (fases 1.1 e 2.3): lista, conversa, rótulos por origem, mídia, citação, reação,
+// editada/apagada, não lidas, CPF mascarado e auditoria do master, isolamento entre empresas, permissão,
+// e a resposta pelo painel contra um n8n falso (webhook painel_enviar) que também faz o papel do receptor.
 // Roda pelo rodar.sh, depois do central.js (usa a Clínica Outra e o admin dela). Dados 100% fictícios.
 const { chromium } = require('playwright');
+const http = require('http');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const out = (process.env.SAIDA || __dirname + '/saida') + '/'; fs.mkdirSync(out, { recursive: true });
@@ -17,14 +19,42 @@ async function entrar(p, base, email, senha = 'senha123', destino = '/inbox') {
   if (p.url().includes('/entrar/verificacao')) { await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800); }
 }
 
-// Guarda o corpo das respostas das ações da Inbox (o que de fato chega ao navegador).
-async function capturar(p, lista) {
+// Guarda o corpo das respostas das ações da Inbox (o que de fato chega ao navegador) e, em "acoes",
+// o id e os argumentos de cada ação chamada (para chamá-la de novo direto, sem a tela).
+async function capturar(p, lista, acoes = []) {
   await p.route((u) => u.pathname === '/inbox', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
+    acoes.push({ id: route.request().headers()['next-action'], corpo: route.request().postData() || '' });
     const r = await route.fetch(); const corpo = await r.text(); lista.push(corpo);
     await route.fulfill({ response: r, body: corpo });
   });
 }
+// Chama uma ação do servidor direto (fetch com o id da ação), como faria alguém fora da tela.
+const chamarAcao = (p, id, args) => p.evaluate(async ({ id, args }) => {
+  const r = await fetch('/inbox', { method: 'POST', headers: { 'next-action': id, accept: 'text/x-component', 'content-type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(args) });
+  return r.status + ' ' + await r.text();
+}, { id, args });
+
+// n8n falso (webhook painel_enviar): confere o segredo, guarda o pedido e, como o receptor faria depois do envio
+// pela Meta, grava a mensagem no espelho com origem 'painel' e quem mandou em bruto.por.
+const n8n = { pedidos: [], n: 0 };
+const dolar = (t) => '$q$' + String(t).replace(/\$q\$/g, '') + '$q$';
+const servidorN8n = http.createServer((req, res) => {
+  let corpo = ''; req.on('data', (x) => { corpo += x; }); req.on('end', () => {
+    const d = (() => { try { return JSON.parse(corpo); } catch { return {}; } })();
+    n8n.pedidos.push({ url: req.url, segredo: req.headers['x-painel-segredo'], corpo: d });
+    const responder = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (req.headers['x-painel-segredo'] !== process.env.N8N_WEBHOOK_SEGREDO) return responder({ ok: false, erro: 'segredo' });
+    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131047', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
+    const wamid = `wamid.TESTE${++n8n.n}`;
+    sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
+           values (${dolar(d.numero_id)}, ${dolar(d.para)}, '${wamid}', 'saida', 'painel', 'text', ${dolar(d.texto)}, 'enviada', now(), now(),
+                   jsonb_build_object('origem', 'registro', 'por', ${dolar(d.por)}));
+         update wa_conversas set ultima_em = now(), ultima_resumo = left(${dolar(d.texto)}, 160), ultima_direcao = 'saida'
+          where numero_id = ${dolar(d.numero_id)} and wa_id = ${dolar(d.para)};`);
+    responder({ ok: true, wamid });
+  });
+});
 
 const NUM = '100000000000001';           // phone_number_id fictício da empresa de teste
 const BIA = '5547900001001', CARLOS = '5547900001002', DANI = '5547900001003';
@@ -60,6 +90,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
 
 (async () => {
   sql(SEMENTE);
+  await new Promise((r) => servidorN8n.listen(Number(process.env.PORTA_N8N || 3999), '127.0.0.1', r));
   const b = await lancar();
   const erros = [];
   const novo = async (vp = { width: 1280, height: 900 }, extra = {}) => {
@@ -80,7 +111,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('indicador da janela de 24 h só onde o contato escreveu há pouco', (await item(p, 'Beatriz Ficticia').getByText('24h', { exact: true }).count()) === 1
     && (await item(p, 'Carlos Ficticio').getByText('24h', { exact: true }).count()) === 0);
   ok('ordem: a mais recente primeiro', ((await p.locator('section[aria-label="Conversas"] li').first().textContent()) || '').includes('Beatriz'));
-  ok('aviso de somente leitura visível', (await p.getByText('Somente leitura: responder pelo painel chega numa próxima etapa.').count()) === 1);
+  ok('sem inbox.responder: aviso de somente leitura', (await p.getByText('Somente leitura: sua conta não tem a permissão para responder pelo painel.').count()) === 1);
 
   await item(p, 'Beatriz Ficticia').getByRole('button').click();
   await conversa(p).getByText('Oi, gostaria de marcar uma consulta').first().waitFor({ timeout: 8000 }).catch(() => {});
@@ -100,6 +131,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const seps = await conversa(p).locator('[role=separator]').allTextContents();
   ok('separadores de dia (Ontem ... Hoje)', seps[0] === 'Ontem' && seps[seps.length - 1] === 'Hoje', seps.join('|'));
   ok('secretária vê o CPF inteiro', txt.includes('123.456.789-09'));
+  ok('sem inbox.responder: sem caixa de resposta', (await p.locator('#resposta-inbox').count()) === 0);
   await p.screenshot({ path: out + '20_inbox_claro.png' });
   await p.click('text=Tema escuro'); await p.waitForTimeout(400); await p.screenshot({ path: out + '21_inbox_escuro.png' }); await p.click('text=Tema claro');
   await p.waitForTimeout(500);
@@ -154,6 +186,64 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('celular: Voltar mostra a lista', await p.locator('section[aria-label="Conversas"]').isVisible());
   await ctx.close();
 
+  // ---- Resposta pelo painel (fase 2.3): a empresa libera e a Amanda recebe "Responder pelo painel" ----
+  sql(`update empresas set modulos = array_append(modulos, 'inbox.responder') where id = 'teste' and not 'inbox.responder' = any(modulos);
+       update painel_vinculos set permissoes = array_append(permissoes, 'inbox.responder')
+        where usuario_id = (select id from painel_usuarios where email = 'amanda@teste.local') and empresa_id = 'teste';`);
+  const idAmanda = sql(`select id from painel_usuarios where email = 'amanda@teste.local'`);
+  [ctx, p] = await novo();
+  const respR = [], acoesR = []; await capturar(p, respR, acoesR);
+  await entrar(p, GERAL, 'amanda@teste.local');
+  await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  ok('secretária com a permissão vê a caixa de resposta', await p.locator('#resposta-inbox').isEnabled() && (await p.getByText(/Somente leitura/).count()) === 0);
+  const audEnvioAntes = Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`));
+  await p.fill('#resposta-inbox', 'Resposta fictícia pelo painel'); await p.press('#resposta-inbox', 'Enter');
+  await conversa(p).locator('[data-id]', { hasText: 'Resposta fictícia pelo painel' }).waitFor({ timeout: 8000 }).catch(() => {});
+  const bolhaR = conversa(p).locator('[data-id]', { hasText: 'Resposta fictícia pelo painel' });
+  ok('Enter envia e a bolha aparece como "Painel · Amanda Teste"', (await bolhaR.count()) === 1 && ((await bolhaR.textContent()) || '').includes('Painel · Amanda Teste'),
+    ((await bolhaR.textContent().catch(() => '')) || '').slice(0, 120));
+  ok('a bolha "enviando…" some quando o espelho traz a mensagem', (await conversa(p).locator('[data-pendente]').count()) === 0 && (await p.inputValue('#resposta-inbox')) === '');
+  const ped = n8n.pedidos[n8n.pedidos.length - 1] || { corpo: {} };
+  ok('webhook recebe o segredo e os campos certos', ped.url === '/painel-enviar' && ped.segredo === 'segredo-n8n-de-teste' && ped.corpo.evento === 'painel_enviar'
+    && ped.corpo.empresa === 'teste' && ped.corpo.numero_id === NUM && ped.corpo.para === BIA && ped.corpo.texto === 'Resposta fictícia pelo painel'
+    && ped.corpo.por === 'Amanda Teste' && ped.corpo.usuario_id === idAmanda, JSON.stringify(ped).slice(0, 300));
+  ok('painel não grava no espelho: a linha é a do "receptor" (n8n falso)', sql(`select count(*) || '|' || min(origem) from wa_mensagens where texto = 'Resposta fictícia pelo painel'`) === '1|painel');
+  const audE = sql(`select a.empresa_id || '|' || a.alvo || '|' || coalesce(a.detalhe::text, '') from central_auditoria a where a.acao = 'enviar_mensagem' order by a.id desc limit 1`);
+  ok('envio registrado na auditoria central, sem o texto', Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`)) === audEnvioAntes + 1
+    && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);
+  // Shift+Enter quebra a linha
+  const nAntesShift = n8n.pedidos.length;
+  await p.fill('#resposta-inbox', 'Linha 1'); await p.press('#resposta-inbox', 'Shift+Enter'); await p.type('#resposta-inbox', 'Linha 2'); await p.waitForTimeout(500);
+  ok('Shift+Enter não envia', n8n.pedidos.length === nAntesShift && (await p.inputValue('#resposta-inbox')) === 'Linha 1\nLinha 2');
+  await p.getByRole('button', { name: 'Enviar', exact: true }).click(); await p.waitForTimeout(2000);
+  ok('botão Enviar manda o texto com a quebra de linha', (n8n.pedidos[n8n.pedidos.length - 1] || { corpo: {} }).corpo.texto === 'Linha 1\nLinha 2');
+  // Erro da Meta: mensagem curta na própria caixa, sem o corpo da resposta do n8n
+  await p.fill('#resposta-inbox', 'Isto vai FALHAR'); await p.press('#resposta-inbox', 'Enter'); await p.waitForTimeout(2000);
+  const erroE = (await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '';
+  ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131047)') && !respR.join('\n').includes('DADO_SENSIVEL')
+    && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
+  await p.screenshot({ path: out + '23_inbox_resposta.png' });
+  const acaoEnviar = (acoesR.find((a) => a.corpo.includes('Resposta fictícia pelo painel')) || {}).id;
+  ok('id da ação de enviar capturado', Boolean(acaoEnviar));
+  // Janela de 24 h fechada: caixa desligada com o motivo, e a ação recusa mesmo chamada direto
+  await item(p, 'Carlos Ficticio').getByRole('button').click();
+  await conversa(p).getByText('Obrigado, até mais').first().waitFor({ timeout: 8000 }).catch(() => {});
+  ok('fora da janela: caixa desligada com a explicação', (await p.locator('#resposta-inbox').isDisabled())
+    && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.').count()) === 1
+    && (await p.getByRole('button', { name: 'Enviar', exact: true }).isDisabled()));
+  const nPed = n8n.pedidos.length;
+  const fora = await chamarAcao(p, acaoEnviar, [NUM, CARLOS, 'Tentativa fora da janela']);
+  ok('fora da janela: a ação recusa mesmo chamada direto', fora.includes('Fora da janela de 24 h') && n8n.pedidos.length === nPed, fora.slice(0, 160));
+  // Sem a permissão: a ação recusa chamada direto e a tela volta a ser só leitura
+  sql(`update painel_vinculos set permissoes = array_remove(permissoes, 'inbox.responder') where usuario_id = '${idAmanda}' and empresa_id = 'teste'`);
+  const semPerm = await chamarAcao(p, acaoEnviar, [NUM, BIA, 'Tentativa sem permissão']);
+  ok('sem inbox.responder: a ação recusa chamada direto', semPerm.includes('não tem permissão para responder') && n8n.pedidos.length === nPed, semPerm.slice(0, 160));
+  await p.goto(GERAL + '/inbox'); await item(p, 'Beatriz Ficticia').getByRole('button').click(); await p.waitForTimeout(1500);
+  ok('sem inbox.responder: a caixa some', (await p.locator('#resposta-inbox').count()) === 0 && (await p.getByText(/Somente leitura/).count()) === 1);
+  await ctx.close();
+  sql(`update empresas set modulos = array_remove(modulos, 'inbox.responder') where id = 'teste'`);
+
   // ---- Master (Planee): CPF mascarado, não mexe nas não lidas, acesso auditado ----
   sql(`update wa_conversas set nao_lidas = 3 where wa_id = '${BIA}'`);
   const audAntes = Number(sql(`select count(*) from central_auditoria where acao = 'abrir_conversa'`));
@@ -199,6 +289,6 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`update painel_vinculos set permissoes = array_prepend('inbox.ver', permissoes) where usuario_id = (select id from painel_usuarios where email = 'amanda@teste.local') and empresa_id = 'teste'`);
 
   ok('sem erro de página', erros.length === 0, erros.join(' | ').slice(0, 300));
-  console.log(res.join('\n')); await b.close();
+  console.log(res.join('\n')); await b.close(); servidorN8n.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);
 })().catch((e) => { console.log(res.join('\n')); console.error('ERRO', e.message); process.exit(1); });

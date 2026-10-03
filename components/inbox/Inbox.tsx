@@ -2,18 +2,22 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirConversa, carregarConversas } from '@/lib/painel/acoes-inbox';
+import { abrirConversa, carregarConversas, enviarMensagem } from '@/lib/painel/acoes-inbox';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
 import c from './inbox.module.css';
 
-// Inbox somente leitura (fase 1.1): lista de conversas à esquerda e a conversa aberta à direita.
-// Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto onde ela rolou.
+// Inbox (fases 1.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
+// para quem tem inbox.responder. Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto
+// onde ela rolou. A resposta enviada aparece como "enviando…" até o receptor gravá-la no espelho.
 
 const ATUALIZA_MS = 10000;
 type Chave = { numero_id: string; wa_id: string };
 type Aberta = Omit<ConversaAberta, 'fuso'>;
+type Pendente = { chave: string; wamid: string; texto: string; em: string };
+const FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
+const chaveDe = (k: Chave) => k.numero_id + ':' + k.wa_id;
 
 const AUTOR: Record<Mensagem['origem'], string> = { contato: '', api: 'Sara', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
 const MIDIA: Record<string, string> = {
@@ -59,7 +63,7 @@ function criarDatas(fuso: string) {
   };
 }
 
-export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascarado: boolean }) {
+export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string }) {
   const [lista, setLista] = useState(inicial);
   const [busca, setBusca] = useState('');
   const [aberta, setAberta] = useState<Chave | null>(null);
@@ -68,6 +72,7 @@ export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascara
   const [carregandoAntigas, setCarregandoAntigas] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
+  const [pendentes, setPendentes] = useState<Pendente[]>([]);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -121,7 +126,42 @@ export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascara
     ajuste.current = null;
     if (a.tipo === 'fim') el.scrollTop = el.scrollHeight;
     else el.scrollTop = a.topo + (el.scrollHeight - a.altura);
-  }, [dados]);
+  }, [dados, pendentes]);
+
+  // Junta a página mais recente da conversa com a tela; só desce para o fim se a pessoa já estava perto dele.
+  const aplicarAtualizacao = useCallback((d: Aberta) => {
+    const el = rolagem.current;
+    const pertoDoFim = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setDados((x) => {
+      if (!x) return x;
+      const mensagens = mesclar(x.mensagens, d.mensagens);
+      if (pertoDoFim && mensagens.length !== x.mensagens.length) ajuste.current = { tipo: 'fim' };
+      return { ...x, conversa: d.conversa, mensagens };
+    });
+  }, []);
+
+  // A bolha "enviando…" sai quando a conversa já traz a mensagem com o mesmo wamid.
+  useEffect(() => {
+    if (!dados || !pendentes.length) return;
+    const vistos = new Set(dados.mensagens.map((m) => m.wamid));
+    if (pendentes.some((p) => vistos.has(p.wamid))) setPendentes((ps) => ps.filter((p) => !vistos.has(p.wamid)));
+  }, [dados, pendentes]);
+
+  const enviar = useCallback(async (texto: string): Promise<string | null> => {
+    const k = abertaRef.current;
+    if (!k) return 'Abra uma conversa antes de responder.';
+    const r = await enviarMensagem(k.numero_id, k.wa_id, texto);
+    if (!r.ok) {
+      if (r.sair) { window.location.href = `/entrar?motivo=sessao&volta=${encodeURIComponent(window.location.pathname)}`; return null; }
+      return r.erro;
+    }
+    ajuste.current = { tipo: 'fim' };
+    setPendentes((ps) => [...ps, { chave: chaveDe(k), wamid: r.dados.wamid, texto: texto.trim(), em: new Date().toISOString() }]);
+    // Traz a conversa na hora (o receptor costuma gravar antes desta resposta voltar).
+    const conv = await abrirConversa(k.numero_id, k.wa_id);
+    if (conv.ok && mesma(abertaRef.current, k)) aplicarAtualizacao(conv.dados);
+    return null;
+  }, [aplicarAtualizacao]);
 
   // Busca no servidor (nome ou dígitos do número), com uma pausa curta enquanto a pessoa digita.
   const primeira = useRef(true);
@@ -149,26 +189,18 @@ export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascara
       if (l.ok) { setLista(l.dados); setFalhouAtualizar(false); }
       else if (l.sair) { window.location.href = '/entrar?motivo=sessao'; return; }
       else setFalhouAtualizar(true);
-      if (conv && conv.ok && mesma(abertaRef.current, k)) {
-        const el = rolagem.current;
-        const pertoDoFim = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        setDados((x) => {
-          if (!x) return x;
-          const mensagens = mesclar(x.mensagens, conv.dados.mensagens);
-          if (pertoDoFim && mensagens.length !== x.mensagens.length) ajuste.current = { tipo: 'fim' };
-          return { ...x, conversa: conv.dados.conversa, mensagens };
-        });
-      }
+      if (conv && conv.ok && mesma(abertaRef.current, k)) aplicarAtualizacao(conv.dados);
     };
     const id = window.setInterval(tick, ATUALIZA_MS);
     const vis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', vis);
     return () => { parado = true; window.clearInterval(id); document.removeEventListener('visibilitychange', vis); };
-  }, []);
+  }, [aplicarAtualizacao]);
 
   const total = lista.conversas.length;
   const naoLidas = lista.conversas.reduce((s, k) => s + (k.nao_lidas > 0 ? 1 : 0), 0);
   const atual = dados?.conversa ?? (aberta ? lista.conversas.find((k) => mesma(k, aberta)) ?? null : null);
+  const meusPendentes = aberta && dados ? pendentes.filter((p) => p.chave === chaveDe(aberta)) : [];
 
   return (
     <div className={c.tela} data-aberta={aberta ? 'true' : 'false'}>
@@ -259,10 +291,22 @@ export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascara
                   </div>
                 );
               })}
+              {meusPendentes.map((p) => (
+                <div key={p.wamid} className={c.bloco}>
+                  <div className={c.linha} data-direcao="saida" data-pendente="true">
+                    <span className={c.autor} data-tipo="equipe">Painel · {nome}</span>
+                    <div className={c.bolha} data-tipo="equipe" data-pendente="true"><p className={c.texto}>{p.texto}</p></div>
+                    <span className={c.meta}><span className={c.mono}>{datas.hora(p.em)}</span><span className={c.marca}>enviando…</span></span>
+                  </div>
+                </div>
+              ))}
             </div>
+            {podeResponder && atual && (
+              <Compositor key={chaveDe(aberta)} janelaAberta={atual.janela_aberta} onEnviar={enviar} />
+            )}
           </>
         )}
-        <footer className={c.rodape}>Somente leitura: responder pelo painel chega numa próxima etapa.</footer>
+        {!podeResponder && <footer className={c.rodape}>Somente leitura: sua conta não tem a permissão para responder pelo painel.</footer>}
       </section>
 
       <div className={c.aviso} role="status" aria-live="polite">
@@ -277,9 +321,39 @@ export function Inbox({ inicial, mascarado }: { inicial: ListaConversas; mascara
   );
 }
 
+// Caixa de resposta: Enter envia, Shift+Enter quebra a linha. Fora da janela de 24 h fica desligada, com o motivo.
+function Compositor({ janelaAberta, onEnviar }: { janelaAberta: boolean; onEnviar: (texto: string) => Promise<string | null> }) {
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const mandar = async () => {
+    if (enviando || !janelaAberta || !texto.trim()) return;
+    setEnviando(true); setErro(null);
+    const e = await onEnviar(texto);
+    setEnviando(false);
+    if (e) setErro(e); else setTexto('');
+  };
+  return (
+    <footer className={c.compositor}>
+      {!janelaAberta && <p className={c.foraJanela}>{FORA_DA_JANELA}</p>}
+      <div className={c.caixa} data-desligada={janelaAberta ? undefined : 'true'}>
+        <label htmlFor="resposta-inbox" className={c.visivelLeitor}>Resposta</label>
+        <textarea id="resposta-inbox" value={texto} maxLength={4096} disabled={!janelaAberta || enviando}
+          placeholder={janelaAberta ? 'Escreva a resposta. Enter envia; Shift+Enter quebra a linha.' : 'Resposta desligada fora da janela de 24 h'}
+          onChange={(e) => { setTexto(e.target.value); if (erro) setErro(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); mandar(); } }} />
+        <button type="button" className={c.enviar} onClick={mandar} disabled={!janelaAberta || enviando || !texto.trim()}>
+          {enviando ? 'Enviando…' : 'Enviar'}
+        </button>
+      </div>
+      {erro && <p className={c.erroEnvio} role="alert">{erro}</p>}
+    </footer>
+  );
+}
+
 function Bolha({ m, hora, nomeContato }: { m: Mensagem; hora: string; nomeContato: string }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
-  const autor = AUTOR[m.origem] ?? '';
+  const autor = m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] ?? '';
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
   const rotMidia = MIDIA[m.tipo];
   let conteudo: React.ReactNode;

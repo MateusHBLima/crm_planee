@@ -88,6 +88,19 @@
 
 .rodape { flex-shrink: 0; padding: 10px 22px 14px; border-top: 1px solid var(--line); background: var(--surface); font-size: 12.5px; color: var(--ink-3); text-align: center; }
 
+/* Caixa de resposta (fase 2.3) */
+.compositor { flex-shrink: 0; padding: 10px 22px 16px; border-top: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.caixa { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--field); }
+.caixa:focus-within { border-color: var(--ink-3); }
+.caixa[data-desligada='true'] { background: var(--surface-2); }
+.caixa textarea { flex-grow: 1; min-width: 0; height: 56px; max-height: 160px; resize: vertical; border: 0; background: transparent; padding: 6px 0; font-family: inherit; font-size: 14px; line-height: 1.45; color: var(--ink); outline: none; }
+.caixa textarea:disabled { cursor: not-allowed; }
+.enviar { flex-shrink: 0; height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--ink); color: var(--inv) !important; font-size: 13px; font-weight: 600; }
+.enviar:hover:not(:disabled) { background: var(--ink-hover); }
+.foraJanela { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--ag-bg); color: var(--ag-ink); font-size: 12.5px; line-height: 1.4; }
+.erroEnvio { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--rs-bg); color: var(--rs-ink); font-size: 12.5px; }
+.bolha[data-pendente='true'] { opacity: .65; }
+
 /* Aviso flutuante (mesmo padrão do CRM) */
 .aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
 .aviso > * { pointer-events: auto; box-shadow: var(--shadow-2); }
@@ -105,4 +118,5 @@
   .mensagens { padding: 14px 16px 18px; }
   .linha { max-width: 92%; }
   .rodape { padding: 10px 16px 12px; }
+  .compositor { padding: 10px 16px 12px; }
 }

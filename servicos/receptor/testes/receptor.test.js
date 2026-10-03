@@ -314,3 +314,22 @@ test('aceita a assinatura de qualquer um dos apps cadastrados', async () => {
   assert.equal(r.status, 200);
   assert.equal((await q("select count(*)::int n from wa_eventos where corpo like '%veio pelo outro app%'"))[0].n, 1);
 });
+
+test('o painel registra o que a equipe mandou: origem painel e quem mandou (por)', async () => {
+  const reg = (corpo) => fetch(`${B}/whatsapp/envio`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' }, body: JSON.stringify(corpo) });
+  const r = await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL1', tipo: 'text', texto: 'Resposta da equipe pelo painel', timestamp: ts(), origem: 'painel', por: 'Amanda Teste' });
+  assert.equal(r.status, 200);
+  const [m] = await msgs("where wamid = 'wamid.PAINEL1'");
+  assert.equal(m.origem, 'painel'); assert.equal(m.direcao, 'saida'); assert.equal(m.texto, 'Resposta da equipe pelo painel'); assert.equal(m.bruto.por, 'Amanda Teste');
+  // O status chegou antes (linha criada como 'api'): o registro do painel corrige a origem e guarda quem mandou.
+  const st = ev('messages', { statuses: [{ id: 'wamid.PAINEL2', status: 'sent', timestamp: ts(), recipient_id: PAC }] });
+  await enviar(st);
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.PAINEL2'")).length === 1));
+  assert.equal((await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL2', texto: 'Depois do status', origem: 'painel', por: 'x'.repeat(100) })).status, 200);
+  const [m2] = await msgs("where wamid = 'wamid.PAINEL2'");
+  assert.equal(m2.origem, 'painel'); assert.equal(m2.texto, 'Depois do status'); assert.equal(m2.bruto.por, 'x'.repeat(80), '"por" limitado a 80 caracteres');
+  // Origem desconhecida continua 'api' e não guarda "por".
+  assert.equal((await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL3', texto: 'origem estranha', origem: 'celular', por: 'Alguém' })).status, 200);
+  const [m3] = await msgs("where wamid = 'wamid.PAINEL3'");
+  assert.equal(m3.origem, 'api'); assert.equal(m3.bruto.por, undefined);
+});

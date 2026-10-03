@@ -38,6 +38,9 @@ trap para EXIT
 echo "3/9 App: build e start com o Auth falso"
 sobe_auth 3600
 export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste PAINEL_CHAVE_CIFRA="chave-de-teste-local-com-mais-de-32-caracteres"
+# Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
+export PORTA_N8N=${PORTA_N8N:-3999}
+export N8N_WEBHOOK_PAINEL_ENVIAR="http://127.0.0.1:$PORTA_N8N/painel-enviar" N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
 if curl -s -o /dev/null "$BASE_URL"; then echo "Porta $PORTA_APP ocupada: pare o app que está nela."; exit 1; fi
 npm run build >/dev/null
 node node_modules/next/dist/bin/next start -p "$PORTA_APP" > /dev/null 2>&1 & APP_PID=$!
@@ -52,7 +55,7 @@ node "$T/crm-completo.js"
 echo "6/9 Empresas, domínios, níveis e permissões (banco central)"
 node "$T/central.js"
 
-echo "7/9 Inbox somente leitura: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão"
+echo "7/9 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
 node "$T/inbox.js"
 
 echo "8/9 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"

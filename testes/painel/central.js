@@ -28,7 +28,7 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   ok('master abre Empresas', p.url().endsWith('/empresas'), p.url());
   await p.fill('#nova-nome', 'Clínica Outra');
   ok('identificador sugerido a partir do nome', (await p.inputValue('#nova-id')) === 'clinica-outra', await p.inputValue('#nova-id'));
-  for (const id of ['inbox.ver', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver']) await p.uncheck(`[id="nova-${id}"]`);
+  for (const id of ['inbox.ver', 'inbox.responder', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver']) await p.uncheck(`[id="nova-${id}"]`);
   await p.click('text=Criar empresa'); await p.waitForTimeout(1200);
   ok('empresa criada com só "Ver o CRM"', sql("select array_to_string(modulos, ',') from empresas where id='clinica-outra'") === 'crm.ver');
   const cartao = p.locator('article[data-empresa="clinica-outra"]');

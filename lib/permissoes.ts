@@ -6,6 +6,7 @@ export type Nivel = 'master' | 'admin' | 'membro';
 
 export const PERMISSOES = [
   { id: 'inbox.ver', nome: 'Ver a inbox', grupo: 'Atendimento' },
+  { id: 'inbox.responder', nome: 'Responder pelo painel', grupo: 'Atendimento' },
   { id: 'crm.ver', nome: 'Ver o CRM', grupo: 'CRM' },
   { id: 'crm.editar', nome: 'Assumir, mover e anotar atendimentos', grupo: 'CRM' },
   { id: 'crm.arquivar', nome: 'Arquivar atendimentos', grupo: 'CRM' },
@@ -19,8 +20,8 @@ export const TODAS: Permissao[] = PERMISSOES.map((p) => p.id);
 
 // Modelos prontos que o admin aplica com um clique.
 export const MODELOS: Record<'secretaria' | 'gestor', { nome: string; permissoes: Permissao[] }> = {
-  secretaria: { nome: 'Secretária', permissoes: ['inbox.ver', 'crm.ver', 'crm.editar'] },
-  gestor: { nome: 'Gestor', permissoes: ['inbox.ver', 'crm.ver', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver'] },
+  secretaria: { nome: 'Secretária', permissoes: ['inbox.ver', 'inbox.responder', 'crm.ver', 'crm.editar'] },
+  gestor: { nome: 'Gestor', permissoes: ['inbox.ver', 'inbox.responder', 'crm.ver', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver'] },
 };
 
 export const NOME_NIVEL: Record<Nivel, string> = { master: 'Master', admin: 'Admin', membro: 'Membro' };

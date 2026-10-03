@@ -159,7 +159,40 @@ A tela Inbox lê o espelho (`wa_contatos`, `wa_conversas`, `wa_mensagens`, `wa_r
 
 - Abrir a conversa zera `nao_lidas` e grava `lida_ate`. O master (Planee) só olha: não mexe nas não lidas, vê o CPF mascarado e cada conversa aberta vai para `central_auditoria` (`abrir_conversa`, alvo `numero_id:4 últimos dígitos`, uma linha a cada 30 min por pessoa e conversa).
 - Para o navegador vão só o tipo, o `mime_type` e o nome do arquivo da mídia. `midia.caminho`, `bruto` e `erro` ficam no servidor.
-- Falta: abrir a mídia (link assinado), o texto das mensagens da Sara (item 8) e responder pelo painel (fase 2.3).
+- Falta: abrir a mídia (link assinado) e o texto das mensagens da Sara (item 8). A resposta pelo painel está no item 10.
+
+## 10. Responder pelo painel
+
+Quem tem a permissão **Responder pelo painel** (`inbox.responder`; a Planee libera para a empresa na tela Empresas, o admin dá às pessoas) vê a caixa de resposta na Inbox. O painel não fala com a Meta e não grava a mensagem: chama o webhook do n8n, e o n8n envia e avisa o receptor, que grava no espelho.
+
+O painel só chama o webhook dentro da janela de 24 h (`wa_conversas.ultima_entrada_em` nas últimas 24 h). Fora dela, ou se o contato nunca escreveu, recusa: a Meta só aceita modelo aprovado. Cada tentativa vai para `central_auditoria` (`enviar_mensagem`, alvo `numero_id:4 últimos dígitos`, `detalhe.resultado` = `enviada`, `falhou` ou `sem_resposta`), sem o texto.
+
+**Pedido do painel ao n8n** (variáveis do painel: `N8N_WEBHOOK_PAINEL_ENVIAR` com o endereço do webhook e `N8N_WEBHOOK_SEGREDO`; sem o endereço, a tela diz "Envio pelo painel ainda não configurado."):
+
+```
+POST <N8N_WEBHOOK_PAINEL_ENVIAR>
+content-type: application/json
+x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
+{ "evento": "painel_enviar", "empresa": "<id da empresa>", "numero_id": "<phone_number_id>",
+  "para": "<wa_id do contato, só dígitos>", "texto": "<1 a 4.096 caracteres>",
+  "por": "<nome de quem mandou>", "usuario_id": "<uuid da pessoa no painel>" }
+```
+
+O painel espera até 15 s. **O workflow do n8n deve:**
+
+1. conferir `x-painel-segredo` (diferente → responder `{ "ok": false, "erro": "segredo" }` e parar);
+2. enviar pela Graph API: `POST /{numero_id}/messages` com `{ "messaging_product": "whatsapp", "to": "<para>", "type": "text", "text": { "body": "<texto>" } }`;
+3. registrar no receptor (credencial Header Auth, nunca no nó):
+   ```
+   POST https://adm.planeelabia.com/whatsapp/envio
+   x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
+   { "phone_number_id": "<numero_id>", "to": "<para>", "wamid": "<messages[0].id da resposta da Meta>",
+     "tipo": "text", "texto": "<texto>", "timestamp": <segundos>, "origem": "painel", "por": "<por>" }
+   ```
+   O receptor grava com origem `painel` (a Inbox mostra "Painel · <por>"); se o status da Meta chegou antes, a linha é corrigida;
+4. responder `{ "ok": true, "wamid": "<o mesmo wamid>" }`. Se a Meta recusar: `{ "ok": false, "erro": "<código Meta>" }`.
+
+Qualquer outra resposta (erro HTTP, JSON diferente, mais de 15 s) aparece na tela como falha curta, sem repassar o corpo. Até o espelho trazer o `wamid`, a tela mostra a bolha "enviando…".
 
 ## Retenção (LGPD)
 

@@ -4,8 +4,9 @@ import { pode, type Usuario } from '@/lib/sessao';
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 
-// Inbox: espelho do WhatsApp, só leitura (fase 1.1). Lê as tabelas wa_* que o receptor (servicos/receptor)
-// grava no banco de cada empresa (migração 008). O painel não fala com a Meta e não envia mensagem.
+// Inbox: espelho do WhatsApp (fase 1.1) e resposta pelo painel (fase 2.3). Lê as tabelas wa_* que o receptor
+// (servicos/receptor) grava no banco de cada empresa (migração 008). O painel não fala com a Meta: a resposta vai
+// para o webhook do n8n, que envia e avisa o receptor, e é o receptor que grava a mensagem no espelho.
 // Nunca vai para o navegador: o caminho do arquivo de mídia, o objeto bruto da Meta e o erro de envio.
 
 function db(u: Usuario) {
@@ -44,7 +45,7 @@ export type Conversa = {
 export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string };
 
 export type Mensagem = {
-  id: string; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
+  id: string; wamid: string; por: string | null; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
   tipo: string; texto: string | null; midia: { mime_type: string | null; filename: string | null } | null;
   status: string | null; editada: boolean; apagada: boolean; em: string;
   reacoes: { emoji: string; daEmpresa: boolean }[];
@@ -113,7 +114,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   const banco = db(u);
   // Página mais recente, ou a anterior a uma mensagem (mesma ordem da tela: horário da Meta e id).
   const r = await consultar(() => banco.query(
-    `select m.id::text as id, m.wamid, m.direcao, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
+    `select m.id::text as id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
             m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
             m.editada_em, m.apagada_em, m.enviada_em
        from wa_mensagens m
@@ -146,7 +147,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   const mensagens: Mensagem[] = linhas.map((m) => {
     const cit = m.resposta_a ? citadaPor.get(String(m.resposta_a)) : undefined;
     return {
-      id: String(m.id), direcao: m.direcao, origem: m.origem, tipo: String(m.tipo),
+      id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao, origem: m.origem, tipo: String(m.tipo),
       texto: mascarar(m.texto == null ? null : String(m.texto)),
       midia: m.tem_midia ? { mime_type: m.mime_type ?? null, filename: m.filename ?? null } : null,
       status: m.direcao === 'saida' ? (m.status ?? null) : null,
@@ -172,4 +173,64 @@ export async function marcarLida(u: Usuario, numeroId: string, waId: string) {
   await consultar(() => banco.query(
     `update wa_conversas set nao_lidas = 0, lida_ate = now()
       where numero_id = $1 and wa_id = $2 and (nao_lidas <> 0 or lida_ate is null or lida_ate < ultima_em)`, [numeroId, waId]));
+}
+
+// ---- Responder pelo painel (fase 2.3) ----
+
+const ENVIO_MS = 15000;
+const MAX_TEXTO = 4096;
+const WAMID = /^[A-Za-z0-9_.=:+/-]{1,200}$/;
+export const MSG_FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
+
+// Manda a resposta ao webhook do n8n (painel_enviar), que envia pela Meta e registra no receptor.
+// Só dentro da janela de 24 h (fora dela a Meta exige modelo aprovado). Toda tentativa vai para a auditoria
+// central, sem o texto. Erro do n8n ou da Meta volta como mensagem curta, sem repassar o corpo da resposta.
+export async function enviarMensagem(u: Usuario, numeroId: string, waId: string, texto: string): Promise<{ wamid: string }> {
+  validar(numeroId, waId);
+  const banco = db(u);
+  if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para responder pelo painel nesta empresa.');
+  const t = String(texto ?? '').trim();
+  if (!t) throw new ErroApi(400, 'Escreva a mensagem antes de enviar.');
+  if (t.length > MAX_TEXTO) throw new ErroApi(400, 'A mensagem passou de 4.096 caracteres.');
+
+  const r = await consultar(() => banco.query(`select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
+  if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
+  const entrada = r.rows[0].ultima_entrada_em ? new Date(r.rows[0].ultima_entrada_em).getTime() : 0;
+  if (!entrada) throw new ErroApi(409, 'Este contato ainda não escreveu para a clínica: a Meta só permite começar a conversa com modelo aprovado. Responda pelo celular.');
+  if (Date.now() - entrada >= JANELA_MS) throw new ErroApi(409, MSG_FORA_DA_JANELA);
+
+  const url = process.env.N8N_WEBHOOK_PAINEL_ENVIAR;
+  if (!url) throw new ErroApi(503, 'Envio pelo painel ainda não configurado.');
+
+  const alvo = `${numeroId}:${waId.slice(-4)}`;
+  const registrar = (resultado: string) => auditar(central(), u, u.empresa!.id, 'enviar_mensagem', alvo, { resultado }).catch(() => undefined);
+  const ctrl = new AbortController();
+  const tempo = setTimeout(() => ctrl.abort(), ENVIO_MS);
+  let resposta: { ok?: unknown; wamid?: unknown; erro?: unknown } | null = null;
+  let status = 0;
+  try {
+    const x = await fetch(url, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
+      body: JSON.stringify({ evento: 'painel_enviar', empresa: u.empresa!.id, numero_id: numeroId, para: waId, texto: t, por: u.nome, usuario_id: u.id }),
+    });
+    status = x.status;
+    resposta = await x.json().catch(() => null);
+  } catch (e) {
+    await registrar('sem_resposta');
+    throw new ErroApi(502, (e as { name?: string }).name === 'AbortError'
+      ? 'O envio demorou demais e não foi confirmado. Confira no WhatsApp antes de mandar de novo.'
+      : 'Não foi possível falar com o serviço de envio. Tente de novo em instantes.');
+  } finally {
+    clearTimeout(tempo);
+  }
+
+  if (status >= 200 && status < 300 && resposta?.ok === true && typeof resposta.wamid === 'string' && WAMID.test(resposta.wamid)) {
+    await registrar('enviada');
+    return { wamid: resposta.wamid };
+  }
+  await registrar('falhou');
+  // Só o código da Meta (números e letras), nunca o resto da resposta.
+  const codigo = resposta && resposta.ok === false && resposta.erro != null ? String(resposta.erro).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 20) : '';
+  throw new ErroApi(502, codigo ? `A Meta recusou o envio (código ${codigo}).` : 'O serviço de envio não confirmou a mensagem. Tente de novo em instantes.');
 }
