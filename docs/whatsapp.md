@@ -153,6 +153,14 @@ x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>   (credencial Header Auth no n8n, nun
 
 Sem isso, a mensagem da Sara aparece com o status certo, mas com tipo `desconhecido` e sem texto.
 
+## 9. Inbox do painel (somente leitura)
+
+A tela Inbox lê o espelho (`wa_contatos`, `wa_conversas`, `wa_mensagens`, `wa_reacoes`) no banco da empresa, por `lib/painel/inbox.ts`, e atualiza a cada 10 s. Não fala com a Meta e não envia nada.
+
+- Abrir a conversa zera `nao_lidas` e grava `lida_ate`. O master (Planee) só olha: não mexe nas não lidas, vê o CPF mascarado e cada conversa aberta vai para `central_auditoria` (`abrir_conversa`, alvo `numero_id:4 últimos dígitos`, uma linha a cada 30 min por pessoa e conversa).
+- Para o navegador vão só o tipo, o `mime_type` e o nome do arquivo da mídia. `midia.caminho`, `bruto` e `erro` ficam no servidor.
+- Falta: abrir a mídia (link assinado), o texto das mensagens da Sara (item 8) e responder pelo painel (fase 2.3).
+
 ## Retenção (LGPD)
 
 O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depois de processado e repassado. O que fica é o espelho no banco da empresa, sujeito às regras dela. As mídias ficam no bucket privado. O painel vai abri-las por link assinado e temporário (PR 2 da Inbox).

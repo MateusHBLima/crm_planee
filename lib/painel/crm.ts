@@ -34,7 +34,7 @@ export const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
 
 // CPF no meio do texto ou no campo documento: o master (Planee) vê só o final (regra 6).
 const CPF_TEXTO = /\b(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})\b/g;
-function mascararTexto(t: string) { return t.replace(CPF_TEXTO, (_m, _a, _b, _c, d: string) => '***.***.***-' + d); }
+export function mascararTexto(t: string) { return t.replace(CPF_TEXTO, (_m, _a, _b, _c, d: string) => '***.***.***-' + d); }
 function mascararDoc(d: string | null) { return d ? '***.***.***-' + d.replace(/\D/g, '').slice(-2) : null; }
 
 const SOMBRA = /^\s*\[SOMBRA\]\s*/;

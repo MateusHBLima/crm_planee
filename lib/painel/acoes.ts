@@ -1,25 +1,13 @@
 'use server';
 
-import { ErroApi, registrarErro } from '@/lib/db';
-import { usuarioAtual } from '@/lib/sessao';
+import { ErroApi } from '@/lib/db';
+import { comUsuario } from './resposta';
 import * as crm from './crm';
 
 // Ações chamadas pelas telas. Cada uma confere a sessão de novo (nunca confia no navegador)
 // e devolve o quadro atualizado, para a tela não precisar de outra ida ao servidor.
 
-export type Resposta<T> = { ok: true; dados: T } | { ok: false; erro: string; sair?: boolean };
-
-async function comUsuario<T>(fn: (u: NonNullable<Awaited<ReturnType<typeof usuarioAtual>>>) => Promise<T>): Promise<Resposta<T>> {
-  const u = await usuarioAtual();
-  if (!u) return { ok: false, erro: 'Sua sessão terminou. Entre de novo.', sair: true };
-  try {
-    return { ok: true, dados: await fn(u) };
-  } catch (e) {
-    if (e instanceof ErroApi) return { ok: false, erro: e.message };
-    registrarErro('tela', e);
-    return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
-  }
-}
+export type { Resposta } from './resposta';
 
 export async function carregarQuadro() {
   return comUsuario((u) => crm.lerQuadro(u));

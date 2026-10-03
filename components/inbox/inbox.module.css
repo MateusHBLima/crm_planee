@@ -1,0 +1,108 @@
+/* Inbox: lista de conversas à esquerda, conversa aberta à direita (protótipo, tela inbox).
+   Bolhas (design/sistema-visual.md): contato em --surface com borda; Sara em --ia-bg; equipe em --ink com --inv.
+   No celular (< 760px), uma coluna por vez, com botão de voltar. */
+
+.tela { position: relative; flex: 1 1 auto; height: 0; min-height: 520px; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+.tela * { box-sizing: border-box; }
+.tela button, .tela input { font-family: inherit; color: inherit; }
+.tela button { cursor: pointer; }
+.tela button:disabled { cursor: not-allowed; opacity: .5; }
+.tela :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mono { font-family: var(--font-geist-mono), ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.visivelLeitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Lista */
+.lista { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--line); }
+.listaTopo { flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px 16px 10px; }
+.listaTitulo { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.titulo { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+.contagem { font-size: 12.5px; color: var(--ink-3); text-align: right; }
+.busca { position: relative; display: flex; align-items: center; color: var(--ink-3); }
+.busca svg { position: absolute; left: 12px; pointer-events: none; }
+.busca input { width: 100%; height: 40px; padding: 0 12px 0 36px; font-size: 13.5px; background: var(--field); border: 1px solid var(--line-strong); border-radius: 10px; }
+.subErro { margin: 0; font-size: 12.5px; color: var(--rs-ink); }
+.notaMaster { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--surface-3); font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+.itens { list-style: none; margin: 0; padding: 0 8px 8px; flex-grow: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.item { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 12px 10px; margin-bottom: 2px; border: 0; border-radius: 12px; background: none; }
+.item:hover { background: var(--hover); }
+.item[aria-current='true'] { background: var(--sel); }
+.avatar, .avatarGrande { flex-shrink: 0; border-radius: 50%; background: var(--surface-3); color: var(--ink-2); display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.avatar { width: 40px; height: 40px; font-size: 14px; }
+.avatarGrande { width: 40px; height: 40px; font-size: 14px; }
+.itemTexto { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.itemLinha { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.itemNome, .itemNomeForte { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+.itemNomeForte { font-weight: 700; }
+.itemHora { flex-shrink: 0; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.previa { flex-grow: 1; min-width: 0; font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.janela { flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: var(--ia-bg); color: var(--ia-ink); display: inline-flex; align-items: center; }
+.naoLidas { flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ink); color: var(--inv); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.vazio { margin: 8px 16px; padding: 28px 20px; border: 1px dashed var(--line-strong); border-radius: 14px; text-align: center; color: var(--ink-3); font-size: 13.5px; line-height: 1.5; }
+
+/* Conversa */
+.conversa { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.semConversa { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); font-size: 15px; }
+.cabeca { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.voltar { display: none; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 500; align-items: center; gap: 6px; flex-shrink: 0; }
+.cabecaTexto { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cabecaNome { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cabecaLinha { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--ink-3); }
+.pilula { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--fn-bg); color: var(--fn-ink); }
+.pilula[data-aberta='true'] { background: var(--ia-bg); color: var(--ia-ink); }
+
+.mensagens { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 18px 28px 22px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.carregando { margin: 0; text-align: center; font-size: 13px; color: var(--ink-3); }
+.maisAntigas { align-self: center; height: 32px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.maisAntigas:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.bloco { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.dia { display: flex; justify-content: center; margin: 6px 0 2px; }
+.dia span { display: inline-block; padding: 3px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 11.5px; color: var(--ink-3); }
+.dia span::first-letter { text-transform: uppercase; }
+
+.linha { display: flex; flex-direction: column; align-items: flex-start; max-width: min(560px, 85%); }
+.linha[data-direcao='saida'] { align-self: flex-end; align-items: flex-end; }
+.autor { font-size: 11.5px; font-weight: 600; margin-bottom: 4px; color: var(--ink-2); }
+.autor[data-tipo='sara'] { color: var(--ia-ink); }
+.autor[data-tipo='entrada'] { color: var(--ink-3); }
+.bolha { padding: 10px 14px; font-size: 14px; line-height: 1.5; max-width: 100%; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.bolha[data-tipo='entrada'] { background: var(--surface); border: 1px solid var(--line); border-radius: 4px 16px 16px 16px; box-shadow: var(--shadow-1); }
+.bolha[data-tipo='sara'] { background: var(--ia-bg); border: 1px solid transparent; border-radius: 16px 4px 16px 16px; }
+.bolha[data-tipo='equipe'] { background: var(--ink); color: var(--inv); border-radius: 16px 4px 16px 16px; }
+.bolha[data-apagada='true'] { opacity: .6; }
+.texto { margin: 0; white-space: pre-wrap; }
+.semTexto { margin: 0; font-style: italic; color: var(--ink-3); }
+.bolha[data-tipo='equipe'] .semTexto { color: inherit; opacity: .75; }
+.midia { align-self: flex-start; display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.bolha[data-tipo='equipe'] .midia { background: rgba(127, 127, 127, .25); color: inherit; }
+.citada { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
+.bolha[data-tipo='equipe'] .citada { background: rgba(127, 127, 127, .2); color: inherit; border-left-color: currentColor; }
+.citadaAutor { font-weight: 600; }
+.citadaTexto { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.reacoes { margin-top: -6px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13px; display: inline-flex; gap: 2px; box-shadow: var(--shadow-1); position: relative; }
+.meta { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--ink-3); }
+.marca, .marcaApagada { font-style: italic; }
+.marcaApagada { color: var(--rs-ink); }
+.status { font-weight: 700; letter-spacing: -0.12em; }
+.status[data-status='lida'], .status[data-status='reproduzida'] { color: var(--eq-ink); }
+.status[data-status='falhou'] { color: var(--rs-ink); letter-spacing: 0; }
+
+.rodape { flex-shrink: 0; padding: 10px 22px 14px; border-top: 1px solid var(--line); background: var(--surface); font-size: 12.5px; color: var(--ink-3); text-align: center; }
+
+/* Aviso flutuante (mesmo padrão do CRM) */
+.aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+.aviso > * { pointer-events: auto; box-shadow: var(--shadow-2); }
+.avisoErro { display: inline-flex; align-items: center; gap: 10px; padding: 10px 8px 10px 14px; border-radius: 10px; font-size: 13.5px; background: var(--rs-bg); color: var(--rs-ink); }
+.avisoErro button { border: 0; background: none; color: inherit; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
+
+@media (max-width: 760px) {
+  .tela { flex: none; height: 100dvh; min-height: 480px; grid-template-columns: minmax(0, 1fr); }
+  .tela[data-aberta='true'] .lista { display: none; }
+  .tela[data-aberta='false'] .conversa { display: none; }
+  .lista { border-right: 0; }
+  .voltar { display: inline-flex; }
+  .cabeca { padding: 12px 16px; gap: 10px; }
+  .avatarGrande { display: none; }
+  .mensagens { padding: 14px 16px 18px; }
+  .linha { max-width: 92%; }
+  .rodape { padding: 10px 16px 12px; }
+}
