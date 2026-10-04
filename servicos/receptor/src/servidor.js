@@ -2,6 +2,7 @@
 //   GET  /whatsapp/webhook   verificação da Meta (hub.challenge)
 //   POST /whatsapp/webhook   eventos da Meta: confere a assinatura, guarda, repassa para a Sara, responde 200
 //   POST /whatsapp/envio     a Sara (n8n) registra o que mandou pela API (cabeçalho x-receptor-chave)
+//   GET  /whatsapp/atendimento?numero=&wa_id=   a Sara pergunta se pode responder (equipe assumiu? cabeçalho x-receptor-chave)
 //   GET  /whatsapp/saude     fila, atraso e banco (para monitor externo)
 //   GET  /whatsapp/vivo      o processo está de pé (healthcheck do Docker; não depende do banco)
 import http from 'node:http';
@@ -9,7 +10,8 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { central } from './banco.js';
 import { assinaturaValida } from './meta.js';
-import { registrarEnvio, resumoDoEvento } from './processar.js';
+import { NumeroSemDono, registrarEnvio, resumoDoEvento } from './processar.js';
+import { estadoDoAtendimento } from './atendimento.js';
 import { timingSafeEqual } from 'node:crypto';
 import { destinoDoRepasse } from './rotas.js';
 import { marcarRepasse, repassar } from './repasse.js';
@@ -92,6 +94,20 @@ async function envio(req, res) {
   catch (e) { responder(res, 400, { erro: erroCurto(e) }); }
 }
 
+// Erro aqui nunca deve calar a Sara: o n8n trata qualquer resposta diferente de 200 como "pode responder".
+async function atendimento(req, res, q) {
+  if (!chaveCerta(req.headers['x-receptor-chave'])) return responder(res, 401, { erro: 'chave inválida' });
+  const numero = String(q.get('numero') || '');
+  const waId = String(q.get('wa_id') || '');
+  if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(numero) || !/^\+?\d{8,20}$/.test(waId)) return responder(res, 400, { erro: 'informe numero e wa_id' });
+  try { responder(res, 200, await comLimite(estadoDoAtendimento(numero, waId), 3000)); }
+  catch (e) {
+    if (e instanceof NumeroSemDono) return responder(res, 404, { erro: erroCurto(e) });
+    log('erro', 'não consegui ler o dono da conversa', { erro: erroCurto(e) });
+    responder(res, 503, { erro: 'indisponível' });
+  }
+}
+
 async function saude(res) {
   try {
     const r = await comLimite(central().query(
@@ -119,6 +135,7 @@ export function criarServidor() {
       }
       if (url.pathname === '/whatsapp/webhook' && req.method === 'POST') return await receberEvento(req, res);
       if (url.pathname === '/whatsapp/envio' && req.method === 'POST') return await envio(req, res);
+      if (url.pathname === '/whatsapp/atendimento' && req.method === 'GET') return await atendimento(req, res, url.searchParams);
       if (url.pathname === '/whatsapp/saude') return await saude(res);
       if (url.pathname === '/whatsapp/vivo') return responder(res, 200, { ok: true });
       responder(res, 404, { erro: 'não encontrado' });

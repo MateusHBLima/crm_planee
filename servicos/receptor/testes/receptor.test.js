@@ -78,7 +78,7 @@ before(async () => {
   await admin.query('drop database if exists receptor_teste').catch(() => undefined);
   await admin.query('create database receptor_teste');
   await admin.end();
-  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql']) {
+  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql']) {
     execSync(`psql -q -v ON_ERROR_STOP=1 "${DB}" -f "${path.join(RAIZ, 'supabase/migrations', f)}"`, { stdio: 'pipe' });
   }
   await q(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome, telefone, encaminhar_url) values ($1, 'teste', 'Número de teste', $2, 'http://127.0.0.1:3911/sara')`, [NUM, MEU]);
@@ -313,4 +313,63 @@ test('aceita a assinatura de qualquer um dos apps cadastrados', async () => {
   const r = await enviar(msgEntrada('wamid.APP2', { type: 'text', text: { body: 'veio pelo outro app' } }), { segredo: SEGREDO_OUTRO_APP });
   assert.equal(r.status, 200);
   assert.equal((await q("select count(*)::int n from wa_eventos where corpo like '%veio pelo outro app%'"))[0].n, 1);
+});
+
+test('o painel registra o que a equipe mandou: origem painel e quem mandou (por)', async () => {
+  const reg = (corpo) => fetch(`${B}/whatsapp/envio`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' }, body: JSON.stringify(corpo) });
+  const r = await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL1', tipo: 'text', texto: 'Resposta da equipe pelo painel', timestamp: ts(), origem: 'painel', por: 'Amanda Teste' });
+  assert.equal(r.status, 200);
+  const [m] = await msgs("where wamid = 'wamid.PAINEL1'");
+  assert.equal(m.origem, 'painel'); assert.equal(m.direcao, 'saida'); assert.equal(m.texto, 'Resposta da equipe pelo painel'); assert.equal(m.bruto.por, 'Amanda Teste');
+  // O status chegou antes (linha criada como 'api'): o registro do painel corrige a origem e guarda quem mandou.
+  const st = ev('messages', { statuses: [{ id: 'wamid.PAINEL2', status: 'sent', timestamp: ts(), recipient_id: PAC }] });
+  await enviar(st);
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.PAINEL2'")).length === 1));
+  assert.equal((await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL2', texto: 'Depois do status', origem: 'painel', por: 'x'.repeat(100) })).status, 200);
+  const [m2] = await msgs("where wamid = 'wamid.PAINEL2'");
+  assert.equal(m2.origem, 'painel'); assert.equal(m2.texto, 'Depois do status'); assert.equal(m2.bruto.por, 'x'.repeat(80), '"por" limitado a 80 caracteres');
+  // Origem desconhecida continua 'api' e não guarda "por".
+  assert.equal((await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL3', texto: 'origem estranha', origem: 'celular', por: 'Alguém' })).status, 200);
+  const [m3] = await msgs("where wamid = 'wamid.PAINEL3'");
+  assert.equal(m3.origem, 'api'); assert.equal(m3.bruto.por, undefined);
+});
+
+test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', async () => {
+  const P3 = '554788880003';   // como a Meta manda (sem o 9)
+  const P4 = '554788880004';
+  const perguntar = (wa, { chave = 'chave-interna-teste', numero = NUM } = {}) =>
+    fetch(`${B}/whatsapp/atendimento?numero=${numero}&wa_id=${wa}`, { headers: { 'x-receptor-chave': chave } });
+  assert.equal((await perguntar(P3, { chave: 'errada' })).status, 401);
+  assert.equal((await perguntar('abc')).status, 400);
+  assert.equal((await perguntar(P3, { numero: '999999999999999' })).status, 404);
+  // Conversa que o espelho não conhece: a Sara responde.
+  let r = await (await perguntar(P3)).json();
+  assert.equal(r.sara_responde, true); assert.equal(r.motivo, 'ia');
+
+  const entrada = (wa, id) => ev('messages', { contacts: [{ profile: { name: 'Paciente Ficticio 3' }, wa_id: wa }], messages: [{ from: wa, id, timestamp: ts(), type: 'text', text: { body: 'oi' } }] });
+  await enviar(entrada(P3, 'wamid.DONO1'));
+  await enviar(entrada(P4, 'wamid.DONO2'));
+  assert.ok(await ate(async () => (await q('select count(*)::int n from wa_conversas where wa_id = any($1)', [[P3, P4]]))[0].n === 2));
+  r = await (await perguntar(P3)).json();
+  assert.equal(r.sara_responde, true); assert.equal(r.dono, 'ia');
+
+  // A equipe respondeu pelo celular agora: Sara quieta pelos minutos da pausa. Achado também com o 9.
+  await enviar(ev('smb_message_echoes', { message_echoes: [{ from: MEU, to: P3, id: 'wamid.DONO3', timestamp: ts(), type: 'text', text: { body: 'Oi, aqui é a equipe' } }] }));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.DONO3'")).length === 1));
+  r = await (await perguntar('5547988880003')).json();
+  assert.equal(r.sara_responde, false); assert.equal(r.motivo, 'equipe_no_celular');
+  const falta = new Date(r.pausa_ate).getTime() - Date.now();
+  assert.ok(falta > 6 * 60_000 && falta <= 7 * 60_000 + 5000, 'pausa de 7 min a partir da resposta da equipe');
+
+  // Resposta pelo celular de 10 minutos atrás já não segura a Sara.
+  await enviar(ev('smb_message_echoes', { message_echoes: [{ from: MEU, to: P4, id: 'wamid.DONO4', timestamp: ts(-600), type: 'text', text: { body: 'antiga' } }] }));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.DONO4'")).length === 1));
+  assert.equal((await (await perguntar(P4)).json()).sara_responde, true);
+
+  // A equipe assumiu no painel: Sara quieta até devolverem, sem prazo.
+  await q(`update wa_conversas set dono = 'humano', dono_em = now(), dono_por = 'Amanda Teste' where wa_id = $1`, [P4]);
+  r = await (await perguntar(P4)).json();
+  assert.equal(r.sara_responde, false); assert.equal(r.motivo, 'equipe_assumiu'); assert.equal(r.por, 'Amanda Teste');
+  await q(`update wa_conversas set dono = 'ia', dono_em = now(), dono_por = 'Amanda Teste' where wa_id = $1`, [P4]);
+  assert.equal((await (await perguntar(P4)).json()).sara_responde, true);
 });

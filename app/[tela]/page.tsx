@@ -45,7 +45,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     if ('erro' in lista) return aviso(lista.erro);
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <Inbox key={usuario.empresa?.id} inicial={lista} mascarado={usuario.master} />
+        <Inbox key={usuario.empresa?.id} inicial={lista} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} nome={usuario.nome} />
       </Shell>
     );
   }

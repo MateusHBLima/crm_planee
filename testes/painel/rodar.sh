@@ -11,18 +11,18 @@ case "$DATABASE_URL" in *@localhost*|*@127.0.0.1*) ;; *) echo "Recusado: DATABAS
 PORTA_APP=${PORTA_APP:-3100}; PORTA_AUTH=${PORTA_AUTH:-54321}
 export BASE_URL="http://localhost:$PORTA_APP"
 
-echo "1/9 Banco: recria o schema, aplica as migrações 001 a 008 e a semente fictícia; cria o banco da 2ª empresa"
+echo "1/9 Banco: recria o schema, aplica as migrações 001 a 009 e a semente fictícia; cria o banco da 2ª empresa"
 psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
-         supabase/migrations/008_whatsapp_dados.sql; do
+         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
 export OUTRA_DATABASE_URL="${DATABASE_URL%/*}/painel_teste_outra"
 psql -q "${DATABASE_URL%/*}/postgres" -c "drop database if exists painel_teste_outra" -c "create database painel_teste_outra" >/dev/null
-for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql; do
+for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql; do
   psql -q -v ON_ERROR_STOP=1 "$OUTRA_DATABASE_URL" -f "$f" >/dev/null
 done
 psql -q "$OUTRA_DATABASE_URL" -c "delete from notas; delete from atendimentos; insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000001','receita','Cartão só da Clínica Outra','IA')" >/dev/null
@@ -38,6 +38,10 @@ trap para EXIT
 echo "3/9 App: build e start com o Auth falso"
 sobe_auth 3600
 export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste PAINEL_CHAVE_CIFRA="chave-de-teste-local-com-mais-de-32-caracteres"
+# Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
+export PORTA_N8N=${PORTA_N8N:-3999}
+export N8N_WEBHOOK_PAINEL_ENVIAR="http://127.0.0.1:$PORTA_N8N/painel-enviar" N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
+export N8N_WEBHOOK_PAINEL_RETOMAR="http://127.0.0.1:$PORTA_N8N/painel-retomar"
 if curl -s -o /dev/null "$BASE_URL"; then echo "Porta $PORTA_APP ocupada: pare o app que está nela."; exit 1; fi
 npm run build >/dev/null
 node node_modules/next/dist/bin/next start -p "$PORTA_APP" > /dev/null 2>&1 & APP_PID=$!
@@ -52,7 +56,7 @@ node "$T/crm-completo.js"
 echo "6/9 Empresas, domínios, níveis e permissões (banco central)"
 node "$T/central.js"
 
-echo "7/9 Inbox somente leitura: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão"
+echo "7/9 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
 node "$T/inbox.js"
 
 echo "8/9 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"

@@ -38,7 +38,7 @@ O CPF inteiro nunca sai pela API nem pelo MCP (LGPD): na ficha vem só o final (
 
 ## Painel → n8n
 
-Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela.
+Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
 
 ## Regras
 

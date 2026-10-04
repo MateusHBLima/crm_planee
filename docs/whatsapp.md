@@ -30,6 +30,7 @@ No teste, o banco central e o banco da empresa são o mesmo Supabase (`dyembfton
 
 1. `supabase/migrations/007_whatsapp_central.sql`
 2. `supabase/migrations/008_whatsapp_dados.sql`
+3. `supabase/migrations/009_whatsapp_dono.sql` (quem atende a conversa, item 11)
 
 Confira (tem que voltar 6 linhas):
 
@@ -38,7 +39,12 @@ select table_name from information_schema.tables
  where table_name in ('whatsapp_numeros','wa_eventos','wa_contatos','wa_conversas','wa_mensagens','wa_reacoes');
 ```
 
-Em produção, a 007 vai no banco central e a 008 no banco de cada empresa que tiver WhatsApp.
+Em produção, a 007 vai no banco central e a 008 e a 009 no banco de cada empresa que tiver WhatsApp. A 009 entra **antes** de subir o painel com a Inbox nova: sem ela, a Inbox avisa "Falta atualizar o espelho do WhatsApp (migração 009)". Conferência da 009 (tem que voltar 3 linhas):
+
+```sql
+select column_name from information_schema.columns
+ where table_name = 'wa_conversas' and column_name in ('dono','dono_em','dono_por');
+```
 
 ## 2. Storage
 
@@ -159,7 +165,73 @@ A tela Inbox lê o espelho (`wa_contatos`, `wa_conversas`, `wa_mensagens`, `wa_r
 
 - Abrir a conversa zera `nao_lidas` e grava `lida_ate`. O master (Planee) só olha: não mexe nas não lidas, vê o CPF mascarado e cada conversa aberta vai para `central_auditoria` (`abrir_conversa`, alvo `numero_id:4 últimos dígitos`, uma linha a cada 30 min por pessoa e conversa).
 - Para o navegador vão só o tipo, o `mime_type` e o nome do arquivo da mídia. `midia.caminho`, `bruto` e `erro` ficam no servidor.
-- Falta: abrir a mídia (link assinado), o texto das mensagens da Sara (item 8) e responder pelo painel (fase 2.3).
+- Falta: abrir a mídia (link assinado) e o texto das mensagens da Sara (item 8). A resposta pelo painel está no item 10.
+
+## 10. Responder pelo painel
+
+Quem tem a permissão **Responder pelo painel** (`inbox.responder`; a Planee libera para a empresa na tela Empresas, o admin dá às pessoas) vê a caixa de resposta na Inbox. O painel não fala com a Meta e não grava a mensagem: chama o webhook do n8n, e o n8n envia e avisa o receptor, que grava no espelho.
+
+O painel só chama o webhook dentro da janela de 24 h (`wa_conversas.ultima_entrada_em` nas últimas 24 h). Fora dela, ou se o contato nunca escreveu, recusa: a Meta só aceita modelo aprovado. Cada tentativa vai para `central_auditoria` (`enviar_mensagem`, alvo `numero_id:4 últimos dígitos`, `detalhe.resultado` = `enviada`, `falhou` ou `sem_resposta`), sem o texto.
+
+**Pedido do painel ao n8n** (variáveis do painel: `N8N_WEBHOOK_PAINEL_ENVIAR` com o endereço do webhook e `N8N_WEBHOOK_SEGREDO`; sem o endereço, a tela diz "Envio pelo painel ainda não configurado."):
+
+```
+POST <N8N_WEBHOOK_PAINEL_ENVIAR>
+content-type: application/json
+x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
+{ "evento": "painel_enviar", "empresa": "<id da empresa>", "numero_id": "<phone_number_id>",
+  "para": "<wa_id do contato, só dígitos>", "texto": "<1 a 4.096 caracteres>",
+  "por": "<nome de quem mandou>", "usuario_id": "<uuid da pessoa no painel>" }
+```
+
+O painel espera até 15 s. **O workflow do n8n deve:**
+
+1. conferir `x-painel-segredo` (diferente → responder `{ "ok": false, "erro": "segredo" }` e parar);
+2. enviar pela Graph API: `POST /{numero_id}/messages` com `{ "messaging_product": "whatsapp", "to": "<para>", "type": "text", "text": { "body": "<texto>" } }`;
+3. registrar no receptor (credencial Header Auth, nunca no nó):
+   ```
+   POST https://adm.planeelabia.com/whatsapp/envio
+   x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
+   { "phone_number_id": "<numero_id>", "to": "<para>", "wamid": "<messages[0].id da resposta da Meta>",
+     "tipo": "text", "texto": "<texto>", "timestamp": <segundos>, "origem": "painel", "por": "<por>" }
+   ```
+   O receptor grava com origem `painel` (a Inbox mostra "Painel · <por>"); se o status da Meta chegou antes, a linha é corrigida;
+4. responder `{ "ok": true, "wamid": "<o mesmo wamid>" }`. Se a Meta recusar: `{ "ok": false, "erro": "<código Meta>" }`.
+
+Qualquer outra resposta (erro HTTP, JSON diferente, mais de 15 s) aparece na tela como falha curta, sem repassar o corpo. Até o espelho trazer o `wamid`, a tela mostra a bolha "enviando…".
+
+## 11. Quem atende: Assumir e Devolver pra Sara
+
+Cada conversa tem um dono em `wa_conversas.dono` (migração 009): `ia` (a Sara) ou `humano` (a equipe). Quem tem `inbox.responder` vê no cabeçalho da conversa quem está atendendo e um botão:
+
+| Situação | Cabeçalho | Botão | A Sara |
+|---|---|---|---|
+| `dono = ia`, sem resposta recente pelo celular | Sara atendendo | Assumir | responde |
+| `dono = ia`, equipe respondeu pelo celular há menos de `SARA_PAUSA_CELULAR_MIN` (padrão 7) min | Sara pausada até hh:mm (resposta pelo celular) | Assumir | quieta até o horário |
+| `dono = humano` | Equipe atendendo · nome | Devolver pra Sara | quieta até alguém devolver |
+
+Responder pelo painel também assume a conversa. Assumir e devolver vão para `central_auditoria` (`assumir_conversa`, `devolver_conversa`, alvo `numero_id:4 últimos dígitos`). A pausa pelo celular é a mesma regra de hoje (eco `smb_message_echoes`) e não muda o dono.
+
+**A Sara pergunta ao receptor antes de responder** (credencial Header Auth `x-receptor-chave` com a `RECEPTOR_CHAVE_INTERNA`, a mesma do item 8):
+
+```
+GET https://adm.planeelabia.com/whatsapp/atendimento?numero=<phone_number_id>&wa_id=<número do contato, só dígitos>
+x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
+→ 200 { "sara_responde": true|false, "motivo": "ia"|"equipe_assumiu"|"equipe_no_celular",
+        "dono": "ia"|"humano", "por": "<nome>"|null, "desde": "<iso>"|null, "pausa_ate": "<iso>"|null }
+```
+
+O número é achado com e sem o 9. Conversa que o espelho ainda não conhece responde `sara_responde: true`. **No n8n:** um nó HTTP logo antes de a Sara responder, com tempo limite de 3 s e "continuar em caso de erro"; só fica quieta se a resposta for 200 com `sara_responde: false`. Qualquer erro (receptor fora, 401, 404, 503) = a Sara responde, porque o agente não depende do painel (regra 8 do `CLAUDE.md`). Este pedido substitui o bloqueio de 7 minutos no Redis (tarefa 2.5).
+
+**Devolver com o contato esperando:** se a última mensagem da conversa é do contato, o painel avisa o n8n para a Sara responder já (sem o endereço, ela responde na próxima mensagem do contato):
+
+```
+POST <N8N_WEBHOOK_PAINEL_RETOMAR>
+x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
+{ "evento": "conversa_devolvida", "empresa": "<id>", "numero_id": "<phone_number_id>", "wa_id": "<contato>", "por": "<nome>" }
+```
+
+É o mesmo webhook do aviso `atendimento_finalizado` do CRM (`docs/api.md`); o n8n separa pelo campo `evento`.
 
 ## Retenção (LGPD)
 

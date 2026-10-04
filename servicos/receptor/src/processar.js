@@ -256,22 +256,31 @@ export function resumoDoEvento(corpo) {
 }
 
 // A Sara (n8n) avisa o que mandou pela API: a Meta só devolve o status, sem o conteúdo.
+// O mesmo caminho registra o que a equipe mandou pelo painel: origem 'painel' e quem mandou em "por" (fica no bruto).
 export async function registrarEnvio(d) {
   const numero = String(d.phone_number_id || '');
   const r = await rota(numero);
   if (!r) throw new NumeroSemDono(`Número ${numero || '(sem id)'} não cadastrado em whatsapp_numeros.`);
   const waId = digitos(d.to);
   if (!d.wamid || !waId) throw new Error('Informe wamid e to.');
+  const origem = d.origem === 'painel' ? 'painel' : 'api';
+  const por = origem === 'painel' && typeof d.por === 'string' && d.por.trim() ? d.por.trim().slice(0, 80) : null;
   const m = { id: String(d.wamid), type: String(d.tipo || 'text'), timestamp: d.timestamp, text: { body: d.texto ?? '' } };
   if (m.type !== 'text') m[m.type] = { caption: d.texto ?? null, id: d.midia_id ?? undefined, mime_type: d.mime_type ?? undefined, filename: d.filename ?? undefined };
+  const bruto = { ...d, origem: 'registro' };
+  if (por) bruto.por = por; else delete bruto.por;
   await transacao(bancoDaEmpresa(r), async (c) => {
+    // A linha pode já existir (o status chega antes e cria com origem 'api'): o registro do painel corrige a origem.
     const x = await c.query(
       `insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, midia, enviada_em, bruto, status, status_em)
-       values ($1,$2,$3,'saida','api',$4,$5,$6,$7,$8,'enviada',$7)
+       values ($1,$2,$3,'saida',$9,$4,$5,$6,$7,$8,'enviada',$7)
        on conflict (numero_id, wamid) do update set tipo = excluded.tipo, texto = excluded.texto,
-         midia = coalesce(wa_mensagens.midia, excluded.midia), bruto = coalesce(wa_mensagens.bruto, excluded.bruto)
+         midia = coalesce(wa_mensagens.midia, excluded.midia),
+         bruto = case when $10::text is not null then coalesce(wa_mensagens.bruto, '{}'::jsonb) || jsonb_build_object('por', $10::text)
+                      else coalesce(wa_mensagens.bruto, excluded.bruto) end,
+         origem = case when excluded.origem = 'painel' and wa_mensagens.origem = 'api' then 'painel' else wa_mensagens.origem end
        returning (xmax = 0) as nova`,
-      [numero, waId, m.id, m.type, textoDe(m), midiaDe(m), quando(m.timestamp), { ...d, origem: 'registro' }]);
+      [numero, waId, m.id, m.type, textoDe(m), midiaDe(m), quando(m.timestamp), bruto, origem, por]);
     await conversa(c, numero, waId, { em: quando(m.timestamp), resumo: resumo(m.type, textoDe(m)), direcao: 'saida', contarNaoLida: false, zerar: false });
     return x.rows[0]?.nova;
   });
