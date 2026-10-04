@@ -45,7 +45,7 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
     && !sql("select coalesce(convite_hash,'') from painel_usuarios where email='admin2@teste.local'").includes(codigoAdmin.replace('-', '')), codigoAdmin);
   // Empresa nova ainda sem banco próprio não abre o banco padrão (dados de outra empresa)
   await p.goto(GERAL + '/empresas'); // o seletor só lista a empresa nova depois de recarregar
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'clinica-outra')]); await p.waitForTimeout(800);
+  await Promise.all([p.waitForURL(/\/(inbox|crm)$/), p.selectOption('#trocar-empresa', 'clinica-outra')]); await p.waitForTimeout(800);
   ok('empresa sem banco próprio não vê o banco padrão', ((await p.textContent('main')) || '').includes('banco desta empresa ainda não foi configurado')
     && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0);
   await p.selectOption('#trocar-empresa', ''); await p.waitForTimeout(1200); await p.goto(GERAL + '/empresas');
@@ -62,10 +62,12 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   // Master troca de empresa no endereço geral e vê o CRM da outra (banco próprio)
   await p.goto(GERAL + '/crm'); await p.selectOption('#trocar-empresa', 'clinica-outra'); await p.waitForTimeout(1500);
   ok('master troca para a Clínica Outra', ((await p.textContent('aside')) || '').includes('Clínica Outra'));
+  await p.goto(GERAL + '/crm');
   // O quadro chega depois da tela (leitura GET, 09/10).
   await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).first().waitFor({ timeout: 8000 }).catch(() => undefined);
   ok('CRM da outra empresa vem do banco dela', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 1 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0, p.url() + ' ' + ((await p.textContent('main')) || '').slice(0, 300));
   await p.selectOption('#trocar-empresa', 'teste'); await p.waitForTimeout(1500);
+  await p.goto(GERAL + '/crm'); await p.waitForTimeout(800);
   ok('e volta para a empresa de teste', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 0 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) >= 1);
   await ctx.close();
 

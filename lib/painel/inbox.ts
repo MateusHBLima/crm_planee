@@ -1,6 +1,8 @@
 import 'server-only';
-import { bancoDaEmpresa, central, ErroApi, registrarErro } from '@/lib/db';
-import { pode, type Usuario } from '@/lib/sessao';
+import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
+import { atorDe, pode, type Usuario } from '@/lib/sessao';
+import * as api from '@/lib/api/servico';
+import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 import { completarFalasDaIa } from './falas-ia';
@@ -24,7 +26,7 @@ async function consultar<T>(fn: () => Promise<T>): Promise<T> {
       throw new ErroApi(503, 'O espelho do WhatsApp ainda não foi instalado no banco desta empresa (migração 008).');
     }
     if ((e as { code?: string }).code === '42703') {
-      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migração 009).');
+      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migrações 009 e 010).');
     }
     throw e;
   }
@@ -80,7 +82,7 @@ function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
 }
 
 const SELECT_CONVERSA = `
-  select c.numero_id, c.wa_id, coalesce(nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
+  select c.numero_id, c.wa_id, coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
          c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em,
          (select max(m.enviada_em) from wa_mensagens m
            where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
@@ -106,7 +108,8 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
     r = await consultar(() => db(u).query(
       `${SELECT_CONVERSA}
         where not c.arquivada
-          and ($1 = '' or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
+          and ($1 = '' or coalesce(k.nome_painel, '') ilike '%' || $1 || '%'
+               or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
                or (length($2) >= 3 and c.wa_id like '%' || $2 || '%'))${followup ? SQL_EM_FOLLOWUP : ''}
         order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
   } catch (e) {
@@ -290,6 +293,8 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   await registrar('falhou');
   // Só o código da Meta (números e letras), nunca o resto da resposta.
   const codigo = resposta && resposta.ok === false && resposta.erro != null ? String(resposta.erro).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 20) : '';
+  // 131047: a janela de 24 h fechou entre a última leitura e o envio.
+  if (codigo === '131047') throw new ErroApi(409, MSG_FORA_DA_JANELA);
   throw new ErroApi(502, codigo ? `A Meta recusou o envio (código ${codigo}).` : 'O serviço de envio não confirmou a mensagem. Tente de novo em instantes.');
 }
 
@@ -332,4 +337,55 @@ async function avisarDevolvida(u: Usuario, numeroId: string, waId: string) {
     headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
     body: JSON.stringify({ evento: 'conversa_devolvida', empresa: u.empresa!.id, numero_id: numeroId, wa_id: waId, por: u.nome }),
   }).catch(() => undefined).finally(() => clearTimeout(t));
+}
+
+// ---- Nome do contato corrigido pela equipe ----
+
+const MAX_NOME = 80;
+
+// Troca o nome que o painel mostra. Vazio volta ao nome da agenda do celular ou do perfil do WhatsApp.
+// O nome do painel fica em wa_contatos.nome_painel (a sincronização da agenda não mexe nele) e cada troca vai para
+// wa_contatos_nomes no banco da empresa. Quem também edita o CRM atualiza junto o contato do CRM com o mesmo
+// telefone (pela API do CRM); empresa sem CRM no banco segue só com a Inbox.
+export async function renomearContato(u: Usuario, numeroId: string, waId: string, nome: unknown): Promise<Conversa> {
+  validar(numeroId, waId);
+  const banco = db(u);
+  if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para editar contatos nesta empresa.');
+  const n = String(nome ?? '').replace(/\s+/g, ' ').trim();
+  if (n.length > MAX_NOME) throw new ErroApi(400, `O nome passou de ${MAX_NOME} caracteres.`);
+  const novo = n || null;
+
+  const anterior = await consultar(() => transacao(async (c) => {
+    const a = await c.query(
+      `select coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome
+         from wa_conversas w left join wa_contatos k on k.numero_id = w.numero_id and k.wa_id = w.wa_id
+        where w.numero_id = $1 and w.wa_id = $2`, [numeroId, waId]);
+    if (!a.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
+    await c.query(
+      `insert into wa_contatos (numero_id, wa_id, nome_painel, nome_painel_em, nome_painel_por) values ($1, $2, $3, now(), $4)
+       on conflict (numero_id, wa_id) do update set nome_painel = excluded.nome_painel, nome_painel_em = now(),
+         nome_painel_por = excluded.nome_painel_por, atualizado_em = now()`, [numeroId, waId, novo, u.nome]);
+    await c.query(`insert into wa_contatos_nomes (numero_id, wa_id, anterior, novo, por) values ($1, $2, $3, $4, $5)`,
+      [numeroId, waId, a.rows[0].nome ?? null, novo, u.nome]);
+    return (a.rows[0].nome as string | null) ?? null;
+  }, banco));
+
+  // Na auditoria central só a ação e o alvo; os nomes ficam no banco da empresa.
+  await auditar(central(), u, u.empresa!.id, 'renomear_contato', `${numeroId}:${waId.slice(-4)}`, { limpou: !novo }).catch(() => undefined);
+  if (novo && novo !== anterior) await atualizarNomeNoCrm(u, waId, novo);
+  return lerConversaResumo(u, numeroId, waId);
+}
+
+async function atualizarNomeNoCrm(u: Usuario, waId: string, nome: string) {
+  if (!pode(u, 'crm.editar')) return;
+  try {
+    const tel = normalizarTelefone(waId);
+    const r = await db(u).query(
+      `select id from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`,
+      chaveTelefone(tel));
+    if (r.rowCount) await api.atualizar(atorDe(u), 'contatos', String(r.rows[0].id), { nome });
+  } catch (e) {
+    // Empresa sem o CRM no banco (42P01) ou telefone fora do padrão: a troca na Inbox já valeu.
+    if ((e as { code?: string }).code !== '42P01' && !(e instanceof ErroApi)) registrarErro('renomear contato no CRM', e);
+  }
 }

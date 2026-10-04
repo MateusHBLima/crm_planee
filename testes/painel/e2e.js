@@ -91,8 +91,9 @@ async function entrar(p, email, senha='senha123') {
   ok('master entra na visão da Planee, fora de empresa', p.url().endsWith('/empresas') && (await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim()))).join(',') === 'Empresas,Interno Planee', p.url());
   ok('seletor mostra a visão geral e as empresas', (await p.$$eval('#trocar-empresa option', (os) => os.map((o) => o.textContent))).join('|').startsWith('Planee — visão geral|'));
   await p.goto(B + '/crm'); ok('sem empresa, o CRM não abre', p.url().endsWith('/empresas'), p.url());
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
-  ok('escolher a empresa abre o CRM dela, com a faixa no topo', ((await p.textContent('main [role=note]')) || '').includes('Empresa de teste'));
+  await Promise.all([p.waitForURL(/\/inbox$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
+  ok('escolher a empresa abre a Inbox dela, com a faixa no topo', ((await p.textContent('main [role=note]')) || '').includes('Empresa de teste'));
+  await p.goto(B + '/crm'); await p.waitForTimeout(800);
   const txtJ = await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent();
   ok('Planee vê CPF mascarado (campo e texto)', !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
   const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 7 telas', navP.join(',') === 'Inbox,CRM,Resultados,Configurações,Equipe,Empresas,Interno Planee', navP.join(','));

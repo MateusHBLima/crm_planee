@@ -52,7 +52,7 @@ const servidorN8n = http.createServer((req, res) => {
     const responder = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (req.headers['x-painel-segredo'] !== process.env.N8N_WEBHOOK_SEGREDO) return responder({ ok: false, erro: 'segredo' });
     if (req.url === '/painel-retomar') return responder({ ok: true });
-    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131047', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
+    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131026', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
     const wamid = `wamid.TESTE${++n8n.n}`;
     sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
            values (${dolar(d.numero_id)}, ${dolar(d.para)}, '${wamid}', 'saida', 'painel', 'text', ${dolar(d.texto)}, 'enviada', now(), now(),
@@ -223,6 +223,33 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await entrar(p, GERAL, 'amanda@teste.local');
   await item(p, 'Beatriz Ficticia').getByRole('button').click();
   await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  // Nome editável: o lápis troca o nome na Inbox e no contato do CRM com o mesmo telefone, com histórico no banco da empresa
+  sql(`insert into contatos (nome, telefone) values ('Nome antigo no CRM', '${BIA}') on conflict (telefone) do update set nome = excluded.nome, arquivado = false;
+       update painel_vinculos set permissoes = array_append(permissoes, 'crm.editar')
+        where usuario_id = '${idAmanda}' and empresa_id = 'teste' and not 'crm.editar' = any(permissoes);`);
+  let antesNome = acoesR.length;
+  await p.getByRole('button', { name: 'Editar o nome do contato' }).click();
+  await p.fill('#nome-contato', '  Beatriz   Corrigida '); await p.press('#nome-contato', 'Enter');
+  await conversa(p).locator('header').getByText('Beatriz Corrigida').waitFor({ timeout: 8000 }).catch(() => {});
+  const acaoRenomear = (acoesR[antesNome] || {}).id;
+  ok('lápis troca o nome no cabeçalho e na lista', (await conversa(p).locator('header').getByText('Beatriz Corrigida', { exact: true }).count()) === 1 && (await item(p, 'Beatriz Corrigida').count()) === 1);
+  ok('nome do painel gravado sem mexer no nome da agenda', sql(`select nome_painel || '|' || nome_salvo || '|' || nome_painel_por from wa_contatos where wa_id='${BIA}'`) === 'Beatriz Corrigida|Beatriz Ficticia|Amanda Teste');
+  ok('histórico da troca no banco da empresa', sql(`select anterior || '|' || novo || '|' || por from wa_contatos_nomes where wa_id='${BIA}' order by id desc limit 1`) === 'Beatriz Ficticia|Beatriz Corrigida|Amanda Teste');
+  ok('contato do CRM com o mesmo telefone atualizado', sql(`select nome from contatos where telefone='${BIA}'`) === 'Beatriz Corrigida');
+  const audNome = sql(`select coalesce(detalhe::text, '') from central_auditoria where acao = 'renomear_contato' order by id desc limit 1`);
+  ok('auditoria central registra a troca sem o nome', audNome.includes('limpou') && !audNome.includes('Beatriz'), audNome);
+  ok('sincronização da agenda não apaga o nome do painel', (sql(`update wa_contatos set nome_salvo = 'Bia da agenda' where wa_id='${BIA}'`), true)
+    && sql(`select coalesce(nullif(nome_painel,''), nome_salvo) from wa_contatos where wa_id='${BIA}'`) === 'Beatriz Corrigida');
+  sql(`update wa_contatos set nome_salvo = 'Beatriz Ficticia' where wa_id='${BIA}'`);
+  // Vazio volta ao nome da agenda
+  await p.getByRole('button', { name: 'Editar o nome do contato' }).click();
+  await p.fill('#nome-contato', ''); await p.press('#nome-contato', 'Enter');
+  await conversa(p).locator('header').getByText('Beatriz Ficticia').waitFor({ timeout: 8000 }).catch(() => {});
+  ok('nome vazio volta ao nome do WhatsApp', (await conversa(p).locator('header').getByText('Beatriz Ficticia', { exact: true }).count()) === 1
+    && sql(`select coalesce(nome_painel, 'NULO') from wa_contatos where wa_id='${BIA}'`) === 'NULO'
+    && sql(`select nome from contatos where telefone='${BIA}'`) === 'Beatriz Corrigida');
+  const longo = await chamarAcao(p, acaoRenomear, [NUM, BIA, 'x'.repeat(81)]);
+  ok('nome com mais de 80 caracteres é recusado', longo.includes('passou de 80'), longo.slice(0, 120));
   ok('secretária com a permissão vê a caixa de resposta', await p.locator('#resposta-inbox').isEnabled() && (await p.getByText(/Somente leitura/).count()) === 0);
   const audEnvioAntes = Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`));
   await p.fill('#resposta-inbox', 'Resposta fictícia pelo painel'); await p.press('#resposta-inbox', 'Enter');
@@ -257,7 +284,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // Erro da Meta: mensagem curta na própria caixa, sem o corpo da resposta do n8n
   await p.fill('#resposta-inbox', 'Isto vai FALHAR'); await p.press('#resposta-inbox', 'Enter'); await p.waitForTimeout(2000);
   const erroE = (await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '';
-  ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131047)') && !respR.join('\n').includes('DADO_SENSIVEL')
+  ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131026)') && !respR.join('\n').includes('DADO_SENSIVEL')
     && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
   // Devolver pra Sara: volta para a IA e, com a última mensagem do contato, avisa o n8n para ela responder já
@@ -318,11 +345,15 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`update painel_vinculos set permissoes = array_remove(permissoes, 'inbox.responder') where usuario_id = '${idAmanda}' and empresa_id = 'teste'`);
   const semPerm = await chamarAcao(p, acaoEnviar, [NUM, BIA, 'Tentativa sem permissão']);
   ok('sem inbox.responder: a ação recusa chamada direto', semPerm.includes('não tem permissão para responder') && n8n.pedidos.length === nPed, semPerm.slice(0, 160));
+  const semPermNome = await chamarAcao(p, acaoRenomear, [NUM, BIA, 'Tentativa sem permissão']);
+  ok('sem inbox.responder: renomear recusa chamada direto', Boolean(acaoRenomear) && semPermNome.includes('não tem permissão para editar contatos')
+    && sql(`select coalesce(nome_painel, 'NULO') from wa_contatos where wa_id='${BIA}'`) === 'NULO', semPermNome.slice(0, 160));
   const semPermDono = await chamarAcao(p, acaoAssumir, [NUM, BIA]);
   ok('sem inbox.responder: assumir recusa chamada direto', Boolean(acaoAssumir) && semPermDono.includes('não tem permissão para atender pelo painel')
     && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia', semPermDono.slice(0, 160));
   await p.goto(GERAL + '/inbox'); await item(p, 'Beatriz Ficticia').getByRole('button').click(); await p.waitForTimeout(1500);
   ok('sem inbox.responder: a caixa some', (await p.locator('#resposta-inbox').count()) === 0 && (await p.getByText(/Somente leitura/).count()) === 1);
+  ok('sem inbox.responder: sem o lápis do nome', (await p.getByRole('button', { name: 'Editar o nome do contato' }).count()) === 0);
   ok('sem inbox.responder: sem "Abrir no WhatsApp"', (await p.getByText('Abrir no WhatsApp').count()) === 0);
   ok('sem inbox.responder: sem botão Assumir, mas vê quem atende', (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 0
     && ((await cab().textContent()) || '').includes('Sara atendendo'));
@@ -335,7 +366,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   [ctx, p] = await novo();
   const respM = []; await capturar(p, respM);
   await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
+  await Promise.all([p.waitForURL(/\/inbox$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
   await p.goto(GERAL + '/inbox');
   await item(p, 'Beatriz Ficticia').first().waitFor({ timeout: 8000 }).catch(() => undefined); // a lista chega depois da tela (09/10)
   ok('master abre a Inbox da empresa escolhida', p.url().endsWith('/inbox') && (await item(p, 'Beatriz Ficticia').count()) === 1, p.url());

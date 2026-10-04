@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { assumirConversa, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
+import { assumirConversa, devolverConversa, enviarMensagem, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
@@ -348,7 +348,16 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                 <>
                   <span className={c.avatarGrande} aria-hidden="true">{iniciais(atual)}</span>
                   <div className={c.cabecaTexto}>
-                    <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>
+                    {podeResponder ? (
+                      <NomeEditavel key={chaveDe(atual)} conversa={atual} onSalvar={async (nome) => {
+                        const k = abertaRef.current;
+                        if (!k) return 'Abra uma conversa antes.';
+                        const r = await renomearContato(k.numero_id, k.wa_id, nome);
+                        if (!r.ok) return r.sair ? null : r.erro;
+                        if (mesma(abertaRef.current, k)) { setDados((x) => (x ? { ...x, conversa: r.dados } : x)); atualizarLinha(r.dados); }
+                        return null;
+                      }} />
+                    ) : <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>}
                     <span className={c.cabecaLinha}>
                       <span className={c.mono}>{telefoneBonito(atual.wa_id)}</span>
                       <span className={c.pilula} data-aberta={atual.janela_aberta ? 'true' : 'false'}>
@@ -435,6 +444,42 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
         )}
       </div>
     </div>
+  );
+}
+
+// Nome do contato com lápis: Enter salva, Esc cancela. Vazio volta ao nome do WhatsApp.
+function NomeEditavel({ conversa, onSalvar }: { conversa: Conversa; onSalvar: (nome: string) => Promise<string | null> }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(conversa.nome ?? '');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const salvar = async () => {
+    if (salvando) return;
+    setSalvando(true); setErro(null);
+    const e = await onSalvar(valor);
+    setSalvando(false);
+    if (e) setErro(e); else setEditando(false);
+  };
+  if (!editando) {
+    return (
+      <span className={c.nomeLinha}>
+        <h2 className={c.cabecaNome}>{nomeDe(conversa)}</h2>
+        <button type="button" className={c.lapis} aria-label="Editar o nome do contato" title="Editar o nome do contato"
+          onClick={() => { setValor(conversa.nome ?? ''); setErro(null); setEditando(true); }}>✎</button>
+      </span>
+    );
+  }
+  return (
+    <span className={c.nomeLinha}>
+      <label htmlFor="nome-contato" className={c.visivelLeitor}>Nome do contato</label>
+      <input id="nome-contato" className={c.nomeCampo} value={valor} maxLength={80} autoFocus disabled={salvando}
+        placeholder="Nome do contato (vazio volta ao do WhatsApp)"
+        onChange={(e) => setValor(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } if (e.key === 'Escape') setEditando(false); }} />
+      <button type="button" className={c.nomeSalvar} onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+      <button type="button" className={c.nomeCancelar} onClick={() => setEditando(false)} disabled={salvando}>Cancelar</button>
+      {erro && <span className={c.nomeErro} role="alert">{erro}</span>}
+    </span>
   );
 }
 

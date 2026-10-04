@@ -29,3 +29,8 @@ export async function assumirConversa(numeroId: string, waId: string) {
 export async function devolverConversa(numeroId: string, waId: string) {
   return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'ia'), 'inbox');
 }
+
+// Corrige o nome do contato na Inbox (e no CRM, para quem edita o CRM). Vazio volta ao nome do WhatsApp.
+export async function renomearContato(numeroId: string, waId: string, nome: string) {
+  return comUsuario((u) => inbox.renomearContato(u, numeroId, waId, nome), 'inbox');
+}

@@ -131,7 +131,14 @@ export async function inscreverTotp(acesso: string): Promise<{ id: string; qr: s
   const r = await authPedido(acesso, '/factors', 'POST', { factor_type: 'totp', friendly_name: `Painel Planee ${new Date().toISOString().slice(0, 16)}`, issuer: 'Painel Planee' });
   const totp = r.j.totp as { qr_code?: string; secret?: string } | undefined;
   if (!r.ok || typeof r.j.id !== 'string' || !totp?.qr_code) return null;
-  return { id: r.j.id, qr: totp.qr_code, segredo: totp.secret ?? '' };
+  return { id: r.j.id, qr: qrComoImagem(totp.qr_code), segredo: totp.secret ?? '' };
+}
+
+// O Supabase devolve o QR como SVG cru ("data:image/svg+xml;utf-8,<svg ... fill="#000">"). O "#" corta o endereço
+// da imagem no navegador e o QR aparece quebrado: codifica o SVG antes de ir para a tela.
+export function qrComoImagem(qr: string): string {
+  const svg = qr.startsWith('<') ? qr : qr.match(/^data:image\/svg\+xml;[^,]*,(<[\s\S]*)$/)?.[1];
+  return svg ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) : qr;
 }
 
 // Desafio + verificação do código de 6 dígitos. Certo: volta a sessão nova (aal2).
