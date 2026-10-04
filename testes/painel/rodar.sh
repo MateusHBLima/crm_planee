@@ -16,7 +16,7 @@ psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
-         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/010_whatsapp_nome.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
+         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/010_whatsapp_nome.sql supabase/migrations/011_whatsapp_cadastro.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
          supabase/migrations/015_avisos_central.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
@@ -43,6 +43,8 @@ export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste 
 export PORTA_N8N=${PORTA_N8N:-3999}
 export N8N_WEBHOOK_PAINEL_ENVIAR="http://127.0.0.1:$PORTA_N8N/painel-enviar" N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
 export N8N_WEBHOOK_PAINEL_RETOMAR="http://127.0.0.1:$PORTA_N8N/painel-retomar"
+# Receptor falso (o inbox.js sobe): entrega as mídias pelo link curto que o painel cria.
+export RECEPTOR_URL="http://127.0.0.1:${PORTA_RECEPTOR:-3998}"
 if curl -s -o /dev/null "$BASE_URL"; then echo "Porta $PORTA_APP ocupada: pare o app que está nela."; exit 1; fi
 npm run build >/dev/null
 node node_modules/next/dist/bin/next start -p "$PORTA_APP" > /dev/null 2>&1 & APP_PID=$!

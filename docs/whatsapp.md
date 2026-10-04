@@ -233,9 +233,25 @@ x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
 
 É o mesmo webhook do aviso `atendimento_finalizado` do CRM (`docs/api.md`); o n8n separa pelo campo `evento`.
 
+## 12. Números pelo painel: cadastrar, conectar e puxar o histórico (sem Portainer)
+
+Tela **Empresas → (empresa) → Números de WhatsApp**, só para o master. Migração 011 no banco **central** (a do painel).
+
+1. **Adicionar número:** `phone_number_id`, WABA, nome que aparece na Inbox, para onde repassar (webhook da Sara no n8n; vazio = não repassa), o token da Meta do número e, se o número for de outro app da Meta, a chave secreta desse app. Token e chave ficam cifrados com `PAINEL_CHAVE_CIFRA` e não voltam para a tela nem para a auditoria. Editar com o token em branco mantém o guardado.
+2. **Conectar:** o painel só marca o pedido. Em até 10 s o receptor inscreve o app na WABA (`POST /<waba>/subscribed_apps`), aponta o número para `RECEPTOR_URL_PUBLICA` (override com o `META_VERIFY_TOKEN`) e lê o nome verificado e o telefone. A tela relê sozinha e mostra "Conectado" ou o erro da Meta. Duas réplicas não repetem o pedido (o pedido é pego numa instrução só).
+3. **Puxar histórico:** o receptor chama `POST /<número>/smb_app_data` com `smb_app_state_sync` (agenda) e depois `history` (conversas de até 180 dias). Vale nas 24 h depois de conectar o número no app WhatsApp Business (coexistência). O app precisa assinar os campos `history` e `smb_app_state_sync` (App Dashboard → WhatsApp → Configuração → Campos do webhook). As conversas antigas entram na Inbox com origem "Histórico" e não vão para a Sara (`REPASSAR_CAMPOS`).
+
+Sem token cadastrado, o número usa o `META_TOKEN` do receptor (os números antigos). A assinatura dos eventos aceita os segredos de `META_APP_SECRET` e os cadastrados por número. Os números são relidos a cada 60 s (`WA_ROTAS_MS`) e logo depois de cada conexão.
+
+O receptor e o painel precisam da **mesma central**: no stack do receptor, `CENTRAL_DATABASE_URL` = o `DATABASE_URL` do stack do painel e `PAINEL_CHAVE_CIFRA` = a do painel. É a última mudança no Portainer: número novo (outra clínica, outro app) é só cadastro na tela.
+
+**Mídias na Inbox:** foto aparece sozinha quando entra na tela; áudio e vídeo tocam no player; documento abre em outra aba. O painel confere a sessão, a empresa e a conversa e grava em `wa_midia_links` (central) um token aleatório que vale 10 minutos; o receptor entrega o arquivo do Storage por `GET /whatsapp/midia/<token>` (aceita `Range`, para avançar o áudio). O caminho do arquivo nunca vai para o navegador, e arquivo fora da pasta da empresa não abre. O painel monta o link com `RECEPTOR_URL` (padrão `https://<PAINEL_HOST_ADM>`).
+
+**Etiqueta da linha:** empresa com mais de um número mostra, em cada conversa, o nome do número que recebeu.
+
 ## Retenção (LGPD)
 
-O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depois de processado e repassado. O que fica é o espelho no banco da empresa, sujeito às regras dela. As mídias ficam no bucket privado. O painel vai abri-las por link assinado e temporário (PR 2 da Inbox).
+O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depois de processado e repassado. O que fica é o espelho no banco da empresa, sujeito às regras dela. As mídias ficam no bucket privado e abrem na Inbox por link curto de 10 minutos (item 12); os links vencidos saem da central em 1 hora.
 
 ## Quando der errado
 
@@ -245,4 +261,6 @@ O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depoi
 | "assinatura inválida" nos logs do receptor | falta em `META_APP_SECRET` o segredo do app que entrega o número. O app que entrega é o do token usado no override |
 | `pendentes` subindo com erro "não cadastrado" | número sem linha em `whatsapp_numeros`. O evento espera o cadastro e entra sozinho |
 | A Sara parou de responder | `encaminhar_url` do número. Volte o override (passo 5) e confira `repasse_erro` em `wa_eventos` |
-| Mídia sem `caminho` | `META_TOKEN`, `SUPABASE_SERVICE_KEY` ou o bucket |
+| Mídia sem `caminho` | token do número (ou `META_TOKEN`), `SUPABASE_SERVICE_KEY` ou o bucket |
+| "Erro ao conectar" na tela Empresas | a mensagem da Meta está embaixo do número. Código 190 = token vencido ou sem permissão; 100/33 = o token não enxerga esse número (é de outro app) |
+| Mídia não toca na Inbox ("link vencido") | receptor e painel com centrais diferentes: confira `CENTRAL_DATABASE_URL` do receptor |

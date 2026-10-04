@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { MODELOS, PERMISSOES } from '@/lib/permissoes';
 import {
-  adicionarAdmin, adicionarDominio, atualizarEmpresa, criarEmpresa, definirBancoEmpresa, removerDominio,
+  adicionarAdmin, adicionarDominio, atualizarEmpresa, carregarEmpresas, criarEmpresa, definirBancoEmpresa, pedirNoNumero,
+  removerDominio, salvarNumero,
 } from '@/lib/painel/acoes-gestao';
 import type { LinhaEmpresa } from '@/lib/painel/gestao';
+import type { NumeroWhats } from '@/lib/painel/numeros';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import g from './gestao.module.css';
@@ -23,6 +25,109 @@ function Modulos({ valor, onChange, prefixo }: { valor: string[]; onChange: (v: 
           <span>{p.nome}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+type Rodar = (fn: () => Promise<Resposta<LinhaEmpresa[]>>, ok: string, depois?: () => void) => void;
+
+const quando = (v: string | null) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+const fone = (t: string | null) => {
+  const d = (t ?? '').replace(/\D/g, '');
+  const m = d.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : d ? `+${d}` : '';
+};
+const pendente = (n: NumeroWhats) => Boolean(n.conectar_pedido_em || n.historico_pedido_em || n.historico_status?.startsWith('pedindo'));
+
+type Ficha = { phone_number_id: string; waba_id: string; nome: string; encaminhar_url: string; token: string; app_secret: string };
+const vazia: Ficha = { phone_number_id: '', waba_id: '', nome: '', encaminhar_url: '', token: '', app_secret: '' };
+
+function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
+  empresa: string; inicial: Ficha; editando: boolean; ocupado: boolean; rodar: Rodar; fechar: () => void;
+}) {
+  const [f, setF] = useState(inicial);
+  const campo = (k: keyof Ficha) => ({ value: f[k], onChange: (ev: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: ev.target.value }) });
+  return (
+    <form className={g.editor} aria-label={editando ? `Editar número ${inicial.phone_number_id}` : 'Novo número de WhatsApp'}
+      onSubmit={(ev) => { ev.preventDefault(); rodar(() => salvarNumero(empresa, f), editando ? 'Número salvo.' : 'Número cadastrado. Agora clique em Conectar.', fechar); }}>
+      <div className={g.linha}>
+        <label className={g.campo}>Identificação do número (phone_number_id)
+          <input name="phone_number_id" inputMode="numeric" required readOnly={editando} {...campo('phone_number_id')} /></label>
+        <label className={g.campo}>Conta do WhatsApp (WABA)
+          <input name="waba_id" inputMode="numeric" {...campo('waba_id')} /></label>
+        <label className={g.campo}>Nome na Inbox
+          <input name="nome" maxLength={80} placeholder="Clínica — principal" {...campo('nome')} /></label>
+      </div>
+      <label className={g.campo}>Repassar para a Sara (webhook do n8n; vazio = não repassa)
+        <input name="encaminhar_url" type="url" placeholder="https://..." {...campo('encaminhar_url')} /></label>
+      <div className={g.linha}>
+        <label className={g.campo}>Token da Meta {editando && '(vazio = mantém o guardado)'}
+          <input name="token" type="password" autoComplete="off" {...campo('token')} /></label>
+        <label className={g.campo}>Chave secreta do app (só se for outro app da Meta)
+          <input name="app_secret" type="password" autoComplete="off" {...campo('app_secret')} /></label>
+      </div>
+      <p className={g.dica}>Token e chave ficam cifrados no banco e não aparecem de novo nesta tela.</p>
+      <div className={g.linha}>
+        <button type="submit" className={g.botao} disabled={ocupado}>{editando ? 'Salvar número' : 'Cadastrar número'}</button>
+        <button type="button" className={g.botaoSec} onClick={fechar}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
+function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rodar: Rodar }) {
+  const [editar, setEditar] = useState<string | null>(null); // phone_number_id, '' = novo
+  return (
+    <div className={g.bloco}>
+      <h3 className={g.blocoTitulo}>Números de WhatsApp</h3>
+      {e.numeros.length === 0 && <p className={g.dica}>Nenhum número. Cadastre, clique em Conectar e o receptor aponta o número para o painel na Meta.</p>}
+      {e.numeros.map((n) => (
+        <div key={n.phone_number_id} className={`${g.numero} ${n.ativo ? '' : g.inativa}`} data-numero={n.phone_number_id}>
+          <div className={g.linha}>
+            <strong className={g.pessoaNome}>{n.nome || n.verificado_nome || 'Sem nome'}</strong>
+            {n.telefone && <span>{fone(n.telefone)}</span>}
+            <span className={g.id}>{n.phone_number_id}</span>
+            {!n.ativo ? <span className={`${g.selo} ${g.seloOff}`}>Desativado</span>
+              : n.conectar_pedido_em ? <span className={g.selo} data-estado="conectando">Conectando…</span>
+              : n.conexao_erro ? <span className={`${g.selo} ${g.seloOff}`} data-estado="erro">Erro ao conectar</span>
+              : n.conectado_em ? <span className={`${g.selo} ${g.seloOk}`} data-estado="conectado">Conectado {quando(n.conectado_em)}</span>
+              : <span className={g.selo} data-estado="nao">Não conectado</span>}
+            <span className={g.selo}>{n.tem_token ? 'Token guardado' : 'Token geral do receptor'}</span>
+          </div>
+          {n.conexao_erro && !n.conectar_pedido_em && <p className={g.erroLinha} data-erro>{n.conexao_erro}</p>}
+          {n.verificado_nome && <p className={g.dica}>Nome verificado na Meta: {n.verificado_nome}{n.encaminhar_url ? ' · repassa para a Sara' : ' · sem repasse para a Sara'}</p>}
+          {(n.historico_status || n.historico_pedido_em) && (
+            <p className={g.dica} data-historico>Histórico: {n.historico_status}{n.historico_em ? ` (${quando(n.historico_em)})` : ''}</p>
+          )}
+          <div className={g.linha}>
+            {n.ativo && (
+              <>
+                <button type="button" className={`${g.botao} ${g.botaoPeq}`} disabled={ocupado || Boolean(n.conectar_pedido_em)}
+                  onClick={() => rodar(() => pedirNoNumero(n.phone_number_id, 'conectar'), 'Pedido de conexão enviado. O resultado aparece aqui em segundos.')}>
+                  {n.conectado_em ? 'Conectar de novo' : 'Conectar'}
+                </button>
+                <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado || pendente(n)}
+                  title="Agenda e conversas dos últimos 180 dias. Vale nas 24 h depois de conectar o número no app WhatsApp Business."
+                  onClick={() => rodar(() => pedirNoNumero(n.phone_number_id, 'historico'), 'Pedido de histórico enviado. As conversas antigas chegam na Inbox aos poucos.')}>
+                  Puxar histórico
+                </button>
+              </>
+            )}
+            <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado} onClick={() => setEditar(n.phone_number_id)}>Editar</button>
+            <button type="button" className={`${n.ativo ? g.botaoPerigo : g.botaoSec} ${g.botaoPeq}`} disabled={ocupado}
+              onClick={() => rodar(() => pedirNoNumero(n.phone_number_id, n.ativo ? 'desativar' : 'ativar'), n.ativo ? 'Número desativado: o receptor para de distribuir as mensagens dele.' : 'Número reativado.')}>
+              {n.ativo ? 'Desativar' : 'Reativar'}
+            </button>
+          </div>
+          {editar === n.phone_number_id && (
+            <FormNumero empresa={e.id} editando ocupado={ocupado} rodar={rodar} fechar={() => setEditar(null)}
+              inicial={{ ...vazia, phone_number_id: n.phone_number_id, waba_id: n.waba_id ?? '', nome: n.nome ?? '', encaminhar_url: n.encaminhar_url ?? '' }} />
+          )}
+        </div>
+      ))}
+      {editar === ''
+        ? <FormNumero empresa={e.id} inicial={vazia} editando={false} ocupado={ocupado} rodar={rodar} fechar={() => setEditar(null)} />
+        : <div className={g.linha}><button type="button" className={g.botaoSec} disabled={ocupado} onClick={() => setEditar('')}>Adicionar número</button></div>}
     </div>
   );
 }
@@ -120,6 +225,8 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
         )}
       </div>
 
+      <Numeros e={e} ocupado={ocupado} rodar={rodar} />
+
       <div className={g.bloco}>
         <h3 className={g.blocoTitulo}>Banco de dados</h3>
         <p className={g.dica}>{e.banco_proprio ? 'Banco próprio (endereço guardado cifrado).' : 'Sem banco próprio. Só a empresa padrão do painel funciona assim; as outras só abrem o CRM depois que o banco delas for salvo aqui.'}</p>
@@ -149,6 +256,14 @@ export function Empresas({ inicial }: { inicial: LinhaEmpresa[] }) {
     if (!r.ok) { if (r.sair) window.location.href = '/entrar?motivo=sessao'; setAviso({ tipo: 'erro', texto: r.erro }); return; }
     setEmpresas(r.dados); setAviso({ tipo: 'ok', texto: ok }); depois?.();
   });
+
+  // Enquanto o receptor executa um pedido (conectar, histórico), a tela relê a cada 4 s para mostrar o resultado.
+  const esperando = empresas.some((e) => e.numeros.some(pendente));
+  useEffect(() => {
+    if (!esperando) return;
+    const t = setInterval(async () => { const r = await carregarEmpresas(); if (r.ok) setEmpresas(r.dados); }, 4000);
+    return () => clearInterval(t);
+  }, [esperando]);
 
   return (
     <div className={g.tela}>

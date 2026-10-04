@@ -22,3 +22,15 @@ export const extensao = (mime, nome) => {
   const n = /\.([a-z0-9]{1,8})$/i.exec(String(nome || ''));
   return n ? n[1].toLowerCase() : 'bin';
 };
+
+// Lê um arquivo do Storage (para os links curtos da Inbox). Devolve a resposta para ser repassada em streaming.
+// range: o cabeçalho Range do navegador (o player de áudio e vídeo pede pedaços para avançar e voltar).
+export async function lerArquivo(caminho, range) {
+  const url = `${config.supabaseUrl}/storage/v1/object/${encodeURIComponent(config.bucket)}/${caminho.split('/').map(encodeURIComponent).join('/')}`;
+  const r = await fetch(url, {
+    headers: { authorization: `Bearer ${config.supabaseChave}`, apikey: config.supabaseChave, ...(range ? { range } : {}) },
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!r.ok) throw new Error(`Storage respondeu ${r.status}.`);
+  return r;
+}

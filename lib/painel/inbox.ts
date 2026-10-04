@@ -1,4 +1,5 @@
 import 'server-only';
+import { randomBytes } from 'node:crypto';
 import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
 import { atorDe, pode, type Usuario } from '@/lib/sessao';
 import * as api from '@/lib/api/servico';
@@ -54,11 +55,14 @@ export type Conversa = {
   nao_lidas: number; janela_aberta: boolean;
   dono: 'ia' | 'humano'; dono_por: string | null; dono_em: string | null; pausa_ate: string | null;
 };
-export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string };
+// linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
+export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null };
 
 export type Mensagem = {
   id: string; wamid: string; por: string | null; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
-  tipo: string; texto: string | null; midia: { mime_type: string | null; filename: string | null } | null;
+  tipo: string; texto: string | null;
+  // pronta: o receptor já baixou o arquivo (dá para ouvir, ver ou baixar); erro: a Meta não entregou o arquivo.
+  midia: { mime_type: string | null; filename: string | null; pronta: boolean; erro: boolean } | null;
   status: string | null; editada: boolean; apagada: boolean; em: string;
   reacoes: { emoji: string; daEmpresa: boolean }[];
   citada: { encontrada: boolean; tipo: string | null; texto: string | null; direcao: string | null } | null;
@@ -104,6 +108,8 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
   const dig = q.replace(/\D/g, '');
   const followup = filtro === 'followup';
   let r;
+  // Os números da empresa (banco central) vêm junto, em paralelo: com um número só, a tela não mostra a linha.
+  const linhas = linhasDaEmpresa(u);
   try {
     r = await consultar(() => db(u).query(
       `${SELECT_CONVERSA}
@@ -114,10 +120,23 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
         order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
   } catch (e) {
     // Banco ainda sem a 017: o filtro de follow-up volta vazio, em vez de erro.
-    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString() };
+    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
     throw e;
   }
-  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString() };
+  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
+}
+
+// Números cadastrados da empresa (banco central). Com um só, a tela não mostra etiqueta de linha.
+async function linhasDaEmpresa(u: Usuario): Promise<Record<string, string> | null> {
+  try {
+    const r = await central().query(
+      `select n.phone_number_id as id, coalesce(nullif(n.nome, ''), nullif(to_jsonb(n)->>'verificado_nome', ''), n.telefone, n.phone_number_id) as nome
+         from whatsapp_numeros n where n.empresa_id = $1`, [u.empresa!.id]);
+    return r.rowCount && r.rowCount > 1 ? Object.fromEntries(r.rows.map((x) => [String(x.id), String(x.nome)])) : null;
+  } catch (e) {
+    if ((e as { code?: string }).code === '42P01') return null;
+    throw e;
+  }
 }
 
 function validar(numeroId: string, waId: string) {
@@ -156,6 +175,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
      pag as (
        select m.id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
               m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
+              (m.midia->>'caminho') is not null as midia_pronta, (m.midia->>'erro') is not null as midia_erro,
               m.editada_em, m.apagada_em, m.enviada_em, coalesce(m.bruto->>'texto_de', '') as texto_de
          from wa_mensagens m
         where exists (select 1 from conv) and m.numero_id = $1 and m.wa_id = $2 and m.tipo <> 'reaction'
@@ -165,7 +185,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
      select (select row_to_json(conv) from conv) as conversa,
             coalesce((select json_agg(json_build_object('id', p.id::text, 'wamid', p.wamid, 'direcao', p.direcao, 'por', p.por, 'origem', p.origem,
                         'tipo', p.tipo, 'texto', p.texto, 'resposta_a', p.resposta_a, 'status', p.status, 'mime_type', p.mime_type,
-                        'filename', p.filename, 'tem_midia', p.tem_midia, 'editada_em', p.editada_em, 'apagada_em', p.apagada_em,
+                        'filename', p.filename, 'tem_midia', p.tem_midia, 'midia_pronta', p.midia_pronta, 'midia_erro', p.midia_erro, 'editada_em', p.editada_em, 'apagada_em', p.apagada_em,
                         'enviada_em', p.enviada_em, 'texto_de', p.texto_de) order by p.enviada_em desc, p.id desc) from pag p), '[]'::json) as msgs,
             coalesce((select json_agg(x) from (select wamid, autor, emoji from wa_reacoes
                         where numero_id = $1 and wamid in (select wamid from pag) order by em) x), '[]'::json) as reacoes,
@@ -209,7 +229,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     return {
       id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao as Mensagem['direcao'], origem: m.origem as Mensagem['origem'], tipo: String(m.tipo),
       texto: mascarar(m.texto == null ? null : String(m.texto)),
-      midia: m.tem_midia ? { mime_type: (m.mime_type as string | null) ?? null, filename: (m.filename as string | null) ?? null } : null,
+      midia: m.tem_midia ? { mime_type: (m.mime_type as string | null) ?? null, filename: (m.filename as string | null) ?? null, pronta: Boolean(m.midia_pronta), erro: Boolean(m.midia_erro) } : null,
       status: m.direcao === 'saida' ? ((m.status as string | null) ?? null) : null,
       editada: Boolean(m.editada_em), apagada: Boolean(m.apagada_em), em: iso(m.enviada_em) as string,
       reacoes: porWamid.get(String(m.wamid)) ?? [],
@@ -221,6 +241,38 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     };
   });
   return { conversa, mensagens, temMais, fuso: fuso(), selo };
+}
+
+// ---- Ouvir, ver e baixar as mídias (áudio, foto, vídeo, documento) ----
+// O arquivo fica no Storage (o receptor baixa da Meta). A tela pede um link curto: aqui se confere a sessão, a empresa
+// e a conversa, e grava-se na central um token aleatório que vale 10 min; o receptor entrega o arquivo por ele.
+// O caminho do arquivo nunca vai para o navegador.
+const LINK_MIDIA_MIN = 10;
+const baseReceptor = () => (process.env.RECEPTOR_URL || `https://${process.env.PAINEL_HOST_ADM || 'adm.planeelabia.com'}`).replace(/\/+$/, '');
+
+export async function linkDaMidia(u: Usuario, numeroId: string, waId: string, mensagemId: string): Promise<{ url: string; mime: string | null }> {
+  validar(numeroId, waId);
+  if (!/^\d{1,18}$/.test(String(mensagemId ?? ''))) throw new ErroApi(400, 'Mensagem inválida.');
+  const r = await consultar(() => db(u).query(
+    `select m.midia->>'caminho' as caminho, m.midia->>'mime_type' as mime, (m.midia->>'erro') is not null as erro
+       from wa_mensagens m where m.id = $1 and m.numero_id = $2 and m.wa_id = $3 and m.midia is not null`, [mensagemId, numeroId, waId]));
+  const x = r.rows[0];
+  if (!x) throw new ErroApi(404, 'Mídia não encontrada.');
+  if (!x.caminho) throw new ErroApi(409, x.erro ? 'A Meta não entregou este arquivo.' : 'O arquivo ainda está sendo baixado. Tente em alguns segundos.');
+  // O receptor grava cada arquivo na pasta da empresa dona do número: arquivo de outra empresa não sai daqui.
+  if (!String(x.caminho).startsWith(`${u.empresa!.id}/`)) throw new ErroApi(404, 'Mídia não encontrada.');
+  const token = randomBytes(24).toString('base64url');
+  const mime = x.mime ? String(x.mime).split(';')[0].trim().slice(0, 100) || null : null;
+  try {
+    await central().query(
+      `insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
+      [token, u.empresa!.id, x.caminho, mime, LINK_MIDIA_MIN]);
+  } catch (e) {
+    if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Falta a migração 011 no banco central para abrir as mídias.');
+    throw e;
+  }
+  if (u.master) await auditar(central(), u, u.empresa!.id, 'abrir_midia', `${numeroId}:${waId.slice(-4)}`, undefined);
+  return { url: `${baseReceptor()}/whatsapp/midia/${token}`, mime };
 }
 
 // A equipe da empresa abriu a conversa: zera as não lidas. O master (Planee) só olha: não muda o estado da clínica.

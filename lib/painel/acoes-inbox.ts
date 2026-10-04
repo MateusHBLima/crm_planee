@@ -34,3 +34,8 @@ export async function devolverConversa(numeroId: string, waId: string) {
 export async function renomearContato(numeroId: string, waId: string, nome: string) {
   return comUsuario((u) => inbox.renomearContato(u, numeroId, waId, nome), 'inbox');
 }
+
+// Link curto (10 min) para ouvir, ver ou baixar a mídia de uma mensagem.
+export async function abrirMidia(numeroId: string, waId: string, mensagemId: string) {
+  return comUsuario((u) => inbox.linkDaMidia(u, numeroId, waId, mensagemId), 'inbox');
+}

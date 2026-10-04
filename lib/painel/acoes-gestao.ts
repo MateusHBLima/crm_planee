@@ -5,6 +5,7 @@ import { ErroApi, registrarErro } from '@/lib/db';
 import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
 import { esquecerSessoes, usuarioAtual, type Usuario } from '@/lib/sessao';
 import * as g from './gestao';
+import * as n from './numeros';
 import type { Resposta } from './acoes';
 
 // Ações das telas Empresas e Equipe. Cada uma confere a sessão e o nível de novo no servidor.
@@ -65,6 +66,14 @@ export async function adicionarAdmin(empresa: string, nome: string, email: strin
     const codigo = await g.adicionarPessoa({ ...u, empresa: e }, { nome, email, nivel: 'admin', permissoes: [] });
     return { empresas: await g.listarEmpresas(u), codigo };
   });
+}
+
+// Números de WhatsApp da empresa (master). Conectar e puxar o histórico só marcam o pedido: o receptor executa.
+export async function salvarNumero(empresa: string, dados: { phone_number_id: string; waba_id?: string; nome?: string; encaminhar_url?: string; token?: string; app_secret?: string }) {
+  return comUsuario(async (u) => { await n.salvarNumero(u, empresa, dados); return g.listarEmpresas(u); });
+}
+export async function pedirNoNumero(phoneNumberId: string, pedido: 'conectar' | 'historico' | 'ativar' | 'desativar') {
+  return comUsuario(async (u) => { await n.pedirNoNumero(u, phoneNumberId, pedido); return g.listarEmpresas(u); });
 }
 
 export async function carregarEquipe() { return comUsuario((u) => g.listarEquipe(u)); }

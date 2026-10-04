@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { assumirConversa, devolverConversa, enviarMensagem, renomearContato } from '@/lib/painel/acoes-inbox';
+import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
@@ -316,6 +316,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                   </span>
                   <span className={c.itemLinha}>
                     <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
+                    {lista.linhas && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
                     {k.dono === 'humano' && <span className={c.tagEquipe} title={k.dono_por ? `Com a equipe: ${k.dono_por}` : 'Com a equipe'}>Equipe</span>}
                     {k.janela_aberta && <span className={c.janela} title="Janela de 24 h aberta: o contato escreveu nas últimas 24 horas">24h</span>}
                     {k.nao_lidas > 0 && <span className={c.naoLidas} aria-label={`${k.nao_lidas} não lidas`}>{k.nao_lidas}</span>}
@@ -360,6 +361,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                     ) : <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>}
                     <span className={c.cabecaLinha}>
                       <span className={c.mono}>{telefoneBonito(atual.wa_id)}</span>
+                      {lista.linhas && <span className={c.tagLinha} title="Número da empresa desta conversa">{lista.linhas[atual.numero_id] ?? atual.numero_id}</span>}
                       <span className={c.pilula} data-aberta={atual.janela_aberta ? 'true' : 'false'}>
                         {atual.janela_aberta ? 'Janela de 24 h aberta' : 'Janela de 24 h fechada'}
                       </span>
@@ -404,7 +406,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                 return (
                   <div key={m.id} className={c.bloco}>
                     {novoDia && <div className={c.dia} role="separator"><span>{datas.separador(m.em)}</span></div>}
-                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'}
+                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} numeroId={dados.conversa.numero_id} waId={dados.conversa.wa_id}
                       onAvisar={mascarado || !aberta ? undefined : () => setAvisando({
                         numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato'),
                         trecho: m.texto || (MIDIA[m.tipo] ?? null),
@@ -545,7 +547,81 @@ function MenuMensagem({ lado, onAvisar }: { lado: 'esquerda' | 'direita'; onAvis
   );
 }
 
-function Bolha({ m, hora, nomeContato, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; onAvisar?: () => void }) {
+// Áudio, foto, vídeo e documento como no WhatsApp: a foto aparece sozinha quando entra na tela; áudio e vídeo tocam
+// no player; o documento abre em outra aba. O arquivo vem por um link curto (10 min) que o servidor cria a cada pedido.
+function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; waId: string; rotulo: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const caixa = useRef<HTMLDivElement>(null);
+  const visual = m.tipo === 'image' || m.tipo === 'sticker';
+  const pronta = Boolean(m.midia?.pronta);
+
+  const pedir = useCallback(async (): Promise<string | null> => {
+    setCarregando(true); setErro(null);
+    const r = await abrirMidia(numeroId, waId, m.id);
+    setCarregando(false);
+    if (!r.ok) { setErro(r.erro); return null; }
+    setUrl(r.dados.url);
+    return r.dados.url;
+  }, [numeroId, waId, m.id]);
+
+  useEffect(() => {
+    if (!visual || !pronta || url || erro || !caixa.current) return;
+    const io = new IntersectionObserver((v) => { if (v.some((x) => x.isIntersecting)) { io.disconnect(); void pedir(); } }, { rootMargin: '300px' });
+    io.observe(caixa.current);
+    return () => io.disconnect();
+  }, [visual, pronta, url, erro, pedir]);
+
+  const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
+  const titulo = nomeArquivo ? `${rotulo}: ${nomeArquivo}` : rotulo;
+  if (!pronta) {
+    const situacao = !m.midia ? '' : m.midia.erro ? ' · arquivo indisponível' : ' · baixando…';
+    return <span className={c.midia} data-tipo={m.tipo}>{titulo}{situacao}</span>;
+  }
+
+  let corpo: React.ReactNode;
+  if (visual) {
+    corpo = url
+      ? <a href={url} target="_blank" rel="noopener noreferrer" title="Abrir em tamanho real">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={m.tipo === 'sticker' ? c.figurinha : c.foto} src={url} alt={rotulo} onError={() => { setUrl(null); setErro('Não consegui abrir a imagem.'); }} />
+        </a>
+      : <span className={c.fotoVazia} data-tipo={m.tipo}>{carregando ? 'Carregando…' : rotulo}</span>;
+  } else if (m.tipo === 'audio') {
+    corpo = url
+      ? <audio className={c.audio} controls autoPlay preload="auto" src={url} data-midia="audio" />
+      : <button type="button" className={c.tocar} onClick={() => void pedir()} disabled={carregando} aria-label="Ouvir áudio">
+          <span aria-hidden="true">▶</span> {carregando ? 'Carregando…' : 'Ouvir áudio'}
+        </button>;
+  } else if (m.tipo === 'video') {
+    corpo = url
+      ? <video className={c.video} controls autoPlay playsInline src={url} data-midia="video" />
+      : <button type="button" className={c.tocar} onClick={() => void pedir()} disabled={carregando} aria-label="Assistir vídeo">
+          <span aria-hidden="true">▶</span> {carregando ? 'Carregando…' : 'Assistir vídeo'}
+        </button>;
+  } else {
+    // Documento: a aba abre no clique (o navegador não bloqueia) e recebe o endereço quando o link fica pronto.
+    corpo = (
+      <button type="button" className={c.tocar} disabled={carregando} data-midia="documento"
+        onClick={async () => {
+          const aba = window.open('', '_blank');
+          const link = await pedir();
+          if (aba) { if (link) { aba.opener = null; aba.location.href = link; } else aba.close(); }
+        }}>
+        {carregando ? 'Abrindo…' : `Abrir ${nomeArquivo ? nomeArquivo : 'documento'}`}
+      </button>
+    );
+  }
+  return (
+    <div ref={caixa} className={c.caixaMidia} data-tipo={m.tipo}>
+      {corpo}
+      {erro && <span className={c.erroMidia} role="alert">{erro}</span>}
+    </div>
+  );
+}
+
+function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
   const autor = m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] ?? '';
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
@@ -558,9 +634,12 @@ function Bolha({ m, hora, nomeContato, onAvisar }: { m: Mensagem; hora: string; 
   } else if (rotMidia) {
     const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
     const legenda = m.texto && m.texto !== nomeArquivo ? m.texto : null;
+    const temArquivo = ['image', 'sticker', 'audio', 'video', 'document'].includes(m.tipo);
     conteudo = (
       <>
-        <span className={c.midia} data-tipo={m.tipo}>{nomeArquivo ? `${rotMidia}: ${nomeArquivo}` : rotMidia}</span>
+        {temArquivo
+          ? <Midia m={m} numeroId={numeroId} waId={waId} rotulo={rotMidia} />
+          : <span className={c.midia} data-tipo={m.tipo}>{rotMidia}</span>}
         {legenda && <p className={c.texto}>{legenda}</p>}
       </>
     );

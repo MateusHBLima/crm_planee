@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
-import { createHmac } from 'node:crypto';
+import { createHmac, createCipheriv, createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 const DB = process.env.RECEPTOR_DB || 'postgres://postgres@localhost:5432/receptor_teste';
@@ -22,6 +22,15 @@ const PAC = '5547911110001';        // paciente fictício
 const PORTA = 3910;
 const B = `http://127.0.0.1:${PORTA}`;
 const sql = new pg.Pool({ connectionString: DB, max: 2 });
+const CHAVE_CIFRA = 'chave-de-teste-local-com-mais-de-32-caracteres';
+// Mesmo formato de lib/cifra.ts do painel.
+function cifrar(texto) {
+  const iv = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', createHash('sha256').update(CHAVE_CIFRA).digest(), iv);
+  const d = Buffer.concat([c.update(texto, 'utf8'), c.final()]);
+  return ['v1', iv.toString('base64'), c.getAuthTag().toString('base64'), d.toString('base64')].join(':');
+}
+const graphPedidos = [];
 const q = async (t, p) => (await sql.query(t, p)).rows;
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 async function ate(fn, ms = 8000) {
@@ -47,7 +56,7 @@ function subirReceptor(extra = {}) {
       EMPRESA_BANCO_PADRAO: 'teste', META_APP_SECRET: `${SEGREDO}, ${SEGREDO_OUTRO_APP}`, META_VERIFY_TOKEN: 'token-verificacao', RECEPTOR_CHAVE_INTERNA: 'chave-interna-teste',
       META_TOKEN: 'token-meta-falso', META_GRAPH_URL: 'http://127.0.0.1:3912', SUPABASE_URL: 'http://127.0.0.1:3913', SUPABASE_SERVICE_KEY: 'chave-storage-falsa',
       ENCAMINHAR_PADRAO: 'http://127.0.0.1:3911/padrao', SPOOL_DIR: extra.SPOOL_DIR || path.join(os.tmpdir(), 'receptor-spool-teste'),
-      HOSTNAME: extra.HOSTNAME || 'teste', WA_INTERVALO_MS: '200',
+      HOSTNAME: extra.HOSTNAME || 'teste', WA_INTERVALO_MS: '200', WA_ROTAS_MS: '500', PAINEL_CHAVE_CIFRA: CHAVE_CIFRA,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -78,7 +87,7 @@ before(async () => {
   await admin.query('drop database if exists receptor_teste').catch(() => undefined);
   await admin.query('create database receptor_teste');
   await admin.end();
-  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql']) {
+  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql']) {
     execSync(`psql -q -v ON_ERROR_STOP=1 "${DB}" -f "${path.join(RAIZ, 'supabase/migrations', f)}"`, { stdio: 'pipe' });
   }
   await q(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome, telefone, encaminhar_url) values ($1, 'teste', 'Número de teste', $2, 'http://127.0.0.1:3911/sara')`, [NUM, MEU]);
@@ -89,8 +98,12 @@ before(async () => {
     n8n.recebidos.push({ url: req.url, corpo: corpo.toString(), assinatura: req.headers['x-hub-signature-256'] });
     res.writeHead(200); res.end('ok');
   });
-  servidor(3912, (req, res) => { // Graph API
-    if (req.headers.authorization !== 'Bearer token-meta-falso') { res.writeHead(401); return res.end(); }
+  servidor(3912, (req, res, corpo) => { // Graph API
+    graphPedidos.push({ metodo: req.method, url: req.url, auth: req.headers.authorization, corpo: corpo.toString() });
+    const json = (st, o) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (!['Bearer token-meta-falso', 'Bearer token-do-numero-novo'].includes(req.headers.authorization)) return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
+    if (req.method === 'POST') return json(200, { success: true });
+    if (req.url.includes('fields=')) return json(200, { display_phone_number: '+55 47 90000-0002', verified_name: 'Empresa Ficticia Dois', id: '100000000000002' });
     if (req.url.startsWith('/arquivo/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from('JPEGFALSO')); }
     const id = decodeURIComponent(req.url.split('/').pop());
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -98,6 +111,11 @@ before(async () => {
   });
   servidor(3913, (req, res, corpo) => { // Supabase Storage
     if (req.headers.authorization !== 'Bearer chave-storage-falsa') { res.writeHead(401); return res.end(); }
+    if (req.method === 'GET') {
+      const k = decodeURIComponent(req.url.replace('/storage/v1/object/', ''));
+      if (!(k in storage.arquivos)) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(storage.arquivos[k]);
+    }
     storage.arquivos[decodeURIComponent(req.url.replace('/storage/v1/object/', ''))] = corpo.toString();
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}');
   });
@@ -372,4 +390,50 @@ test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', as
   assert.equal(r.sara_responde, false); assert.equal(r.motivo, 'equipe_assumiu'); assert.equal(r.por, 'Amanda Teste');
   await q(`update wa_conversas set dono = 'ia', dono_em = now(), dono_por = 'Amanda Teste' where wa_id = $1`, [P4]);
   assert.equal((await (await perguntar(P4)).json()).sara_responde, true);
+});
+
+test('cadastro pelo painel: número novo com token e segredo próprios, conectar e pedir o histórico', async () => {
+  const NUM2 = '100000000000002';
+  const SEG2 = 'segredo-do-app-de-outro-cliente';
+  await q(`insert into whatsapp_numeros (phone_number_id, waba_id, empresa_id, nome, encaminhar_url, token_cifrado, app_secret_cifrado, conectar_pedido_em, historico_pedido_em)
+           values ($1, 'WABA_FICTICIA_2', 'teste', 'Número novo', 'http://127.0.0.1:3911/outro', $2, $3, now(), now())`,
+    [NUM2, cifrar('token-do-numero-novo'), cifrar(SEG2)]);
+  // Conectar: inscreve o app na WABA, aponta o número para o receptor e lê o nome verificado
+  const [n] = await ate(async () => { const r = await q('select * from whatsapp_numeros where phone_number_id = $1 and conectado_em is not null', [NUM2]); return r.length ? r : null; }, 15000) || [];
+  assert.ok(n, 'não conectou');
+  assert.equal(n.conexao_erro, null); assert.equal(n.telefone, '5547900000002'); assert.equal(n.verificado_nome, 'Empresa Ficticia Dois'); assert.equal(n.conectar_pedido_em, null);
+  const doNovo = graphPedidos.filter((x) => x.auth === 'Bearer token-do-numero-novo');
+  assert.ok(doNovo.some((x) => x.metodo === 'POST' && x.url.includes('WABA_FICTICIA_2/subscribed_apps')), 'não inscreveu o app na WABA');
+  const ov = doNovo.find((x) => x.metodo === 'POST' && x.url.endsWith(`/${NUM2}`));
+  assert.ok(ov, 'não fez o override');
+  const corpoOv = JSON.parse(ov.corpo);
+  assert.equal(corpoOv.webhook_configuration.override_callback_uri, 'https://adm.planeelabia.com/whatsapp/webhook');
+  assert.equal(corpoOv.webhook_configuration.verify_token, 'token-verificacao');
+  // Histórico: agenda e depois conversas, com o token do número
+  const [h] = await ate(async () => { const r = await q('select * from whatsapp_numeros where phone_number_id = $1 and historico_status is not null', [NUM2]); return r.length ? r : null; }, 15000) || [];
+  assert.ok(h && h.historico_status.startsWith('pedido aceito'), h && h.historico_status);
+  const hist = doNovo.filter((x) => x.url.includes('/smb_app_data')).map((x) => JSON.parse(x.corpo).sync_type);
+  assert.deepEqual(hist, ['smb_app_state_sync', 'history']);
+  // Evento assinado com o segredo do app do número novo é aceito e vai para o destino dele
+  const evento = ev('messages', { contacts: [{ profile: { name: 'Cliente Novo' }, wa_id: '5547911119999' }], messages: [{ from: '5547911119999', id: 'wamid.NOVO1', timestamp: ts(), type: 'text', text: { body: 'oi do cliente novo' } }] }, NUM2);
+  const r = await enviar(evento, { segredo: SEG2 });
+  assert.equal(r.status, 200);
+  assert.ok(await ate(() => n8n.recebidos.find((x) => x.url === '/outro' && x.corpo.includes('wamid.NOVO1'))), 'não repassou para o destino do número novo');
+  // Token errado: o erro da Meta aparece no cadastro, sem travar
+  await q(`update whatsapp_numeros set token_cifrado = $2, conectar_pedido_em = now() where phone_number_id = $1`, [NUM2, cifrar('token-errado')]);
+  const [e] = await ate(async () => { const x = await q('select conexao_erro from whatsapp_numeros where phone_number_id = $1 and conexao_erro is not null', [NUM2]); return x.length ? x : null; }, 15000) || [];
+  assert.ok(e && e.conexao_erro.includes('190'), e && e.conexao_erro);
+});
+
+test('link curto de mídia: entrega o arquivo enquanto vale', async () => {
+  const caminho = Object.keys(storage.arquivos)[0];
+  assert.ok(caminho, 'nenhum arquivo no Storage falso');
+  const tok = 'tokendeteste_' + 'a'.repeat(30);
+  await q(`insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, 'teste', $2, 'image/jpeg', now() + interval '5 minutes'),
+           ($3, 'teste', $2, 'image/jpeg', now() - interval '1 minute')`, [tok, caminho.replace(/^whatsapp\//, ''), tok + 'vencido']);
+  const ok = await fetch(`${B}/whatsapp/midia/${tok}`);
+  assert.equal(ok.status, 200); assert.equal(ok.headers.get('content-type'), 'image/jpeg'); assert.equal(await ok.text(), 'JPEGFALSO');
+  assert.equal((await fetch(`${B}/whatsapp/midia/${tok}vencido`)).status, 404);
+  assert.equal((await fetch(`${B}/whatsapp/midia/curto`)).status, 404);
+  assert.equal((await fetch(`${B}/whatsapp/midia/${'b'.repeat(40)}`)).status, 404);
 });

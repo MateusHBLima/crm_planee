@@ -53,6 +53,11 @@
 .codigo { font-family: var(--font-mono, ui-monospace, monospace); font-size: 15px; letter-spacing: .08em; user-select: all; }
 .aviso button { border: 0; background: none; color: inherit; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; }
 
+/* Números de WhatsApp (tela Empresas) */
+.numero { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--line); }
+.numero:first-of-type { border-top: 0; }
+.erroLinha { margin: 0; font-size: 12.5px; color: var(--rs-ink); overflow-wrap: anywhere; }
+
 /* Equipe */
 .lista { display: flex; flex-direction: column; }
 .pessoa { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto; gap: 10px 16px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
