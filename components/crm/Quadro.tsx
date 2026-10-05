@@ -75,7 +75,7 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onA
         <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
         {nivel !== 'ok' && (
           <span className={c.seloAtraso} data-atraso={nivel}>
-            {TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
+            {k.alerta && k.etapa === 'aguardando' ? 'Alerta' : TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
           </span>
         )}
         {k.sombra && <span className={c.selo} title="Aberto pela Sara nova no modo sombra (não foi para o paciente)">sombra</span>}

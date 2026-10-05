@@ -36,6 +36,30 @@ Dois atalhos pelo telefone, para o agente não precisar saber ids:
 
 O CPF inteiro nunca sai pela API nem pelo MCP (LGPD): na ficha vem só o final (3 dígitos) e em `contatos` (listar, obter, criar, atualizar) o campo `documento` vem como `***` + os 2 últimos dígitos. O filtro `documento` continua aceitando o número inteiro. O MCP aceita no máximo 20 chamadas por lote. Toda mudança fica em `painel_auditoria` com a chave que fez.
 
+## Agendamentos, comprovantes e alerta (migração 013)
+
+Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovantes) e `pagamentos.conferir` (conferir e registrar pela tela), liberadas em Empresas.
+
+- **Agendamento:** `POST /api/v1/servicos/registrar` com `{telefone, nome?, tipo, descricao?, inicio, profissional?, local?, valor?, situacao?, sistema, codigo_externo, detalhes?, atendimento_id?}`.
+  - Cria o agendamento ou, se o mesmo `sistema` + `codigo_externo` já existir, atualiza. O contato é achado pelo telefone (com e sem o 9) ou criado.
+  - `situacao`: `agendado | confirmado | realizado | cancelado | faltou`.
+  - Resposta: `{id, criado, contato_id}`. Escopo `crm`.
+- **Comprovante:** `POST /api/v1/pagamentos` com `{telefone | contato_id, servico: {sistema, codigo_externo} | servico_id, valor, pago_em, forma, descricao, wamid?, arquivo: {nome, mime, base64}, analise?}`.
+  - Aceita PDF, JPG, PNG e WEBP, até 10 MB. O conteúdo precisa bater com o tipo.
+  - O arquivo fica no banco da empresa (`pagamentos_arquivos`).
+  - Resposta: `{id, contato_id, servico_id, alerta_atendimento_id}`. Escopo `crm`.
+- **Análise:** `PATCH /api/v1/pagamentos/{id}` com `{analise: {resultado: "ok" | "suspeito", motivos: [...]}}`.
+  - `suspeito` abre um cartão no quadro, no assunto de valores, em "aguardando", com `alerta = true`. Ele fica vermelho desde que abre.
+  - É um cartão só por pagamento.
+  - Também dá para mudar valor, data, forma, descrição e serviço. "Conferido" não muda pela API: só uma pessoa, pela tela.
+- **Arquivo:** `GET /api/v1/pagamentos/{id}/arquivo`. Escopo `leitura`.
+- **Ficha:** `GET /api/v1/ficha` traz também `servicos` e `pagamentos`, sem o arquivo.
+- **No painel:**
+  - A ficha do contato mostra o **Histórico do paciente**: atendimentos, notas, agendamentos, comprovantes, suspeitas e conferências.
+  - Clicar no agendamento abre o detalhe, com o código da Feegow, os comprovantes, "Ver comprovante" e "Conferir".
+  - O detalhe do cartão mostra os 8 eventos mais recentes.
+  - Quando a Planee abre um comprovante, isso fica registrado na auditoria central.
+
 ## Painel → n8n
 
 Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).

@@ -19,8 +19,8 @@ type Aba = 'atendimento' | 'comercial' | 'contatos';
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
-export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, nome }: {
-  inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; mascarado: boolean; nome: string;
+export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome }: {
+  inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; podeConferir?: boolean; mascarado: boolean; nome: string;
 }) {
   const [quadro, setQuadro] = useState(inicial);
   const [aba, setAba] = useState<Aba>('atendimento');
@@ -190,7 +190,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
       )}
       {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} podeArquivar={podeArquivar} onAviso={avisarOk} />}
       {aba === 'contatos' && (
-        <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
+        <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
           onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
       )}
       {novo && (
@@ -199,7 +199,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
       )}
 
       {cartaoAberto && (
-        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} nome={nome} ocupado={ocupado}
+        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado}
           onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} />
       )}

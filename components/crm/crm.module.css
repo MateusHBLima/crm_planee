@@ -197,3 +197,31 @@
 .confirmaLinha { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--rs-bg); color: var(--rs-ink); font-size: 13px; }
 .confirmaLinha > span:first-child { flex-grow: 1; }
 .confirmaLinha .erroForm { flex-basis: 100%; }
+
+/* Histórico do paciente, agendamentos e comprovantes (Historico.tsx) */
+.blocoHistorico { display: flex; flex-direction: column; gap: 10px; }
+.cabecaHistorico { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.cabecaHistorico .rotuloSec { flex-grow: 1; }
+.resumoPag { display: inline-flex; gap: 6px; }
+.seloPag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; white-space: nowrap; background: var(--surface-3); color: var(--ink-2); }
+.seloPag[data-estado='suspeito'], .seloPag[data-estado='cancelado'], .seloPag[data-estado='faltou'] { background: var(--rs); color: #fff; }
+.seloPag[data-estado='pendente'] { background: var(--ag-bg); color: var(--ag-ink); box-shadow: inset 0 0 0 1px var(--ag); }
+.seloPag[data-estado='conferido'], .seloPag[data-estado='confirmado'], .seloPag[data-estado='realizado'] { background: var(--ia-bg); color: var(--ia-ink); }
+.linhaTempo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; border-left: 2px solid var(--line); }
+.evLinha { display: flex; gap: 10px; padding: 6px 0 6px 12px; position: relative; font-size: 13px; line-height: 1.45; }
+.evLinha::before { content: ''; position: absolute; left: -6px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--line-strong); }
+.evLinha[data-tipo='servico']::before { border-color: var(--eq); }
+.evLinha[data-tipo='pagamento']::before { border-color: var(--ia); }
+.evLinha[data-tipo='nota']::before { border-color: var(--ag); }
+.evLinha[data-destaque='alerta']::before { background: var(--rs); border-color: var(--rs); }
+.evLinha[data-destaque='alerta'] .evLink, .evLinha[data-destaque='alerta'] .evTexto { color: var(--rs-ink); font-weight: 600; }
+.evCorpo { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.evTipo { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.evLink { padding: 0; border: 0; background: none; text-align: left; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); cursor: pointer; overflow-wrap: anywhere; }
+.evLink:hover { text-decoration-color: var(--ink); }
+.cartaoPag { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.cartaoPag[data-estado='suspeito'] { border-color: var(--rs); border-left-width: 5px; background: linear-gradient(var(--rs-bg), var(--rs-bg)), var(--surface); }
+.cartaoPag[data-estado='conferido'] { border-left: 5px solid var(--ia); }
+.cartaoPagTopo { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; }
+.motivos { margin: 0; padding-left: 18px; font-size: 13px; color: var(--rs-ink); }
+.linkAcao { display: inline-flex; align-items: center; text-decoration: none; color: var(--ink); }

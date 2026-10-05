@@ -11,6 +11,8 @@ export const PERMISSOES = [
   { id: 'crm.editar', nome: 'Assumir, mover e anotar atendimentos', grupo: 'CRM' },
   { id: 'crm.arquivar', nome: 'Arquivar atendimentos', grupo: 'CRM' },
   { id: 'crm.config', nome: 'Configurar o CRM (etapas, assuntos)', grupo: 'CRM' },
+  { id: 'pagamentos.ver', nome: 'Ver agendamentos e comprovantes de pagamento', grupo: 'CRM' },
+  { id: 'pagamentos.conferir', nome: 'Conferir comprovantes e registrar pagamentos', grupo: 'CRM' },
   { id: 'resultados.ver', nome: 'Ver resultados', grupo: 'Gestão' },
   { id: 'agente.config', nome: 'Configurar o agente de IA', grupo: 'Gestão' },
 ] as const;

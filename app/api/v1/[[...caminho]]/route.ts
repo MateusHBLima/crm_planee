@@ -25,7 +25,19 @@ async function tratar(req: NextRequest, ctx: Ctx) {
     if (partes.length === 0 && req.method === 'GET') return NextResponse.json(catalogo());
     const chave = await autenticar(chaveDoCabecalho(req.headers.get('authorization')), hostDeCabecalhos(req.headers));
     const [rec, id, ...resto] = partes;
+    // Arquivo do comprovante: GET /api/v1/pagamentos/{id}/arquivo (escopo leitura).
+    if (rec === 'pagamentos' && id && resto.length === 1 && resto[0] === 'arquivo') {
+      if (req.method !== 'GET') throw new ErroApi(405, 'Use GET.');
+      const a = await s.arquivoDoPagamento(chave, id);
+      return new NextResponse(new Uint8Array(a.dados), { headers: {
+        'content-type': a.mime, 'content-disposition': `inline; filename="${encodeURIComponent(a.nome)}"`, 'cache-control': 'private, no-store',
+      } });
+    }
     if (!rec || resto.length) throw new ErroApi(404, 'Rota não existe. Veja GET /api/v1.');
+    if (rec === 'servicos' && id === 'registrar') {
+      if (req.method !== 'POST') throw new ErroApi(405, 'Use POST /api/v1/servicos/registrar.');
+      return NextResponse.json(await s.registrarServico(chave, await corpo(req)));
+    }
 
     // Atalhos para o agente de IA (docs/api.md, "Para a IA").
     if (rec === 'ficha' && !id) {

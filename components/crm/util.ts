@@ -80,7 +80,8 @@ export function desdeDoPrazo(k: { etapa: string; aberto_em: string; atualizado_e
   if (k.etapa === 'pendente') return k.atualizado_em;
   return null;
 }
-export function atraso(k: { etapa: string; aberto_em: string; atualizado_em: string }, prazos: PrazosQuadro, agora: number | null): Atraso {
+export function atraso(k: { etapa: string; aberto_em: string; atualizado_em: string; alerta?: boolean }, prazos: PrazosQuadro, agora: number | null): Atraso {
+  if (k.alerta && k.etapa === 'aguardando' && agora !== null) return 'vermelho'; // alerta (comprovante suspeito): vermelho já
   const desde = desdeDoPrazo(k);
   if (!desde || agora === null || (k.etapa !== 'aguardando' && k.etapa !== 'pendente')) return 'ok';
   const p = prazos[k.etapa];

@@ -6,14 +6,15 @@ import { anotarNoContato, carregarAtendimentosDoContato, carregarContatos, carre
 import { Icone } from '@/components/Icone';
 import { EtapaPill } from './Quadro';
 import { FormContato, NovoAtendimento } from './Formularios';
+import { HistoricoPaciente } from './Historico';
 import { casaBusca, cpfBonito, criarFormatos, linkWhatsApp, telefoneBonito } from './util';
 import c from './crm.module.css';
 
 type Contato = { id: string; nome: string | null; telefone: string | null; documento: string | null; abertos: number; total: number; ultimo: string | null };
 type Nota = { id: string; texto: string; autor: string | null; criado_em: string };
 
-export function Contatos({ busca, quadro, podeEditar, mascarado, onAbrir, onQuadro, onAviso, onErro }: {
-  busca: string; quadro: TQuadro; podeEditar: boolean; mascarado: boolean;
+export function Contatos({ busca, quadro, podeEditar, podeConferir, mascarado, onAbrir, onQuadro, onAviso, onErro }: {
+  busca: string; quadro: TQuadro; podeEditar: boolean; podeConferir: boolean; mascarado: boolean;
   onAbrir: (atendimentoId: string) => void; onQuadro: (q: TQuadro) => void; onAviso: (t: string) => void; onErro: (t: string) => void;
 }) {
   const [lista, setLista] = useState<Contato[] | null>(null);
@@ -84,6 +85,7 @@ export function Contatos({ busca, quadro, podeEditar, mascarado, onAbrir, onQuad
                   {linkWhatsApp(atual.telefone) && <a className={c.linkBotao} href={linkWhatsApp(atual.telefone)!} target="_blank" rel="noreferrer"><Icone nome="conversa" tamanho={13} /> Abrir no WhatsApp</a>}</div>
                 {atual.documento && <div className={c.detLinha}><span className={c.metaRot}>CPF</span><span className={c.mono}>{cpfBonito(atual.documento)}</span></div>}
               </div>
+              <HistoricoPaciente key={atual.id} contatoId={atual.id} fmt={fmt} podeConferir={podeConferir} onAbrirAtendimento={onAbrir} onErro={onErro} />
               <h3 className={c.rotuloSec}>Atendimentos</h3>
               {atends === null ? <p className={c.detMeta}>Carregando…</p> : !atends.length ? <p className={c.detMeta}>Nenhum atendimento.</p> : (
                 <ul className={c.listaAtend}>

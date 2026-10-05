@@ -220,6 +220,86 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await ctx.close();
   sql("delete from crm_config where chave='prazos_atendimento'; update atendimentos set arquivado = true where resumo like 'PRAZO-%'");
 
+  // ---------- Serviços (agendamentos), pagamentos com comprovante e alerta de suspeita (migração 013) ----------
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const TELP = '5547966660001';
+  r = await api('/api/v1/servicos/registrar', { method: 'POST', body: JSON.stringify({ telefone: TELP, nome: 'Paula Pagamento Ficticia', tipo: 'Consulta',
+    descricao: 'Primeira consulta', inicio: '2026-10-14T15:00:00-03:00', profissional: 'Dr. Ficticio', local: 'Online', valor: 450, sistema: 'Feegow', codigo_externo: 'FG-9001',
+    detalhes: { procedimento: 'Consulta neurologia' } }) });
+  const servId = r.json && r.json.id;
+  ok('IA registra o agendamento (cria o contato)', r.status === 200 && r.json.criado === true && sql(`select c.nome || '|' || s.sistema || '|' || s.valor from servicos s join contatos c on c.id = s.contato_id where s.codigo_externo = 'FG-9001'`) === 'Paula Pagamento Ficticia|feegow|450.00', JSON.stringify(r.json));
+  r = await api('/api/v1/servicos/registrar', { method: 'POST', body: JSON.stringify({ telefone: TELP, sistema: 'feegow', codigo_externo: 'FG-9001', situacao: 'confirmado' }) });
+  ok('registrar de novo pelo código atualiza (não duplica)', r.status === 200 && r.json.criado === false && r.json.id === servId
+    && sql("select count(*) || '|' || min(situacao) from servicos where codigo_externo = 'FG-9001'") === '1|confirmado');
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELP, valor: 'abc' }) });
+  ok('pagamento com valor inválido é recusado', r.status === 400);
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELP, arquivo: { nome: 'x.pdf', mime: 'application/pdf', base64: PNG } }) });
+  ok('arquivo com tipo trocado é recusado', r.status === 400 && String(r.json.erro).includes('não é do tipo'), JSON.stringify(r.json));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELP, servico: { sistema: 'feegow', codigo_externo: 'FG-9001' }, valor: 200,
+    pago_em: '2026-10-05T10:12:00-03:00', forma: 'pix', descricao: 'Sinal da consulta', arquivo: { nome: 'comprovante.png', mime: 'image/png', base64: PNG } }) });
+  const pagId = r.json && r.json.id;
+  ok('IA anexa o comprovante ao agendamento', r.status === 201 && r.json.servico_id === servId && !r.json.alerta_atendimento_id
+    && sql(`select p.arquivo_mime || '|' || octet_length(a.dados) from pagamentos p join pagamentos_arquivos a on a.pagamento_id = p.id where p.id = '${pagId}'`) === 'image/png|' + Buffer.from(PNG, 'base64').length, JSON.stringify(r.json));
+  const arqR = await fetch(B + `/api/v1/pagamentos/${pagId}/arquivo`, { headers: { authorization: 'Bearer ' + chave } });
+  ok('API devolve o arquivo do comprovante', arqR.status === 200 && arqR.headers.get('content-type') === 'image/png' && Buffer.from(await arqR.arrayBuffer()).equals(Buffer.from(PNG, 'base64')));
+  const antesAlerta = Number(sql("select count(*) from atendimentos where alerta"));
+  r = await api(`/api/v1/pagamentos/${pagId}`, { method: 'PATCH', body: JSON.stringify({ analise: { resultado: 'suspeito', motivos: ['Valor do comprovante diferente do sinal', 'Recebedor não é a clínica'] } }) });
+  ok('análise "suspeito" abre o cartão de alerta', r.status === 200 && r.json.alerta_aberto && Number(sql("select count(*) from atendimentos where alerta")) === antesAlerta + 1
+    && sql(`select etapa || '|' || topico_id || '|' || (resumo like 'Comprovante suspeito de R$ 200,00 (Sinal da consulta): Valor do comprovante diferente do sinal; Recebedor não é a clínica%') from atendimentos where id = (select alerta_atendimento_id from pagamentos where id = '${pagId}')`) === 'aguardando|valores|true', JSON.stringify(r.json));
+  r = await api(`/api/v1/pagamentos/${pagId}`, { method: 'PATCH', body: JSON.stringify({ analise: { resultado: 'suspeito', motivos: ['de novo'] } }) });
+  ok('repetir a análise não abre outro cartão', r.status === 200 && Number(sql("select count(*) from atendimentos where alerta")) === antesAlerta + 1);
+  r = await api('/api/v1/ficha?telefone=' + TELP);
+  ok('ficha da IA traz agendamentos e pagamentos', r.status === 200 && r.json.servicos.length === 1 && r.json.pagamentos.length === 1 && r.json.pagamentos[0].analise === 'suspeito');
+  r = await api(`/api/v1/pagamentos/${pagId}`, { method: 'PATCH', body: JSON.stringify({ conferido_em: '2026-10-05' }) });
+  ok('IA não marca conferido', r.status === 400);
+
+  // Tela: alerta vermelho no quadro; ficha com histórico, agendamento, comprovante e Conferir (admin com o módulo)
+  sql("update empresas set modulos = array(select distinct unnest(modulos || array['pagamentos.ver','pagamentos.conferir'])) where id = 'teste'");
+  ({ ctx, p } = await nova());
+  await entrar(p, 'gestor@teste.local'); await p.waitForTimeout(1200);
+  const cartaoAlerta = p.locator('article', { hasText: 'Comprovante suspeito de R$ 200,00' });
+  ok('cartão de alerta vermelho no quadro desde que abre', (await cartaoAlerta.getAttribute('data-atraso')) === 'vermelho' && ((await cartaoAlerta.textContent()) || '').includes('Alerta · '));
+  await p.click('button[role=tab]:has-text("Contatos")'); await p.waitForTimeout(800);
+  await p.locator('button', { hasText: 'Paula Pagamento Ficticia' }).first().click(); await p.waitForTimeout(1500);
+  const hist = p.locator('section[aria-label="Histórico do paciente"]');
+  const tHist = ((await hist.textContent()) || '').replace(/\s+/g, ' ');
+  ok('histórico mostra agendamento, comprovante e suspeita', tHist.includes('Consulta agendado para 14/10') && tHist.includes('Comprovante recebido') && tHist.includes('Comprovante suspeito:')
+    && tHist.includes('1 suspeito'), tHist.slice(0, 300));
+  await hist.locator('button', { hasText: 'Consulta agendado' }).first().click(); await p.waitForTimeout(1200);
+  const det = p.locator('aside[aria-label^="Consulta"]');
+  const tDet = ((await det.textContent()) || '').replace(/\s+/g, ' ');
+  ok('detalhe do agendamento com ID Feegow, valor e o comprovante', tDet.includes('ID Feegow') && tDet.includes('FG-9001') && tDet.includes('Confirmado') && tDet.includes('Suspeito')
+    && tDet.includes('de novo') && tDet.includes('procedimento'), tDet.slice(0, 300));
+  const href = await det.locator('a', { hasText: 'Ver comprovante' }).getAttribute('href');
+  const arqTela = await p.evaluate(async (u) => { const x = await fetch(u); return x.status + '|' + x.headers.get('content-type'); }, href);
+  ok('comprovante abre pela tela', arqTela === '200|image/png', arqTela);
+  await p.screenshot({ path: out + '15_agendamento_comprovante.png' });
+  await det.locator('button', { hasText: 'Conferir' }).click(); await p.waitForTimeout(1200);
+  ok('Conferir grava quem e quando', sql(`select conferido_por || '|' || (conferido_em is not null) from pagamentos where id = '${pagId}'`) === 'Gestor Teste|true'
+    && ((await det.textContent()) || '').includes('Conferido por Gestor Teste'));
+  await det.locator('button[aria-label="Fechar"]').click(); await p.waitForTimeout(400);
+  // Registrar pagamento pela tela, com arquivo
+  await hist.locator('button', { hasText: 'Registrar pagamento' }).click();
+  const fp = p.locator('aside[aria-label="Registrar pagamento"]');
+  await fp.locator('#pg-servico').selectOption(servId); await fp.locator('#pg-valor').fill('250,00'); await fp.locator('#pg-data').fill('2026-10-05');
+  await fp.locator('#pg-descricao').fill('Restante da consulta');
+  await fp.locator('#pg-arquivo').setInputFiles({ name: 'restante.png', mimeType: 'image/png', buffer: Buffer.from(PNG, 'base64') });
+  await fp.locator('button[type=submit]').click(); await p.waitForTimeout(1500);
+  ok('pagamento registrado pela tela, com arquivo e no histórico', sql(`select p.valor || '|' || p.criado_por || '|' || (a.pagamento_id is not null) from pagamentos p left join pagamentos_arquivos a on a.pagamento_id = p.id where p.descricao = 'Restante da consulta'`) === '250.00|Gestor Teste|true'
+    && ((await hist.textContent()) || '').includes('R$ 250,00'));
+  await p.screenshot({ path: out + '16_historico_paciente.png', fullPage: true });
+  await ctx.close();
+  // Sem o módulo/permissão: histórico só com atendimentos e notas; arquivo recusado
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
+  await p.click('button[role=tab]:has-text("Contatos")'); await p.waitForTimeout(800);
+  await p.locator('button', { hasText: 'Paula Pagamento Ficticia' }).first().click(); await p.waitForTimeout(1500);
+  const tA = (await p.locator('section[aria-label="Histórico do paciente"]').textContent()) || '';
+  const arqA = (await p.request.get(B + href)).status();
+  ok('sem pagamentos.ver: não vê agendamento nem comprovante (o cartão de alerta continua no quadro para todos)',
+    !tA.includes('Consulta agendado') && !tA.includes('Comprovante recebido') && arqA === 403, `${arqA} ${tA.slice(0, 120)}`);
+  await ctx.close();
+
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);

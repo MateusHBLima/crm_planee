@@ -66,7 +66,7 @@ async function entrar(p, email, senha='senha123') {
   ok('aba Comercial', (await p.locator('text=Agendamento confirmado').count()) >= 1);
   await p.click('role=tab[name="Contatos"]'); await p.waitForTimeout(1200); await p.click('button:has-text("Jorge Ficticio")'); await p.waitForTimeout(1200);
   await p.screenshot({ path: out + '04_contatos.png' });
-  ok('aba Contatos com atendimentos do contato', (await p.locator('text=Mandou resultado de hemograma').count()) === 1);
+  ok('aba Contatos com atendimentos do contato', (await p.locator('section[aria-label="Ficha do contato"] ul li button', { hasText: 'Mandou resultado de hemograma' }).count()) === 1);
   // tema escuro
   await p.click('role=tab[name="Atendimento"]'); await p.click('text=Tema escuro'); await p.waitForTimeout(400); await p.screenshot({ path: out + '05_quadro_escuro.png' });
   // sair
