@@ -89,6 +89,47 @@ export const RECURSOS: Record<string, Recurso> = {
   },
 };
 
+// Serviços e pagamentos (migração 013). Pagamento com arquivo e análise passa por funções próprias
+// (lib/api/servico.ts: criarPagamento e atualizarPagamento), que abrem o alerta de comprovante suspeito.
+Object.assign(RECURSOS, {
+  servicos: {
+    nome: 'servicos', tabela: 'servicos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'O que está sendo pago: na clínica, cada agendamento (Feegow). Para criar ou atualizar pelo código do sistema, use POST /api/v1/servicos/registrar.',
+    campos: {
+      contato_id: 'id do contato',
+      tipo: 'Consulta, Retorno, Exame, OS…',
+      descricao: 'detalhe do serviço',
+      inicio: 'data e hora (ISO)',
+      profissional: 'quem atende',
+      local: 'onde (ou "Online")',
+      valor: 'valor em reais',
+      situacao: 'agendado | confirmado | realizado | cancelado | faltou',
+      sistema: 'de onde vem o código (ex.: feegow)',
+      codigo_externo: 'id no sistema da empresa',
+      detalhes: 'objeto livre com o resto (aparece no painel)',
+      atendimento_id: 'cartão do quadro ligado, se houver',
+      criado_por: 'IA ou nome de quem registrou',
+    },
+    filtros: ['contato_id', 'situacao', 'sistema', 'codigo_externo', 'arquivado'], ordem: 'inicio desc nulls last, criado_em desc',
+  },
+  pagamentos: {
+    nome: 'pagamentos', tabela: 'pagamentos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Comprovantes de pagamento de um serviço (ou só do contato). O arquivo vai em "arquivo" {nome, mime, base64} e sai em GET /api/v1/pagamentos/{id}/arquivo. "analise" {resultado: ok|suspeito, motivos[]} com suspeito abre um cartão de alerta no quadro.',
+    campos: {
+      contato_id: 'id do contato (ou mande "telefone")',
+      servico_id: 'id do serviço (ou mande "servico": {sistema, codigo_externo})',
+      atendimento_id: 'cartão do quadro ligado, se houver',
+      valor: 'valor pago em reais',
+      pago_em: 'data e hora do pagamento (ISO)',
+      forma: 'pix | cartao | boleto | dinheiro | outro',
+      descricao: 'a que se refere (ex.: sinal da consulta de 14/10)',
+      wamid: 'mensagem do WhatsApp em que veio',
+      criado_por: 'IA ou nome de quem anexou',
+    },
+    filtros: ['contato_id', 'servico_id', 'analise', 'arquivado'], ordem: 'criado_em desc',
+  },
+} satisfies Record<string, Recurso>);
+
 export function recurso(nome: string): Recurso | undefined {
   return Object.prototype.hasOwnProperty.call(RECURSOS, nome) ? RECURSOS[nome] : undefined;
 }
@@ -107,6 +148,9 @@ export function catalogo() {
     para_a_ia: [
       'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). Escopo leitura.',
       'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
+      'POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.',
+      'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"analise"?} — anexa o comprovante. Escopo crm.',
+      'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
     ],
     recursos: Object.values(RECURSOS).map((r) => ({
       nome: r.nome,

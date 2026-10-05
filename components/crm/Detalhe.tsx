@@ -6,12 +6,13 @@ import { anotarAtendimento, carregarDetalhe } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { Acoes, EtapaPill, Relativo } from './Quadro';
 import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
+import { HistoricoPaciente } from './Historico';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
-  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; nome: string; ocupado: boolean;
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
+  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
 }) {
@@ -132,6 +133,12 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, ocup
               <button type="submit" className={c.acaoPri} disabled={salvando || !nota.trim()}>{salvando ? 'Salvando…' : 'Salvar nota'}</button>
             </form>}
           </section>
+
+          {k.contato_id && (
+            <section className={c.detBloco}>
+              <HistoricoPaciente key={k.contato_id} contatoId={k.contato_id} fmt={fmt} podeConferir={podeConferir} compacto onErro={onErro} />
+            </section>
+          )}
 
           {podeArquivar && (
             <section className={c.detBloco}>

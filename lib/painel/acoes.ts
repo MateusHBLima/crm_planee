@@ -3,6 +3,7 @@
 import { ErroApi } from '@/lib/db';
 import { comUsuario } from './resposta';
 import * as crm from './crm';
+import * as sv from './servicos';
 
 // Ações chamadas pelas telas. Cada uma confere a sessão de novo (nunca confia no navegador)
 // e devolve o quadro atualizado, para a tela não precisar de outra ida ao servidor.
@@ -107,4 +108,18 @@ export async function salvarNomesDasEtapas(nomes: Record<string, string>) {
 
 export async function salvarPrazosDoAtendimento(prazos: Record<string, Record<string, number>>) {
   return comUsuario(async (u) => { await crm.salvarPrazos(u, prazos); return crm.lerConfigCrm(u); });
+}
+
+// ---- Histórico do paciente, agendamentos e comprovantes (migração 013) ----
+export async function carregarHistorico(contatoId: string) {
+  return comUsuario((u) => sv.historicoContato(u, contatoId));
+}
+export async function carregarServico(id: string) {
+  return comUsuario((u) => sv.detalheServico(u, id));
+}
+export async function conferirPagamento(contatoId: string, pagamentoId: string, sim: boolean) {
+  return comUsuario(async (u) => { await sv.conferir(u, pagamentoId, sim); return sv.historicoContato(u, contatoId); });
+}
+export async function registrarPagamento(contatoId: string, form: FormData) {
+  return comUsuario(async (u) => { await sv.registrarPagamento(u, contatoId, form); return sv.historicoContato(u, contatoId); });
 }

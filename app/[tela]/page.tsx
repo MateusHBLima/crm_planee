@@ -56,7 +56,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
         <Crm key={usuario.empresa?.id} inicial={quadro} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
-          podeConfig={pode(usuario, 'crm.config')} mascarado={usuario.master} nome={usuario.nome} />
+          podeConfig={pode(usuario, 'crm.config')} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
       </Shell>
     );
   }

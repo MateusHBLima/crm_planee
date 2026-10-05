@@ -16,13 +16,13 @@ psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
-         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql; do
+         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
 export OUTRA_DATABASE_URL="${DATABASE_URL%/*}/painel_teste_outra"
 psql -q "${DATABASE_URL%/*}/postgres" -c "drop database if exists painel_teste_outra" -c "create database painel_teste_outra" >/dev/null
-for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql; do
+for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql; do
   psql -q -v ON_ERROR_STOP=1 "$OUTRA_DATABASE_URL" -f "$f" >/dev/null
 done
 psql -q "$OUTRA_DATABASE_URL" -c "delete from notas; delete from atendimentos; insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000001','receita','Cartão só da Clínica Outra','IA')" >/dev/null

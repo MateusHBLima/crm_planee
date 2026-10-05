@@ -25,6 +25,7 @@ export type Cartao = {
   id: string; topico_id: string | null; etapa: Etapa; resumo: string; sombra: boolean;
   aberto_por: string | null; aberto_em: string; atualizado_em: string; responsavel: string | null; assumido_em: string | null; finalizado_em: string | null;
   contato_id: string | null; nome: string | null; telefone: string | null; documento: string | null; notas: number; lead: boolean;
+  alerta: boolean; // aberto por alerta (ex.: comprovante suspeito): vermelho desde que abre
 };
 // Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
 // Aguardando conta desde que abriu; pendente interno, desde a última mudança (atualizado_em).
@@ -59,6 +60,7 @@ function limparCartao(u: Usuario, r: Record<string, unknown>): Cartao {
     resumo: resumo.replace(SOMBRA, ''),
     notas: Number(r.notas) || 0,
     lead: Boolean(r.oportunidade_id),
+    alerta: r.alerta === true,
     aberto_em: iso(r.aberto_em) as string,
     atualizado_em: (iso(r.atualizado_em) ?? iso(r.aberto_em)) as string,
     assumido_em: iso(r.assumido_em),
@@ -93,6 +95,7 @@ async function nomesEtapas(u: Usuario): Promise<Record<Etapa, string>> {
 const SELECT_CARTAO = `
   select a.id, a.topico_id, a.etapa, a.resumo, a.aberto_por, a.aberto_em, a.atualizado_em, a.responsavel, a.assumido_em, a.finalizado_em,
          a.oportunidade_id, a.contato_id, c.nome, c.telefone, c.documento,
+         coalesce((to_jsonb(a) ->> 'alerta')::boolean, false) as alerta,
          (select count(*) from notas n where n.alvo_tipo = 'atendimentos' and n.alvo_id = a.id and not n.arquivado) as notas
     from atendimentos a left join contatos c on c.id = a.contato_id`;
 

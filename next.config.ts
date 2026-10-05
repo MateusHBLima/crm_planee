@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
   // Imagem Docker enxuta para o Swarm (decisão 27).
   output: 'standalone',
   poweredByHeader: false,
+  // Comprovante anexado pela tela (até 10 MB) vai numa ação do servidor.
+  experimental: { serverActions: { bodySizeLimit: '12mb' } },
   async headers() {
     return [{ source: '/:path*', headers: SEGURANCA }];
   },
