@@ -69,7 +69,18 @@
 .cartao, .cartaoFim { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-1); cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
 .cartao:hover, .cartaoFim:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); }
 .cartaoFim { opacity: .72; }
-.cartaoTopo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Atraso pelos prazos de Configurações: amarelo chama atenção, vermelho grita. Borda grossa à esquerda + fundo. */
+.cartao[data-atraso='amarelo'] { border-color: var(--ag); border-left-width: 5px; background: linear-gradient(var(--ag-bg), var(--ag-bg)), var(--surface); }
+.cartao[data-atraso='vermelho'] { border-color: var(--rs); border-left-width: 5px; background: linear-gradient(var(--rs-bg), var(--rs-bg)), var(--surface); box-shadow: 0 0 0 1px var(--rs), var(--shadow-1); }
+.seloAtraso { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.seloAtraso[data-atraso='amarelo'] { background: var(--ag); color: #1d1300; }
+.seloAtraso[data-atraso='vermelho'] { background: var(--rs); color: #fff; animation: piscaAtraso 2s ease-in-out infinite; }
+@keyframes piscaAtraso { 50% { opacity: .6; } }
+.fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.filaItem { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; background: var(--surface-3); color: var(--ink-2); }
+.filaItem[data-atraso='amarelo'] { background: var(--ag-bg); color: var(--ag-ink); box-shadow: inset 0 0 0 1px var(--ag); }
+.filaItem[data-atraso='vermelho'] { background: var(--rs); color: #fff; }
+.cartaoTopo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
 .selo { height: 20px; padding: 0 7px; border-radius: 6px; border: 1px dashed var(--line-strong); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); display: inline-flex; align-items: center; }
 .cartaoNome { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .nomeBotao { padding: 0; border: 0; background: none; text-align: left; font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -155,7 +166,7 @@
   .fichaContato { border-left: 1px solid var(--line); border-radius: 14px; padding: 18px; }
   .detCampos { grid-template-columns: 1fr; }
 }
-@media (prefers-reduced-motion: reduce) { .cartao, .cartaoFim { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cartao, .cartaoFim { transition: none; } .seloAtraso { animation: none !important; } }
 
 /* Formulários (novo atendimento, contato, oportunidade) e configuração do CRM */
 .campo input, .campo textarea { height: 36px; padding: 0 10px; font-size: 13.5px; font-weight: 400; color: var(--ink); background: var(--field); border: 1px solid var(--line-strong); border-radius: 9px; min-width: 0; }

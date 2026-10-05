@@ -12,7 +12,7 @@ import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
 import { NovoAtendimento } from './Formularios';
 import { useAvisos } from './avisos';
-import { criarFormatos } from './util';
+import { atraso, criarFormatos, ha } from './util';
 import c from './crm.module.css';
 
 type Aba = 'atendimento' | 'comercial' | 'contatos';
@@ -36,6 +36,14 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
   const ocupadoRef = useRef(false);
   ocupadoRef.current = ocupado;
   const fmt = useMemo(() => criarFormatos(quadro.fuso), [quadro.fuso]);
+  // Relógio da tela: as cores de atraso mudam sozinhas, mesmo sem cartão novo. Só no navegador (sem diferença
+  // entre o desenho do servidor e o do navegador).
+  const [agora, setAgora] = useState<number | null>(null);
+  useEffect(() => {
+    setAgora(Date.now());
+    const t = window.setInterval(() => setAgora(Date.now()), 20000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const tratar = useCallback(<T,>(r: Resposta<T>, sucesso?: string): T | null => {
     if (!r.ok) {
@@ -87,6 +95,12 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
   }), [quadro.etapas, quadro.cartoes, tratar]);
 
   const temSombra = quadro.cartoes.some((k) => k.sombra);
+  // Topo do quadro: quem espera há mais tempo e quantos passaram do prazo (sem os cartões sombra, que ninguém atende).
+  const reais = quadro.cartoes.filter((k) => !k.sombra && (k.etapa === 'aguardando' || k.etapa === 'pendente'));
+  const maisAntigo = reais.filter((k) => k.etapa === 'aguardando').sort((a, b) => a.aberto_em.localeCompare(b.aberto_em))[0];
+  const niveis = reais.map((k) => atraso(k, quadro.prazos, agora));
+  const vermelhos = niveis.filter((n) => n === 'vermelho').length;
+  const amarelos = niveis.filter((n) => n === 'amarelo').length;
   const contagem = (e: Etapa) => quadro.cartoes.filter((k) => k.etapa === e && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
   const fechar = useCallback(() => setAberto(null), []);
@@ -139,6 +153,17 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
                 </span>
               ))}
             </div>
+            {agora !== null && (
+              <div className={c.fila} aria-live="polite" data-fila>
+                {maisAntigo
+                  ? <span className={c.filaItem} data-atraso={atraso(maisAntigo, quadro.prazos, agora)}>
+                      Mais antigo aguardando: <strong>{ha(maisAntigo.aberto_em)}</strong>
+                    </span>
+                  : <span className={c.filaItem}>Ninguém aguardando</span>}
+                {vermelhos > 0 && <span className={c.filaItem} data-atraso="vermelho" data-contagem="vermelho"><strong>{vermelhos}</strong> {vermelhos === 1 ? 'atrasado' : 'atrasados'}</span>}
+                {amarelos > 0 && <span className={c.filaItem} data-atraso="amarelo" data-contagem="amarelo"><strong>{amarelos}</strong> em atenção</span>}
+              </div>
+            )}
             {temSombra && (
               <div className={c.segmentadoPeq} role="group" aria-label="Origem dos cartões">
                 {([['todos', 'Todos'], ['real', 'Sem sombra'], ['sombra', 'Só sombra']] as [Origem, string][]).map(([v, t]) => (
@@ -159,7 +184,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, mascarado, 
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
           </div>
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} ocupado={ocupado} podeEditar={podeEditar} podeConfig={podeConfig}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} agora={agora} ocupado={ocupado} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={setAberto} onAssumir={acoes.assumir} onMover={acoes.mover} />
         </>
       )}

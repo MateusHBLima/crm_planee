@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ConfigCrm as TConfig, Etapa } from '@/lib/painel/crm';
-import { arquivarDaConfig, salvarAssunto, salvarEtapaDoFunil, salvarNomesDasEtapas, type Resposta } from '@/lib/painel/acoes';
+import { arquivarDaConfig, salvarAssunto, salvarEtapaDoFunil, salvarNomesDasEtapas, salvarPrazosDoAtendimento, type Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { Campo, useEnvio } from './Formularios';
 import c from './crm.module.css';
@@ -28,6 +28,7 @@ export function ConfigCrm({ inicial }: { inicial: TConfig }) {
       <div className={c.aviso} role="status" aria-live="polite">{aviso && <span className={c.avisoOk}>{aviso}</span>}</div>
       <div className={c.telaConfig}>
         <NomesEtapas cfg={cfg} onPronto={pronto('Nomes das etapas salvos.')} />
+        <PrazosAtendimento cfg={cfg} onPronto={pronto('Prazos salvos. O quadro já usa as cores novas.')} />
 
         <section className={c.blocoConfig} aria-labelledby="cfg-assuntos">
           <h2 id="cfg-assuntos">Assuntos do atendimento</h2>
@@ -70,6 +71,43 @@ function NomesEtapas({ cfg, onPronto }: { cfg: TConfig; onPronto: (d: TConfig) =
         </div>
         {erro && <p className={c.erroForm} role="alert">{erro}</p>}
         <div className={c.acoesFim}><button type="submit" className={c.acaoPri} disabled={enviando}>{enviando ? 'Salvando…' : 'Salvar nomes'}</button></div>
+      </form>
+    </section>
+  );
+}
+
+// Quando o cartão fica amarelo e vermelho no quadro. Aguardando em minutos; pendente interno em horas.
+function PrazosAtendimento({ cfg, onPronto }: { cfg: TConfig; onPronto: (d: TConfig) => void }) {
+  const [v, setV] = useState({
+    ag_am: String(cfg.prazos.aguardando.amarelo), ag_vm: String(cfg.prazos.aguardando.vermelho),
+    pd_am: String(cfg.prazos.pendente.amarelo / 60), pd_vm: String(cfg.prazos.pendente.vermelho / 60),
+  });
+  const { erro, enviando, enviar } = useEnvio<TConfig>();
+  const campo = (k: keyof typeof v, rotulo: string, max: number) => (
+    <Campo id={`prazo-${k}`} rotulo={rotulo}>
+      <input id={`prazo-${k}`} type="number" inputMode="numeric" min={1} max={max} step={1} required value={v[k]}
+        onChange={(e) => setV({ ...v, [k]: e.target.value })} />
+    </Campo>
+  );
+  return (
+    <section className={c.blocoConfig} aria-labelledby="cfg-prazos">
+      <h2 id="cfg-prazos">Prazos do atendimento</h2>
+      <p>Quando o cartão fica amarelo (atenção) e vermelho (atrasado) no quadro. Aguardando conta desde que o cartão abriu; pendente interno, desde a última mudança.</p>
+      <form className={c.formJanela} onSubmit={(e) => {
+        e.preventDefault();
+        enviar(() => salvarPrazosDoAtendimento({
+          aguardando: { amarelo: Number(v.ag_am), vermelho: Number(v.ag_vm) },
+          pendente: { amarelo: Math.round(Number(v.pd_am) * 60), vermelho: Math.round(Number(v.pd_vm) * 60) },
+        }), onPronto);
+      }}>
+        <div className={c.gradeEtapas}>
+          {campo('ag_am', 'Aguardando: amarelo após (min)', 43200)}
+          {campo('ag_vm', 'Aguardando: vermelho após (min)', 43200)}
+          {campo('pd_am', 'Pendente: amarelo após (horas)', 720)}
+          {campo('pd_vm', 'Pendente: vermelho após (horas)', 720)}
+        </div>
+        {erro && <p className={c.erroForm} role="alert">{erro}</p>}
+        <div className={c.acoesFim}><button type="submit" className={c.acaoPri} disabled={enviando}>{enviando ? 'Salvando…' : 'Salvar prazos'}</button></div>
       </form>
     </section>
   );

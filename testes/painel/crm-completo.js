@@ -180,6 +180,46 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   r = await fetch(B + '/api/v1/funil', { method: 'POST', headers: { authorization: 'Bearer ' + leitura, 'content-type': 'application/json' }, body: JSON.stringify({ telefone: '5547911112222', etapa_id: aberta }) });
   ok('chave só de leitura não mexe no funil', r.status === 403);
 
+  // ---------- Prazos: cores de atraso e o mais antigo em cima ----------
+  const sexames = `insert into atendimentos (topico_id, etapa, resumo, aberto_por, aberto_em, atualizado_em) values
+    ('exames', 'aguardando', 'PRAZO-A cinco minutos', 'IA', now() - interval '5 minutes', now() - interval '5 minutes'),
+    ('exames', 'aguardando', 'PRAZO-B vinte minutos', 'IA', now() - interval '20 minutes', now() - interval '20 minutes'),
+    ('exames', 'aguardando', 'PRAZO-C quarenta minutos', 'IA', now() - interval '40 minutes', now() - interval '40 minutes'),
+    ('exames', 'pendente', 'PRAZO-D pendente parado', 'Amanda Teste', now() - interval '50 hours', now() - interval '30 hours'),
+    ('exames', 'em_atendimento', 'PRAZO-E em atendimento antigo', 'IA', now() - interval '3 hours', now() - interval '3 hours'),
+    ('exames', 'em_atendimento', 'PRAZO-F em atendimento novo', 'IA', now() - interval '1 hour', now() - interval '1 hour');`;
+  sql(sexames);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
+  const col = p.locator('section[aria-label="Exames"] article');
+  const textos = (await col.allTextContents()).map((t) => (t.match(/PRAZO-([A-F])/) || ['', ''])[1]).filter(Boolean);
+  ok('mais antigo em cima: aguardando C, B, A; em atendimento E antes de F', textos.join('') === 'CBAEFD', textos.join(''));
+  const nivel = (k) => p.locator('section[aria-label="Exames"] article', { hasText: k }).getAttribute('data-atraso');
+  ok('aguardando há 40 min fica vermelho', (await nivel('PRAZO-C')) === 'vermelho');
+  ok('aguardando há 20 min fica amarelo', (await nivel('PRAZO-B')) === 'amarelo');
+  ok('aguardando há 5 min fica normal', (await nivel('PRAZO-A')) === null);
+  ok('pendente parado há 30 h fica amarelo', (await nivel('PRAZO-D')) === 'amarelo');
+  ok('em atendimento não muda de cor', (await nivel('PRAZO-E')) === null);
+  ok('selo "Atrasado · há 40 min" no cartão vermelho', ((await p.locator('section[aria-label="Exames"] article', { hasText: 'PRAZO-C' }).textContent()) || '').includes('Atrasado · há 40 min'));
+  const fila = ((await p.locator('[data-fila]').textContent()) || '').replace(/\s+/g, ' ');
+  ok('topo mostra o mais antigo aguardando e os atrasados', fila.includes('Mais antigo aguardando: há') && (await p.locator('[data-fila] [data-contagem="vermelho"]').count()) === 1, fila);
+  await p.screenshot({ path: out + '14_quadro_prazos.png', fullPage: true });
+  await ctx.close();
+  // Prazos em Configurações (gestor): aguardando 60/120 min → o de 40 min volta ao normal
+  ({ ctx, p } = await nova());
+  await entrar(p, 'gestor@teste.local'); await p.goto(B + '/configuracoes'); await p.waitForTimeout(800);
+  ok('Configurações mostra os prazos padrão', (await p.inputValue('#prazo-ag_am')) === '15' && (await p.inputValue('#prazo-ag_vm')) === '30'
+    && (await p.inputValue('#prazo-pd_am')) === '24' && (await p.inputValue('#prazo-pd_vm')) === '48');
+  await p.fill('#prazo-ag_am', '60'); await p.fill('#prazo-ag_vm', '50'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
+  ok('vermelho antes do amarelo é recusado', ((await p.locator('section[aria-labelledby="cfg-prazos"] [role=alert]').textContent()) || '').includes('vermelho precisa vir depois'));
+  await p.fill('#prazo-ag_vm', '120'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
+  ok('prazos salvos pela API (com auditoria)', sql("select valor->'aguardando'->>'amarelo' || '/' || (valor->'aguardando'->>'vermelho') || '/' || (valor->'pendente'->>'amarelo') from crm_config where chave='prazos_atendimento'") === '60/120/1440'
+    && sql("select count(*) from painel_auditoria where alvo_id = 'prazos_atendimento'") !== '0');
+  await p.goto(B + '/crm'); await p.waitForTimeout(1200);
+  ok('com 60/120 min, o de 40 min sai do vermelho', (await nivel('PRAZO-C')) === null);
+  await ctx.close();
+  sql("delete from crm_config where chave='prazos_atendimento'; update atendimentos set arquivado = true where resumo like 'PRAZO-%'");
+
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);
