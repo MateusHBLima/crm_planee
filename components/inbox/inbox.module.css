@@ -65,6 +65,8 @@
 .botaoDono { flex-shrink: 0; height: 34px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--ink); }
 .botaoDono:hover:not(:disabled) { background: var(--hover); }
 a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; }
+.botaoDonoForte { flex-shrink: 0; height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--ink); color: var(--inv); font-size: 13px; font-weight: 600; }
+.botaoDonoForte:hover:not(:disabled) { background: var(--ink-hover, var(--ink)); }
 .foraJanelaBloco { display: flex; align-items: center; gap: 10px; }
 .foraJanelaBloco .foraJanela { flex-grow: 1; }
 .nomeLinha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
@@ -75,6 +77,10 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .nomeCancelar { flex-shrink: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 12.5px; }
 .nomeErro { flex-basis: 100%; font-size: 12px; color: var(--rs-ink); }
 .tagLinha { flex-shrink: 1; min-width: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: 18px; line-height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.tagEquipe[data-sempre='true'] { background: var(--ink); color: var(--inv); }
+.tagEquipe[data-esperando='true'] { background: var(--rs); color: #fff; }
+.prazoDono { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.botaoDonoTexto { border: 0; background: none; padding: 0 6px; height: 32px; font: inherit; font-size: 12.5px; color: var(--ink-3); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .tagEquipe { flex-shrink: 0; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: var(--eq-bg); color: var(--eq-ink); display: inline-flex; align-items: center; }
 
 .mensagens { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 18px 28px 22px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }

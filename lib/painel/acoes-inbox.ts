@@ -22,8 +22,9 @@ export async function enviarMensagem(numeroId: string, waId: string, texto: stri
 }
 
 // Assumir a conversa (a Sara fica quieta) ou devolver para a Sara. Devolve a linha da lista atualizada.
-export async function assumirConversa(numeroId: string, waId: string) {
-  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'humano'), 'inbox');
+// prazo: '24h' (a Sara volta 24 h depois da última resposta da equipe) ou 'sempre' (até alguém devolver).
+export async function assumirConversa(numeroId: string, waId: string, prazo: inbox.PrazoDono = '24h') {
+  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'humano', prazo), 'inbox');
 }
 
 export async function devolverConversa(numeroId: string, waId: string) {

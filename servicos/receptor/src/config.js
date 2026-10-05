@@ -16,6 +16,8 @@ export const config = {
   chaveInterna: env.RECEPTOR_CHAVE_INTERNA || '', // a Sara (n8n) usa para registrar o que mandou
   // Minutos que a Sara fica quieta depois que a equipe responde pelo celular (mesmo valor no painel).
   pausaCelularMin: num(env.SARA_PAUSA_CELULAR_MIN, 7),
+  // Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (mesmo valor no painel).
+  donoHoras: num(env.INBOX_ASSUMIR_HORAS, 24),
   // Endereço público do webhook, usado quando o painel pede para conectar um número (override na Meta).
   urlPublica: (env.RECEPTOR_URL_PUBLICA || 'https://adm.planeelabia.com/whatsapp/webhook').replace(/\/+$/, ''),
   metaToken: env.META_TOKEN || '',

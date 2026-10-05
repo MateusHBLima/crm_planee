@@ -35,6 +35,10 @@ const STATUS: Record<string, { marca: string; nome: string }> = {
   lida: { marca: '✓✓', nome: 'Lida' }, reproduzida: { marca: '✓✓', nome: 'Reproduzida' }, falhou: { marca: '!', nome: 'Não enviada' },
 };
 
+// Conversa fixa com a equipe e o contato esperando resposta há mais de 30 min: a lista destaca em vermelho.
+const ESPERA_FIXA_MS = 30 * 60_000;
+const esperandoEquipe = (k: Conversa) => k.ultima_direcao === 'entrada' && Boolean(k.ultima_em) && Date.now() - new Date(k.ultima_em as string).getTime() > ESPERA_FIXA_MS;
+
 const mesma = (a: Chave | null, b: Chave | null) => Boolean(a && b && a.numero_id === b.numero_id && a.wa_id === b.wa_id);
 const nomeDe = (k: Conversa) => k.nome || telefoneBonito(k.wa_id);
 const iniciais = (k: Conversa) => (k.nome ? k.nome.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() : '#');
@@ -61,6 +65,11 @@ function criarDatas(fuso: string) {
       if (!iso) return '';
       const k = chave.format(new Date(iso));
       return k === hoje() ? hora.format(new Date(iso)) : k === ontem() ? 'Ontem' : curto.format(new Date(iso));
+    },
+    // Prazo: "14:02" hoje, "06/10 14:02" em outro dia
+    prazo(iso: string) {
+      const d = new Date(iso);
+      return chave.format(d) === hoje() ? hora.format(d) : `${curto.format(d)} ${hora.format(d)}`;
     },
     // Separador da conversa: "Hoje", "Ontem", "segunda-feira, 29 de setembro de 2026"
     separador(iso: string) {
@@ -92,6 +101,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
   const [mudandoDono, setMudandoDono] = useState(false);
   const [avisando, setAvisando] = useState<AlvoAviso | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [escolhendoPrazo, setEscolhendoPrazo] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -216,11 +226,11 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
   }, [aplicarAtualizacao, atualizarLinha]);
 
   // Assumir (a Sara fica quieta nesta conversa) ou devolver para a Sara.
-  const trocarDono = useCallback(async (dono: 'ia' | 'humano') => {
+  const trocarDono = useCallback(async (dono: 'ia' | 'humano', prazo: '24h' | 'sempre' = '24h') => {
     const k = abertaRef.current;
     if (!k) return;
-    setMudandoDono(true); setAviso(null);
-    const d = tratar(await (dono === 'humano' ? assumirConversa : devolverConversa)(k.numero_id, k.wa_id));
+    setMudandoDono(true); setAviso(null); setEscolhendoPrazo(false);
+    const d = tratar(await (dono === 'humano' ? assumirConversa(k.numero_id, k.wa_id, prazo) : devolverConversa(k.numero_id, k.wa_id)));
     setMudandoDono(false);
     if (!d || !mesma(abertaRef.current, k)) return;
     setDados((x) => (x ? { ...x, conversa: d } : x));
@@ -317,7 +327,13 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                   <span className={c.itemLinha}>
                     <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
                     {lista.linhas && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
-                    {k.dono === 'humano' && <span className={c.tagEquipe} title={k.dono_por ? `Com a equipe: ${k.dono_por}` : 'Com a equipe'}>Equipe</span>}
+                    {k.dono === 'humano' && (
+                      <span className={c.tagEquipe} data-sempre={k.dono_sempre ? 'true' : undefined}
+                        data-esperando={k.dono_sempre && esperandoEquipe(k) ? 'true' : undefined}
+                        title={`${k.dono_sempre ? 'Fixa com' : 'Com'} a equipe${k.dono_por ? ': ' + k.dono_por : ''}${k.dono_ate ? ' até ' + datas.prazo(k.dono_ate) : ''}${k.dono_sempre && esperandoEquipe(k) ? ' · contato sem resposta há mais de 30 min' : ''}`}>
+                        {k.dono_sempre ? 'Fixa' : 'Equipe'}
+                      </span>
+                    )}
                     {k.janela_aberta && <span className={c.janela} title="Janela de 24 h aberta: o contato escreveu nas últimas 24 horas">24h</span>}
                     {k.nao_lidas > 0 && <span className={c.naoLidas} aria-label={`${k.nao_lidas} não lidas`}>{k.nao_lidas}</span>}
                   </span>
@@ -367,7 +383,9 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                       </span>
                       <span className={c.dono} data-dono={atual.dono === 'humano' ? 'equipe' : atual.pausa_ate ? 'pausa' : 'sara'}>
                         {atual.dono === 'humano'
-                          ? `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}`
+                          ? atual.dono_sempre
+                            ? `Fixa com a equipe${atual.dono_por ? ' · ' + atual.dono_por : ''}`
+                            : `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}${atual.dono_ate ? ` · até ${datas.prazo(atual.dono_ate)}` : ''}`
                           : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
                       </span>
                       {dados?.selo && (
@@ -383,12 +401,21 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                       Abrir no WhatsApp
                     </a>
                   )}
-                  {podeResponder && (
+                  {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
-                      onClick={() => trocarDono(atual.dono === 'humano' ? 'ia' : 'humano')}
-                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa até você devolver'}>
+                      onClick={() => (atual.dono === 'humano' ? trocarDono('ia') : setEscolhendoPrazo(true))}
+                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa: por 24 h ou sempre'}>
                       {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? 'Devolver pra Sara' : 'Assumir'}
                     </button>
+                  )}
+                  {podeResponder && atual.dono !== 'humano' && escolhendoPrazo && (
+                    <span className={c.prazoDono} role="group" aria-label="Assumir por quanto tempo">
+                      <button type="button" className={c.botaoDonoForte} disabled={mudandoDono} onClick={() => trocarDono('humano', '24h')}
+                        title="A Sara volta sozinha 24 h depois da última resposta da equipe">Por 24 h</button>
+                      <button type="button" className={c.botaoDono} disabled={mudandoDono} onClick={() => trocarDono('humano', 'sempre')}
+                        title="A conversa fica com você até alguém clicar em Devolver pra Sara">Sempre</button>
+                      <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoPrazo(false)}>Cancelar</button>
+                    </span>
                   )}
                 </>
               )}

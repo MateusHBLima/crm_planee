@@ -2,6 +2,7 @@
 // contatos, conversas, mensagens (entrada, saída pelo celular, saída pela API, histórico), reações,
 // edições, mensagens apagadas e status (enviada, entregue, lida, falhou).
 import { bancoDaEmpresa, transacao } from './banco.js';
+import { config } from './config.js';
 import { rota } from './rotas.js';
 
 export class NumeroSemDono extends Error {}
@@ -77,6 +78,23 @@ async function conversa(c, numero, waId, { em, resumo: r, direcao, contarNaoLida
     [numero, waId, em, r, direcao, Boolean(contarNaoLida), Boolean(zerar)]);
 }
 
+// Conversa assumida por prazo (Inbox → Assumir por 24 h): cada resposta da equipe empurra o prazo para 24 h
+// depois dela. Assumida "sempre" (dono_ate vazio) ou já vencida não muda. Banco sem a migração 012: nada a fazer
+// (o savepoint impede que o erro derrube a gravação da mensagem).
+async function renovarDono(c, numero, waId, em) {
+  await c.query('savepoint renovar_dono');
+  try {
+    await c.query(
+      `update wa_conversas set dono_ate = greatest(dono_ate, $3::timestamptz + make_interval(hours => $4))
+        where numero_id = $1 and wa_id = $2 and dono = 'humano' and dono_ate is not null and dono_ate > now()`,
+      [numero, waId, em, config.donoHoras]);
+    await c.query('release savepoint renovar_dono');
+  } catch (e) {
+    await c.query('rollback to savepoint renovar_dono');
+    if (e.code !== '42703') throw e;
+  }
+}
+
 // Grava uma mensagem. "historico" nunca sobrescreve o que já chegou ao vivo.
 async function mensagem(c, numero, waId, m, { direcao, origem, status }) {
   const tipo = m.type || 'desconhecido';
@@ -142,6 +160,7 @@ async function mensagemViva(c, numero, waId, m, direcao, origem) {
       contarNaoLida: r.nova && direcao === 'entrada',
       zerar: direcao === 'saida' && origem === 'celular', // respondeu pelo celular: já leu
     });
+    if (direcao === 'saida' && origem === 'celular') await renovarDono(c, numero, waId, r.em);
   }
 }
 
@@ -282,6 +301,7 @@ export async function registrarEnvio(d) {
        returning (xmax = 0) as nova`,
       [numero, waId, m.id, m.type, textoDe(m), midiaDe(m), quando(m.timestamp), bruto, origem, por]);
     await conversa(c, numero, waId, { em: quando(m.timestamp), resumo: resumo(m.type, textoDe(m)), direcao: 'saida', contarNaoLida: false, zerar: false });
+    if (origem === 'painel') await renovarDono(c, numero, waId, quando(m.timestamp));
     return x.rows[0]?.nova;
   });
 }

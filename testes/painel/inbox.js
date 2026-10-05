@@ -310,7 +310,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);
   // Quem responde pelo painel assume a conversa (a Sara fica quieta)
   await p.waitForTimeout(800);
-  ok('responder pelo painel assume a conversa no banco', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true');
+  ok('responder pelo painel assume a conversa por 24 h', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) || '|' || (dono_ate between now() + interval '23 hours' and now() + interval '25 hours') from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true|true');
   const cab = () => p.locator('section[aria-label^="Conversa com"] header');
   ok('cabeçalho mostra "Equipe atendendo · Amanda Teste" e o botão Devolver pra Sara',
     ((await cab().textContent()) || '').includes('Equipe atendendo · Amanda Teste') && (await p.getByRole('button', { name: 'Devolver pra Sara' }).count()) === 1);
@@ -347,16 +347,43 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // Assumir pelo botão (sem enviar nada)
   antesDono = acoesR.length;
   await p.getByRole('button', { name: 'Assumir', exact: true }).click();
+  ok('Assumir pergunta por quanto tempo', (await p.getByRole('group', { name: 'Assumir por quanto tempo' }).count()) === 1
+    && (await p.getByRole('button', { name: 'Por 24 h' }).count()) === 1 && (await p.getByRole('button', { name: 'Sempre', exact: true }).count()) === 1);
+  await p.getByRole('button', { name: 'Por 24 h' }).click();
   await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
   const acaoAssumir = (acoesR[antesDono] || {}).id;
-  ok('Assumir pelo botão: equipe no banco, sem mandar mensagem', sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'humano'
+  ok('Assumir por 24 h: equipe no banco com prazo, sem mandar mensagem', sql(`select dono || '|' || (dono_ate between now() + interval '23 hours' and now() + interval '25 hours') from wa_conversas where wa_id='${BIA}'`) === 'humano|true'
     && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1);
+  ok('cabeçalho mostra até quando', /Equipe atendendo · Amanda Teste · até \d{2}\/\d{2} \d{2}:\d{2}/.test(((await cab().textContent()) || '')), ((await cab().textContent()) || '').slice(0, 200));
   await p.screenshot({ path: out + '24_inbox_assumida.png' });
   // Devolver com a última mensagem da clínica: não avisa o n8n (não há o que responder)
   sql(`update wa_conversas set ultima_direcao = 'saida' where wa_id = '${BIA}'`);
   const devolve2 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
   ok('devolver sem mensagem do contato pendente não avisa o n8n', devolve2.startsWith('200') && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia'
     && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1, devolve2.slice(0, 120));
+  // Assumir "Sempre": sem prazo, "Fixa" na lista e no cabeçalho; contato esperando há mais de 30 min fica vermelho
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  await p.getByRole('button', { name: 'Assumir', exact: true }).click();
+  await p.getByRole('button', { name: 'Sempre', exact: true }).click();
+  await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
+  ok('Assumir sempre: equipe no banco sem prazo', sql(`select dono || '|' || coalesce(dono_ate::text, 'sem prazo') from wa_conversas where wa_id='${BIA}'`) === 'humano|sem prazo'
+    && sql(`select count(*) from central_auditoria where acao = 'assumir_conversa' and alvo = '${NUM}:1001' and detalhe::text like '%sempre%'`) === '1');
+  ok('cabeçalho e lista mostram "Fixa"', ((await cab().textContent()) || '').includes('Fixa com a equipe · Amanda Teste')
+    && (await item(p, 'Beatriz Ficticia').getByText('Fixa', { exact: true }).count()) === 1);
+  sql(`update wa_conversas set ultima_direcao = 'entrada', ultima_em = now() - interval '40 minutes' where wa_id = '${BIA}'`);
+  await p.waitForTimeout(11000);
+  ok('fixa com o contato sem resposta há 40 min fica vermelha na lista', (await item(p, 'Beatriz Ficticia').locator('[data-esperando="true"]').count()) === 1);
+  sql(`update wa_conversas set ultima_direcao = 'saida', ultima_em = now() where wa_id = '${BIA}'`);
+  // Prazo vencido: a Sara volta sozinha (o painel mostra "Sara atendendo" e o botão Assumir)
+  sql(`update wa_conversas set dono_ate = now() - interval '1 minute' where wa_id = '${BIA}'`);
+  await p.waitForTimeout(11000);
+  ok('prazo vencido: "Sara atendendo" e botão Assumir', ((await cab().textContent()) || '').includes('Sara atendendo')
+    && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1 && (await item(p, 'Beatriz Ficticia').getByText('Equipe', { exact: true }).count()) === 0);
+  const devolve3 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
+  ok('devolver uma conversa já vencida não avisa nem audita de novo', devolve3.startsWith('200')
+    && sql(`select count(*) from central_auditoria where acao = 'devolver_conversa' and alvo = '${NUM}:1001'`) === '2');
+  sql(`update wa_conversas set dono = 'ia', dono_ate = null where wa_id = '${BIA}'`);
   // Equipe respondeu pelo celular agora: a Sara fica pausada (sem mudar o dono)
   sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em) values ('${NUM}', '${DANI}', 'wamid.TDCEL', 'saida', 'celular', 'text', 'Respondi pelo celular', now() - interval '1 minute')`);
   await item(p, 'Daniela Ficticia').getByRole('button').click();

@@ -27,7 +27,7 @@ async function consultar<T>(fn: () => Promise<T>): Promise<T> {
       throw new ErroApi(503, 'O espelho do WhatsApp ainda não foi instalado no banco desta empresa (migração 008).');
     }
     if ((e as { code?: string }).code === '42703') {
-      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migrações 009 e 010).');
+      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migrações 009, 010 e 012).');
     }
     throw e;
   }
@@ -40,6 +40,10 @@ const ID_NUMERO = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SO_DIGITOS = /^\d{5,20}$/;
 // Minutos que a Sara fica quieta depois de resposta pelo celular (o receptor usa a mesma variável).
 const PAUSA_CELULAR_MS = () => (Number(process.env.SARA_PAUSA_CELULAR_MIN) || 7) * 60_000;
+// Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (o receptor usa a mesma).
+const ASSUMIR_HORAS = () => Number(process.env.INBOX_ASSUMIR_HORAS) || 24;
+// Conversa com a equipe agora: dono humano sem prazo (sempre) ou com o prazo ainda valendo.
+const SQL_COM_EQUIPE = `(dono = 'humano' and (dono_ate is null or dono_ate > now()))`;
 
 // O receptor grava o nome do tipo quando a mensagem não tem texto (resumo da lista); a tela mostra em português.
 const RESUMO_TIPO: Record<string, string> = {
@@ -54,6 +58,8 @@ export type Conversa = {
   ultima_em: string | null; ultima_resumo: string | null; ultima_direcao: string | null;
   nao_lidas: number; janela_aberta: boolean;
   dono: 'ia' | 'humano'; dono_por: string | null; dono_em: string | null; pausa_ate: string | null;
+  // Com a equipe: até quando (assumida por 24 h) ou sempre (até alguém devolver).
+  dono_ate: string | null; dono_sempre: boolean;
 };
 // linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
 export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null };
@@ -76,18 +82,21 @@ function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
   if (resumo && u.master) resumo = mascararTexto(resumo);
   const entrada = r.ultima_entrada_em ? new Date(r.ultima_entrada_em as string).getTime() : 0;
   const pausa = r.celular_em ? new Date(r.celular_em as string).getTime() + PAUSA_CELULAR_MS() : 0;
+  // Prazo vencido: a Sara já voltou (o receptor responde "sara_responde: true"), mesmo com dono = 'humano' gravado.
+  const comEquipe = r.dono === 'humano' && (!r.dono_ate || new Date(r.dono_ate as string).getTime() > Date.now());
   return {
     numero_id: String(r.numero_id), wa_id: String(r.wa_id), nome: (r.nome as string | null) ?? null,
     ultima_em: iso(r.ultima_em), ultima_resumo: resumo, ultima_direcao: (r.ultima_direcao as string | null) ?? null,
     nao_lidas: Number(r.nao_lidas) || 0, janela_aberta: entrada > 0 && Date.now() - entrada < JANELA_MS,
-    dono: r.dono === 'humano' ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
+    dono: comEquipe ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
     pausa_ate: pausa > Date.now() ? new Date(pausa).toISOString() : null,
+    dono_ate: comEquipe ? iso(r.dono_ate) : null, dono_sempre: comEquipe && !r.dono_ate,
   };
 }
 
 const SELECT_CONVERSA = `
   select c.numero_id, c.wa_id, coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
-         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em,
+         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em, c.dono_ate,
          (select max(m.enviada_em) from wa_mensagens m
            where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
@@ -355,25 +364,42 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
 const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, extra?: Record<string, unknown>) =>
   auditar(central(), u, u.empresa!.id, acao, `${numeroId}:${waId.slice(-4)}`, extra).catch(() => undefined);
 
+// Responder pelo painel assume por 24 h; se já estava com a equipe por prazo, empurra o prazo (o "sempre" fica).
 async function assumirAoEnviar(u: Usuario, banco: ReturnType<typeof db>, numeroId: string, waId: string) {
   const r = await consultar(() => banco.query(
-    `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3
-      where numero_id = $1 and wa_id = $2 and dono <> 'humano' returning 1`, [numeroId, waId, u.nome]));
-  if (r.rowCount) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true });
+    `with antes as (select ${SQL_COM_EQUIPE} as com_equipe from wa_conversas where numero_id = $1 and wa_id = $2 for update)
+     update wa_conversas c set
+        dono     = 'humano',
+        dono_em  = case when a.com_equipe then c.dono_em else now() end,
+        dono_por = case when a.com_equipe then c.dono_por else $3 end,
+        dono_ate = case when a.com_equipe and c.dono_ate is null then null else now() + make_interval(hours => $4) end
+       from antes a
+      where c.numero_id = $1 and c.wa_id = $2
+      returning a.com_equipe`, [numeroId, waId, u.nome, ASSUMIR_HORAS()]));
+  if (r.rowCount && !r.rows[0].com_equipe) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true, prazo: '24h' });
 }
 
-// Assumir: a Sara fica quieta nesta conversa até alguém devolver. Devolver: a Sara volta a responder; se a última
-// mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR) para ela responder já. Só quem pode responder.
-export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano'): Promise<Conversa> {
+export type PrazoDono = '24h' | 'sempre';
+
+// Assumir por 24 h (a Sara volta sozinha 24 h depois da última resposta da equipe) ou sempre (até alguém devolver).
+// Devolver: a Sara volta a responder; se a última mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR)
+// para ela responder já. Só quem pode responder.
+export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano', prazo: PrazoDono = '24h'): Promise<Conversa> {
   validar(numeroId, waId);
   if (dono !== 'ia' && dono !== 'humano') throw new ErroApi(400, 'Escolha assumir ou devolver.');
+  if (prazo !== '24h' && prazo !== 'sempre') throw new ErroApi(400, 'Escolha por 24 h ou sempre.');
   const banco = db(u);
   if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para atender pelo painel nesta empresa.');
-  const r = await consultar(() => banco.query(
-    `update wa_conversas set dono = $3, dono_em = now(), dono_por = $4
-      where numero_id = $1 and wa_id = $2 and dono <> $3 returning ultima_direcao`, [numeroId, waId, dono, u.nome]));
+  const r = dono === 'humano'
+    ? await consultar(() => banco.query(
+      `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3,
+              dono_ate = case when $4 then null else now() + make_interval(hours => $5) end
+        where numero_id = $1 and wa_id = $2 returning ultima_direcao`, [numeroId, waId, u.nome, prazo === 'sempre', ASSUMIR_HORAS()]))
+    : await consultar(() => banco.query(
+      `update wa_conversas set dono = 'ia', dono_em = now(), dono_por = $3, dono_ate = null
+        where numero_id = $1 and wa_id = $2 and ${SQL_COM_EQUIPE} returning ultima_direcao`, [numeroId, waId, u.nome]));
   if (r.rowCount) {
-    await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId);
+    await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId, dono === 'humano' ? { prazo } : undefined);
     if (dono === 'ia' && r.rows[0].ultima_direcao === 'entrada') await avisarDevolvida(u, numeroId, waId);
   }
   return lerConversaResumo(u, numeroId, waId);

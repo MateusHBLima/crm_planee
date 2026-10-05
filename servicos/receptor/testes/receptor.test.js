@@ -87,7 +87,7 @@ before(async () => {
   await admin.query('drop database if exists receptor_teste').catch(() => undefined);
   await admin.query('create database receptor_teste');
   await admin.end();
-  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql']) {
+  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql', '012_whatsapp_dono_prazo.sql']) {
     execSync(`psql -q -v ON_ERROR_STOP=1 "${DB}" -f "${path.join(RAIZ, 'supabase/migrations', f)}"`, { stdio: 'pipe' });
   }
   await q(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome, telefone, encaminhar_url) values ($1, 'teste', 'Número de teste', $2, 'http://127.0.0.1:3911/sara')`, [NUM, MEU]);
@@ -390,6 +390,32 @@ test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', as
   assert.equal(r.sara_responde, false); assert.equal(r.motivo, 'equipe_assumiu'); assert.equal(r.por, 'Amanda Teste');
   await q(`update wa_conversas set dono = 'ia', dono_em = now(), dono_por = 'Amanda Teste' where wa_id = $1`, [P4]);
   assert.equal((await (await perguntar(P4)).json()).sara_responde, true);
+
+  // "Sempre" (sem prazo) responde sempre: true.
+  await q(`update wa_conversas set dono = 'humano', dono_em = now(), dono_ate = null where wa_id = $1`, [P4]);
+  r = await (await perguntar(P4)).json();
+  assert.equal(r.sara_responde, false); assert.equal(r.sempre, true); assert.equal(r.ate, null);
+
+  // Assumida por 24 h: quieta enquanto o prazo vale; vencido, a Sara volta sozinha.
+  await q(`update wa_conversas set dono = 'humano', dono_em = now() - interval '2 hours', dono_ate = now() + interval '22 hours' where wa_id = $1`, [P4]);
+  r = await (await perguntar(P4)).json();
+  assert.equal(r.sara_responde, false); assert.equal(r.sempre, false); assert.ok(new Date(r.ate).getTime() > Date.now() + 21 * 3600_000);
+  await q(`update wa_conversas set dono_ate = now() - interval '1 minute' where wa_id = $1`, [P4]);
+  r = await (await perguntar(P4)).json();
+  assert.equal(r.sara_responde, true); assert.equal(r.motivo, 'ia');
+
+  // Resposta da equipe empurra o prazo para 24 h depois dela (só enquanto ainda vale; vencida ou "sempre" não muda).
+  await q(`update wa_conversas set dono_ate = now() + interval '1 hour' where wa_id = $1`, [P4]);
+  await enviar(ev('smb_message_echoes', { message_echoes: [{ from: MEU, to: P4, id: 'wamid.DONO5', timestamp: ts(), type: 'text', text: { body: 'seguimos por aqui' } }] }));
+  assert.ok(await ate(async () => {
+    const [x] = await q(`select extract(epoch from dono_ate - now()) / 3600 as h from wa_conversas where wa_id = $1`, [P4]);
+    return Number(x.h) > 23;
+  }), 'prazo renovado para 24 h depois da resposta pelo celular');
+  await q(`update wa_conversas set dono = 'humano', dono_ate = null where wa_id = $1`, [P4]);
+  await enviar(ev('smb_message_echoes', { message_echoes: [{ from: MEU, to: P4, id: 'wamid.DONO6', timestamp: ts(), type: 'text', text: { body: 'de novo' } }] }));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.DONO6'")).length === 1));
+  assert.equal((await q(`select dono_ate from wa_conversas where wa_id = $1`, [P4]))[0].dono_ate, null);
+  await q(`update wa_conversas set dono = 'ia', dono_ate = null where wa_id = $1`, [P4]);
 });
 
 test('cadastro pelo painel: número novo com token e segredo próprios, conectar e pedir o histórico', async () => {

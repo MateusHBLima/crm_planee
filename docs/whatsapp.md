@@ -233,6 +233,12 @@ x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
 
 É o mesmo webhook do aviso `atendimento_finalizado` do CRM (`docs/api.md`); o n8n separa pelo campo `evento`.
 
+
+**Por quanto tempo (Assumir):** a pessoa escolhe **Por 24 h** ou **Sempre** (migração 012, `wa_conversas.dono_ate`).
+- **Por 24 h:** `dono_ate` = agora + 24 h (`INBOX_ASSUMIR_HORAS`, no painel e no receptor). Cada resposta da equipe, pelo painel ou pelo celular, empurra o prazo para 24 h depois dela. Vencido, a Sara volta sozinha, sem ninguém clicar. Responder pelo painel assume por 24 h.
+- **Sempre:** `dono_ate` vazio. A conversa fica com a equipe até alguém clicar em "Devolver pra Sara". A lista mostra "Fixa" e fica vermelha quando o contato espera resposta há mais de 30 min.
+- A resposta do `GET /whatsapp/atendimento` ganha `sempre` (true/false) e `ate` (ISO ou null). Os campos que a Sara já usa não mudam.
+
 ## 12. Números pelo painel: cadastrar, conectar e puxar o histórico (sem Portainer)
 
 Tela **Empresas → (empresa) → Números de WhatsApp**, só para o master. Migração 011 no banco **central** (a do painel).
