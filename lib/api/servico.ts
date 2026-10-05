@@ -472,6 +472,34 @@ function lerAnalise(a: unknown): { resultado: 'ok' | 'suspeito'; motivos: string
   return { resultado: x.resultado, motivos };
 }
 
+// O que está escrito no comprovante (migração 014). Nomes da API → colunas.
+function lerComprovante(v: unknown): Record<string, string | null> | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'object' || Array.isArray(v)) throw new ErroApi(400, 'comprovante: envie {pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em}.');
+  const x = v as Record<string, unknown>;
+  const validos = ['pagador', 'banco', 'id_pix', 'recebedor', 'recebedor_documento', 'emitido_em'];
+  const fora = Object.keys(x).filter((k) => !validos.includes(k));
+  if (fora.length) throw new ErroApi(400, `comprovante: campos desconhecidos: ${fora.join(', ')}.`, { campos_validos: validos });
+  const out: Record<string, string | null> = {};
+  if ('pagador' in x) out.pagador = texto(x.pagador, 120);
+  if ('banco' in x) out.banco = texto(x.banco, 80);
+  if ('id_pix' in x) {
+    const e = String(x.id_pix ?? '').replace(/\s+/g, '').toUpperCase();
+    if (e && !/^[A-Z0-9]{20,40}$/.test(e)) throw new ErroApi(400, 'comprovante.id_pix: só letras e números (o ID Pix E2E tem 32).');
+    out.pix_e2e = e || null;
+  }
+  if ('recebedor' in x) out.recebedor = texto(x.recebedor, 120);
+  if ('recebedor_documento' in x) {
+    const d = String(x.recebedor_documento ?? '').replace(/\D/g, '');
+    if (d && d.length !== 11 && d.length !== 14) throw new ErroApi(400, 'comprovante.recebedor_documento: CNPJ (14 números) ou CPF (11).');
+    out.recebedor_documento = d || null;
+  }
+  if ('emitido_em' in x) out.comprovante_em = quando(x.emitido_em, 'comprovante.emitido_em');
+  return out;
+}
+const semColuna = (e: unknown) => (e as { code?: string }).code === '42703';
+const falta014 = () => new ErroApi(503, 'Os campos do comprovante ainda não foram instalados no banco desta empresa (migração 014).');
+
 const reais = (v: number | null) => (v === null ? '' : 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
 
 // Comprovante suspeito: abre um cartão no quadro (assunto de valores), já marcado como alerta. Um por pagamento.
@@ -491,6 +519,25 @@ async function abrirAlerta(c: PoolClient, chave: Chave, pagamentoId: string) {
   await c.query('update pagamentos set alerta_atendimento_id = $2 where id = $1', [pagamentoId, a.rows[0].id]);
   await auditar(c, chave, 'criar', 'atendimentos', a.rows[0].id, { alerta: 'comprovante_suspeito', pagamento_id: pagamentoId });
   return a.rows[0].id as string;
+}
+
+// Comprovante reaproveitado: o mesmo ID Pix já está em outro pagamento de outro contato ou de outro agendamento.
+// Marca o pagamento como suspeito (o motivo fica mesmo que a análise da IA venha depois dizendo "ok").
+async function marcarPixRepetido(c: PoolClient, pagamentoId: string) {
+  const r = await c.query(
+    `select o.valor, o.contato_id <> p.contato_id as outro_contato
+       from pagamentos p join pagamentos o on o.pix_e2e = p.pix_e2e and o.id <> p.id and not o.arquivado
+      where p.id = $1 and p.pix_e2e is not null and (o.contato_id <> p.contato_id or o.servico_id is distinct from p.servico_id)
+      order by o.criado_em limit 1`, [pagamentoId]);
+  if (!r.rowCount) return false;
+  const o = r.rows[0];
+  const valor = o.valor === null ? '' : ` (${reais(Number(o.valor))})`;
+  const motivo = `ID Pix repetido: este comprovante já foi usado em outro pagamento${valor}, ${o.outro_contato ? 'de outro contato' : 'de outro agendamento'}.`;
+  await c.query(
+    `update pagamentos set analise = 'suspeito', analisado_em = coalesce(analisado_em, now()),
+            analise_motivos = case when analise_motivos @> jsonb_build_array($2::text) then analise_motivos else analise_motivos || jsonb_build_array($2::text) end
+      where id = $1`, [pagamentoId, motivo]);
+  return true;
 }
 
 async function servicoDoCorpo(c: PoolClient, d: Record<string, unknown>, contatoId: string): Promise<string | null> {
@@ -514,7 +561,9 @@ async function servicoDoCorpo(c: PoolClient, d: Record<string, unknown>, contato
   return null;
 }
 
-// Comprovante novo: contato (telefone ou id), serviço opcional, arquivo opcional, análise opcional.
+// Comprovante novo: contato (telefone ou id), serviço opcional, arquivo opcional, análise opcional,
+// dados do comprovante opcionais. O mesmo comprovante chegando de novo (mesma mensagem do WhatsApp, ou o mesmo
+// ID Pix para o mesmo contato e agendamento) não vira outro pagamento: devolve o que já existe, com "repetido": true.
 export async function criarPagamento(chave: Chave, corpo: unknown) {
   exigirEscopo(chave, 'crm');
   if (!corpo || typeof corpo !== 'object' || Array.isArray(corpo)) throw new ErroApi(400, 'Envie um objeto JSON.');
@@ -525,29 +574,63 @@ export async function criarPagamento(chave: Chave, corpo: unknown) {
   if (atendimentoId && !UUID.test(atendimentoId)) throw new ErroApi(400, 'atendimento_id inválido.');
   const arq = lerArquivo(d.arquivo);
   const analise = lerAnalise(d.analise);
+  const comp = lerComprovante(d.comprovante);
   const valor = numero(d.valor, 'valor');
   const pagoEm = quando(d.pago_em, 'pago_em');
+  const wamid = texto(d.wamid, 200);
+  const e2e = comp?.pix_e2e ?? null;
   try {
     return await transacao(async (c) => {
       const contatoId = await contatoDoCorpo(c, chave, d);
       const servicoId = await servicoDoCorpo(c, d, contatoId);
+      if (wamid || e2e) {
+        const conds: string[] = []; const vals: unknown[] = [contatoId];
+        if (wamid) { vals.push(wamid); conds.push(`wamid = $${vals.length}`); }
+        if (e2e) { vals.push(e2e, servicoId); conds.push(`(pix_e2e = $${vals.length - 1} and servico_id is not distinct from $${vals.length}::uuid)`); }
+        const rep = await c.query(
+          `select id, alerta_atendimento_id, arquivo_nome is not null as tem_arquivo from pagamentos
+            where not arquivado and contato_id = $1 and (${conds.join(' or ')})
+            order by criado_em limit 1 for update`, vals);
+        if (rep.rowCount) {
+          const x = rep.rows[0];
+          if (arq && !x.tem_arquivo) {
+            await c.query(`update pagamentos set arquivo_nome = $2, arquivo_mime = $3, arquivo_tamanho = $4, arquivo_sha256 = $5, atualizado_em = now() where id = $1`,
+              [x.id, arq.nome, arq.mime, arq.dados.length, arq.sha256]);
+            await c.query('insert into pagamentos_arquivos (pagamento_id, dados) values ($1, $2) on conflict (pagamento_id) do nothing', [x.id, arq.dados]);
+            await auditar(c, chave, 'atualizar', 'pagamentos', x.id, { arquivo: { mime: arq.mime, tamanho: arq.dados.length, sha256: arq.sha256 }, repetido: true });
+          }
+          return { id: x.id as string, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: (x.alerta_atendimento_id as string) ?? null, repetido: true };
+        }
+      }
+      const linha: Record<string, unknown> = {
+        contato_id: contatoId, servico_id: servicoId, atendimento_id: atendimentoId, valor, pago_em: pagoEm, forma,
+        descricao: texto(d.descricao, 300), wamid,
+        arquivo_nome: arq?.nome ?? null, arquivo_mime: arq?.mime ?? null, arquivo_tamanho: arq?.dados.length ?? null, arquivo_sha256: arq?.sha256 ?? null,
+        analise: analise?.resultado ?? null, analise_motivos: JSON.stringify(analise?.motivos ?? []),
+        criado_por: texto(d.criado_por, 80) ?? (chave.usuario_id ? chave.nome : 'IA'),
+        ...(comp ?? {}),
+      };
+      const cols = Object.keys(linha);
       const res = await c.query(
-        `insert into pagamentos (contato_id, servico_id, atendimento_id, valor, pago_em, forma, descricao, wamid,
-                                 arquivo_nome, arquivo_mime, arquivo_tamanho, arquivo_sha256, analise, analise_motivos, analisado_em, criado_por)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb, case when $13::text is null then null else now() end, $15) returning id`,
-        [contatoId, servicoId, atendimentoId, valor, pagoEm, forma, texto(d.descricao, 300), texto(d.wamid, 200),
-          arq?.nome ?? null, arq?.mime ?? null, arq?.dados.length ?? null, arq?.sha256 ?? null,
-          analise?.resultado ?? null, JSON.stringify(analise?.motivos ?? []), texto(d.criado_por, 80) ?? (chave.usuario_id ? chave.nome : 'IA')]);
+        `insert into pagamentos (${cols.join(', ')}, analisado_em)
+         values (${cols.map((k, i) => `$${i + 1}${k === 'analise_motivos' ? '::jsonb' : ''}`).join(', ')}, ${analise ? 'now()' : 'null'}) returning id`,
+        Object.values(linha));
       const id = res.rows[0].id as string;
       if (arq) await c.query('insert into pagamentos_arquivos (pagamento_id, dados) values ($1, $2)', [id, arq.dados]);
       await auditar(c, chave, 'criar', 'pagamentos', id, {
         contato_id: contatoId, servico_id: servicoId, valor, pago_em: pagoEm, forma, arquivo: arq ? { mime: arq.mime, tamanho: arq.dados.length, sha256: arq.sha256 } : null,
-        analise: analise?.resultado ?? null,
+        analise: analise?.resultado ?? null, pix_e2e: e2e,
       });
+      if (e2e) await marcarPixRepetido(c, id);
       const alerta = await abrirAlerta(c, chave, id);
       return { id, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: alerta };
     }, bancoDe(chave));
-  } catch (e) { if (e instanceof ErroApi) throw e; if (semTabela(e)) exigirTabelas(e); traduzErroBanco(e); }
+  } catch (e) {
+    if (e instanceof ErroApi) throw e;
+    if (semTabela(e)) exigirTabelas(e);
+    if (semColuna(e) && comp) throw falta014();
+    traduzErroBanco(e);
+  }
 }
 
 // Atualiza valor, data, forma, descrição, serviço ou a análise. A análise "suspeito" abre o alerta (uma vez).
@@ -556,7 +639,7 @@ export async function atualizarPagamento(chave: Chave, id: string, corpo: unknow
   if (!UUID.test(id)) throw new ErroApi(400, 'id inválido: esperado uuid.');
   if (!corpo || typeof corpo !== 'object' || Array.isArray(corpo)) throw new ErroApi(400, 'Envie um objeto JSON.');
   const d = corpo as Record<string, unknown>;
-  const permitidos = ['valor', 'pago_em', 'forma', 'descricao', 'servico_id', 'servico', 'atendimento_id', 'analise', 'wamid'];
+  const permitidos = ['valor', 'pago_em', 'forma', 'descricao', 'servico_id', 'servico', 'atendimento_id', 'analise', 'wamid', 'comprovante'];
   const fora = Object.keys(d).filter((k) => !permitidos.includes(k));
   if (fora.length) throw new ErroApi(400, `Campos que não podem ser mudados em pagamentos: ${fora.join(', ')}.`, { campos_validos: permitidos });
   const campos: Record<string, unknown> = {};
@@ -567,6 +650,8 @@ export async function atualizarPagamento(chave: Chave, id: string, corpo: unknow
   if ('wamid' in d) campos.wamid = texto(d.wamid, 200);
   if ('atendimento_id' in d) { const a = d.atendimento_id ? String(d.atendimento_id) : null; if (a && !UUID.test(a)) throw new ErroApi(400, 'atendimento_id inválido.'); campos.atendimento_id = a; }
   const analise = 'analise' in d ? lerAnalise(d.analise) : undefined;
+  const comp = lerComprovante(d.comprovante);
+  if (comp) Object.assign(campos, comp);
   try {
     return await transacao(async (c) => {
       const atual = await c.query('select contato_id from pagamentos where id = $1 for update', [id]);
@@ -582,12 +667,20 @@ export async function atualizarPagamento(chave: Chave, id: string, corpo: unknow
       if (!sets.length) throw new ErroApi(400, 'Nenhum campo para atualizar.');
       await c.query(`update pagamentos set ${sets.join(', ')}, atualizado_em = now() where id = $1`, vals);
       await auditar(c, chave, 'atualizar', 'pagamentos', id, { ...campos, ...(analise !== undefined ? { analise: analise?.resultado ?? null, motivos: analise?.motivos ?? [] } : {}) });
+      // A análise nova substitui a anterior, mas o ID Pix repetido continua valendo (precisa da 014).
+      if (comp) await marcarPixRepetido(c, id);
+      else if (analise !== undefined || 'servico_id' in campos) {
+        // Banco ainda sem a 014: a checagem não roda, e a transação segue (savepoint).
+        await c.query('savepoint pix');
+        try { await marcarPixRepetido(c, id); await c.query('release savepoint pix'); }
+        catch (e) { await c.query('rollback to savepoint pix'); if (!semColuna(e)) throw e; }
+      }
       const alerta = await abrirAlerta(c, chave, id);
       const r = await c.query(`select id, contato_id, servico_id, valor, pago_em, forma, descricao, analise, analise_motivos, alerta_atendimento_id, conferido_em, conferido_por
                                  from pagamentos where id = $1`, [id]);
       return { ...r.rows[0], valor: r.rows[0].valor === null ? null : Number(r.rows[0].valor), alerta_aberto: alerta };
     }, bancoDe(chave));
-  } catch (e) { if (e instanceof ErroApi) throw e; if (semTabela(e)) exigirTabelas(e); traduzErroBanco(e); }
+  } catch (e) { if (e instanceof ErroApi) throw e; if (semTabela(e)) exigirTabelas(e); if (semColuna(e) && comp) throw falta014(); traduzErroBanco(e); }
 }
 
 export async function arquivoDoPagamento(chave: Chave, id: string): Promise<{ nome: string; mime: string; dados: Buffer }> {

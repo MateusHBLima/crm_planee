@@ -32,6 +32,8 @@ export type Pagamento = {
   descricao: string | null; tem_arquivo: boolean; arquivo_nome: string | null; arquivo_mime: string | null;
   analise: 'ok' | 'suspeito' | null; analise_motivos: string[]; analisado_em: string | null;
   conferido_em: string | null; conferido_por: string | null; criado_por: string | null; criado_em: string; alerta_atendimento_id: string | null;
+  // O que está escrito no comprovante (migração 014; antes dela, tudo vazio).
+  comprovante: { pagador: string | null; banco: string | null; id_pix: string | null; recebedor: string | null; recebedor_documento: string | null; emitido_em: string | null } | null;
 };
 export type EventoHistorico = {
   quando: string; tipo: 'atendimento' | 'nota' | 'servico' | 'pagamento'; texto: string; quem: string | null;
@@ -60,12 +62,24 @@ function limparPagamento(r: Record<string, unknown>, master: boolean): Pagamento
     analise: (r.analise as 'ok' | 'suspeito') ?? null, analise_motivos: master ? motivos.map(mascararTexto) : motivos, analisado_em: iso(r.analisado_em),
     conferido_em: iso(r.conferido_em), conferido_por: (r.conferido_por as string) ?? null, criado_por: (r.criado_por as string) ?? null,
     criado_em: iso(r.criado_em) as string, alerta_atendimento_id: (r.alerta_atendimento_id as string) ?? null,
+    comprovante: comprovanteDe(r, master),
   };
 }
 
+function comprovanteDe(r: Record<string, unknown>, master: boolean): Pagamento['comprovante'] {
+  const t = (k: string) => (r[k] ? String(r[k]) : null);
+  const c = {
+    pagador: t('pagador'), banco: t('banco'), id_pix: t('pix_e2e'), recebedor: t('recebedor'),
+    recebedor_documento: t('recebedor_documento'), emitido_em: iso(r.comprovante_em),
+  };
+  // CPF de pessoa física como recebedor: a Planee vê mascarado (regra 6).
+  if (master && c.recebedor_documento?.length === 11) c.recebedor_documento = '•••••••' + c.recebedor_documento.slice(-4);
+  return Object.values(c).some(Boolean) ? c : null;
+}
+
 const SEL_SERVICO = `select id, tipo, descricao, inicio, profissional, local, valor, situacao, sistema, codigo_externo, detalhes, criado_por, criado_em, atualizado_em, atendimento_id from servicos`;
-const SEL_PAGAMENTO = `select id, servico_id, atendimento_id, valor, pago_em, forma, descricao, arquivo_nome, arquivo_mime, analise, analise_motivos, analisado_em,
-  conferido_em, conferido_por, criado_por, criado_em, alerta_atendimento_id from pagamentos`;
+// select *: funciona antes e depois da migração 014 (o arquivo fica em outra tabela).
+const SEL_PAGAMENTO = `select * from pagamentos`;
 
 // Linha do tempo do paciente: atendimentos, notas e, para quem vê pagamentos, agendamentos e comprovantes.
 export async function historicoContato(u: Usuario, contatoId: string): Promise<Historico> {

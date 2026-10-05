@@ -114,7 +114,7 @@ Object.assign(RECURSOS, {
   },
   pagamentos: {
     nome: 'pagamentos', tabela: 'pagamentos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
-    descricao: 'Comprovantes de pagamento de um serviço (ou só do contato). O arquivo vai em "arquivo" {nome, mime, base64} e sai em GET /api/v1/pagamentos/{id}/arquivo. "analise" {resultado: ok|suspeito, motivos[]} com suspeito abre um cartão de alerta no quadro.',
+    descricao: 'Comprovantes de pagamento de um serviço (ou só do contato). O arquivo vai em "arquivo" {nome, mime, base64} e sai em GET /api/v1/pagamentos/{id}/arquivo. "analise" {resultado: ok|suspeito, motivos[]} com suspeito abre um cartão de alerta no quadro. "comprovante" {pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em} guarda o que está escrito nele (migração 014); o mesmo id_pix em outro contato ou agendamento marca suspeito sozinho.',
     campos: {
       contato_id: 'id do contato (ou mande "telefone")',
       servico_id: 'id do serviço (ou mande "servico": {sistema, codigo_externo})',
@@ -124,6 +124,7 @@ Object.assign(RECURSOS, {
       forma: 'pix | cartao | boleto | dinheiro | outro',
       descricao: 'a que se refere (ex.: sinal da consulta de 14/10)',
       wamid: 'mensagem do WhatsApp em que veio',
+      comprovante: '{pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em}: o que está escrito no comprovante (migração 014)',
       criado_por: 'IA ou nome de quem anexou',
     },
     filtros: ['contato_id', 'servico_id', 'analise', 'arquivado'], ordem: 'criado_em desc',
@@ -149,7 +150,7 @@ export function catalogo() {
       'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). Escopo leitura.',
       'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
       'POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.',
-      'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"analise"?} — anexa o comprovante. Escopo crm.',
+      'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.',
       'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
     ],
     recursos: Object.values(RECURSOS).map((r) => ({

@@ -300,6 +300,48 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
     !tA.includes('Consulta agendado') && !tA.includes('Comprovante recebido') && arqA === 403, `${arqA} ${tA.slice(0, 120)}`);
   await ctx.close();
 
+  // ---------- Dados do comprovante, repetido e ID Pix reaproveitado (migração 014) ----------
+  const TELQ = '5547966660002'; const TELR = '5547966660003';
+  const E2E = 'E00000000202610051012ABCDEF12345';
+  await api('/api/v1/servicos/registrar', { method: 'POST', body: JSON.stringify({ telefone: TELQ, nome: 'Quesia Pix Ficticia', tipo: 'Consulta', inicio: '2026-10-20T10:00:00-03:00', sistema: 'feegow', codigo_externo: 'FG-9002' }) });
+  await api('/api/v1/servicos/registrar', { method: 'POST', body: JSON.stringify({ telefone: TELQ, tipo: 'Retorno', inicio: '2026-11-20T10:00:00-03:00', sistema: 'feegow', codigo_externo: 'FG-9003' }) });
+  const corpoQ = { telefone: TELQ, servico: { sistema: 'feegow', codigo_externo: 'FG-9002' }, valor: 180, forma: 'pix', descricao: 'Sinal Quesia', wamid: 'wamid.Q1',
+    comprovante: { pagador: 'Quesia Pix Ficticia', banco: 'Banco Ficticio', id_pix: ' ' + E2E.toLowerCase() + ' ', recebedor: 'Clinica Ficticia', recebedor_documento: '11.222.333/0001-81', emitido_em: '2026-10-05T10:12:00-03:00' } };
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify(corpoQ) });
+  const pagQ = r.json && r.json.id;
+  ok('comprovante com os dados escritos nele (ID Pix em maiúsculas, CNPJ só números)', r.status === 201 && !r.json.alerta_atendimento_id
+    && sql(`select pagador || '|' || banco || '|' || pix_e2e || '|' || recebedor_documento || '|' || (comprovante_em = '2026-10-05T13:12:00Z') || '|' || coalesce(analise, '-') from pagamentos where id = '${pagQ}'`)
+      === `Quesia Pix Ficticia|Banco Ficticio|${E2E}|11222333000181|true|-`, JSON.stringify(r.json));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify(corpoQ) });
+  ok('mesma mensagem (wamid) de novo devolve o mesmo pagamento', r.json && r.json.repetido === true && r.json.id === pagQ && sql("select count(*) from pagamentos where descricao = 'Sinal Quesia'") === '1', JSON.stringify(r.json));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ ...corpoQ, wamid: 'wamid.Q2', arquivo: { nome: 'q.png', mime: 'image/png', base64: PNG } }) });
+  ok('mesmo ID Pix, mesmo contato e agendamento: não duplica e anexa o arquivo que faltava', r.json && r.json.repetido === true && r.json.id === pagQ
+    && sql(`select count(*) || '|' || bool_and(a.pagamento_id is not null) from pagamentos p left join pagamentos_arquivos a on a.pagamento_id = p.id where p.descricao = 'Sinal Quesia'`) === '1|true', JSON.stringify(r.json));
+  const alertasAntes = Number(sql('select count(*) from atendimentos where alerta'));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELR, nome: 'Rui Reuso Ficticio', valor: 180, wamid: 'wamid.R1', comprovante: { id_pix: E2E } }) });
+  const pagR = r.json && r.json.id;
+  ok('mesmo ID Pix em outro contato: suspeito e alerta aberto', r.status === 201 && r.json.alerta_atendimento_id && Number(sql('select count(*) from atendimentos where alerta')) === alertasAntes + 1
+    && sql(`select analise || '|' || (analise_motivos::text like '%ID Pix repetido%de outro contato%') from pagamentos where id = '${pagR}'`) === 'suspeito|true', JSON.stringify(r.json));
+  r = await api(`/api/v1/pagamentos/${pagR}`, { method: 'PATCH', body: JSON.stringify({ analise: { resultado: 'ok', motivos: [] } }) });
+  ok('análise "ok" depois não apaga o ID Pix repetido', r.status === 200 && r.json.analise === 'suspeito' && JSON.stringify(r.json.analise_motivos).includes('ID Pix repetido'), JSON.stringify(r.json));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELQ, servico: { sistema: 'feegow', codigo_externo: 'FG-9003' }, valor: 180, comprovante: { id_pix: E2E } }) });
+  ok('mesmo ID Pix no mesmo contato, em outro agendamento: suspeito', r.status === 201 && Boolean(r.json.alerta_atendimento_id)
+    && sql(`select analise_motivos::text like '%de outro agendamento%' from pagamentos where id = '${r.json.id}'`) === 't', JSON.stringify(r.json));
+  r = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELQ, comprovante: { id_pix: 'E2E-com-traco!' } }) });
+  const r2 = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELQ, comprovante: { recebedor_documento: '123' } }) });
+  const r3 = await api('/api/v1/pagamentos', { method: 'POST', body: JSON.stringify({ telefone: TELQ, comprovante: { chave_pix: 'x' } }) });
+  ok('dados do comprovante inválidos são recusados', r.status === 400 && r2.status === 400 && r3.status === 400, `${r.status} ${r2.status} ${r3.status}`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'gestor@teste.local'); await p.waitForTimeout(800);
+  await p.click('button[role=tab]:has-text("Contatos")'); await p.waitForTimeout(800);
+  await p.locator('button', { hasText: 'Quesia Pix Ficticia' }).first().click(); await p.waitForTimeout(1500);
+  const histQ = p.locator('section[aria-label="Histórico do paciente"]');
+  await histQ.locator('button', { hasText: 'Consulta agendado' }).first().click(); await p.waitForTimeout(1200);
+  const tQ = ((await p.locator('aside[aria-label^="Consulta"]').textContent()) || '').replace(/\s+/g, ' ');
+  ok('detalhe mostra pagador, recebedor com CNPJ e ID Pix', tQ.includes('Quesia Pix Ficticia · Banco Ficticio') && tQ.includes('Clinica Ficticia · 11.222.333/0001-81') && tQ.includes(E2E), tQ.slice(0, 400));
+  await p.screenshot({ path: out + '17_dados_comprovante.png' });
+  await ctx.close();
+
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);
