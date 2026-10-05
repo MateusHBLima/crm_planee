@@ -3,7 +3,7 @@
 import type { Cartao, Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import type { Origem } from './Crm';
-import { casaBusca, cpfBonito, duracao, ha, telefoneBonito, type criarFormatos } from './util';
+import { atraso, casaBusca, cpfBonito, duracao, ha, telefoneBonito, type Atraso, type criarFormatos } from './util';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
@@ -16,12 +16,18 @@ export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFin
     && casaBusca(busca, [k.nome, k.telefone, k.documento, k.resumo, k.responsavel]));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; ocupado: boolean; podeEditar: boolean; podeConfig: boolean;
+// Em cada coluna: aguardando, em atendimento, pendente e finalizado, nessa ordem. Nas etapas abertas, o mais
+// antigo fica em cima (é o próximo a ser atendido); nos finalizados de hoje, o mais recente.
+export function ordenar(a: Cartao, b: Cartao) {
+  return ORDEM[a.etapa] - ORDEM[b.etapa]
+    || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
+}
+
+export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; agora: number | null; ocupado: boolean; podeEditar: boolean; podeConfig: boolean;
   onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
-  const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort((a, b) =>
-    ORDEM[a.etapa] - ORDEM[b.etapa] || (a.etapa === 'aguardando' ? a.aberto_em.localeCompare(b.aberto_em) : b.aberto_em.localeCompare(a.aberto_em)));
+  const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort(ordenar);
   const ids = new Set(quadro.topicos.map((t) => t.id));
   const colunas = [...quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, icone: t.icone }))];
   if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros' });
@@ -46,7 +52,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, podeEdit
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} ocupado={ocupado} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : 'Nada aberto'}</div>}
           </section>
         );
@@ -55,15 +61,23 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, ocupado, podeEdit
   );
 }
 
-function CartaoQuadro({ k, quadro, fmt, ocupado, podeEditar, onAbrir, onAssumir, onMover }: {
-  k: Cartao; quadro: TQuadro; fmt: Fmt; ocupado: boolean; podeEditar: boolean;
+const TEXTO_ATRASO: Record<Exclude<Atraso, 'ok'>, string> = { amarelo: 'Atenção', vermelho: 'Atrasado' };
+
+function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onAssumir, onMover }: {
+  k: Cartao; quadro: TQuadro; fmt: Fmt; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
   onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
   const fim = k.etapa === 'finalizado';
   return (
-    <article className={fim ? c.cartaoFim : c.cartao} onClick={(e) => { if (!(e.target as HTMLElement).closest('button,a')) onAbrir(k.id); }}>
+    <article className={fim ? c.cartaoFim : c.cartao} data-atraso={nivel === 'ok' ? undefined : nivel}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('button,a')) onAbrir(k.id); }}>
       <div className={c.cartaoTopo}>
         <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
+        {nivel !== 'ok' && (
+          <span className={c.seloAtraso} data-atraso={nivel}>
+            {TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
+          </span>
+        )}
         {k.sombra && <span className={c.selo} title="Aberto pela Sara nova no modo sombra (não foi para o paciente)">sombra</span>}
       </div>
       <div className={c.cartaoNome}>

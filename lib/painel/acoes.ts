@@ -104,3 +104,7 @@ export async function arquivarDaConfig(recurso: 'topicos' | 'etapas', id: string
 export async function salvarNomesDasEtapas(nomes: Record<string, string>) {
   return comUsuario(async (u) => { await crm.salvarNomesEtapas(u, nomes); return crm.lerConfigCrm(u); });
 }
+
+export async function salvarPrazosDoAtendimento(prazos: Record<string, Record<string, number>>) {
+  return comUsuario(async (u) => { await crm.salvarPrazos(u, prazos); return crm.lerConfigCrm(u); });
+}

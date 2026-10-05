@@ -70,3 +70,20 @@ export function casaBusca(q: string, campos: (string | null | undefined)[]): boo
     return v.includes(n) || (dig.length >= 3 && v.replace(/\D/g, '').includes(dig));
   });
 }
+
+// Atraso do cartão pelos prazos de Configurações: aguardando conta desde que abriu; pendente interno, desde a
+// última mudança. agora = null (antes de a página montar no navegador) não pinta nada.
+export type Atraso = 'ok' | 'amarelo' | 'vermelho';
+type PrazosQuadro = { aguardando: { amarelo: number; vermelho: number }; pendente: { amarelo: number; vermelho: number } };
+export function desdeDoPrazo(k: { etapa: string; aberto_em: string; atualizado_em: string }): string | null {
+  if (k.etapa === 'aguardando') return k.aberto_em;
+  if (k.etapa === 'pendente') return k.atualizado_em;
+  return null;
+}
+export function atraso(k: { etapa: string; aberto_em: string; atualizado_em: string }, prazos: PrazosQuadro, agora: number | null): Atraso {
+  const desde = desdeDoPrazo(k);
+  if (!desde || agora === null || (k.etapa !== 'aguardando' && k.etapa !== 'pendente')) return 'ok';
+  const p = prazos[k.etapa];
+  const min = (agora - new Date(desde).getTime()) / 60000;
+  return min >= p.vermelho ? 'vermelho' : min >= p.amarelo ? 'amarelo' : 'ok';
+}

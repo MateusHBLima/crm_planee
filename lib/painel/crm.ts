@@ -23,11 +23,18 @@ const NOMES_PADRAO: Record<Etapa, string> = {
 export type Topico = { id: string; nome: string; icone: string; ordem: number };
 export type Cartao = {
   id: string; topico_id: string | null; etapa: Etapa; resumo: string; sombra: boolean;
-  aberto_por: string | null; aberto_em: string; responsavel: string | null; assumido_em: string | null; finalizado_em: string | null;
+  aberto_por: string | null; aberto_em: string; atualizado_em: string; responsavel: string | null; assumido_em: string | null; finalizado_em: string | null;
   contato_id: string | null; nome: string | null; telefone: string | null; documento: string | null; notas: number; lead: boolean;
 };
+// Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
+// Aguardando conta desde que abriu; pendente interno, desde a última mudança (atualizado_em).
+export type Prazo = { amarelo: number; vermelho: number };
+export type Prazos = { aguardando: Prazo; pendente: Prazo };
+export const PRAZOS_PADRAO: Prazos = { aguardando: { amarelo: 15, vermelho: 30 }, pendente: { amarelo: 24 * 60, vermelho: 48 * 60 } };
+
 export type Quadro = {
   topicos: Topico[]; etapas: Record<Etapa, string>; cartoes: Cartao[]; finalizadosHoje: number; fuso: string; lidoEm: string;
+  prazos: Prazos;
 };
 
 export const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
@@ -53,11 +60,28 @@ function limparCartao(u: Usuario, r: Record<string, unknown>): Cartao {
     notas: Number(r.notas) || 0,
     lead: Boolean(r.oportunidade_id),
     aberto_em: iso(r.aberto_em) as string,
+    atualizado_em: (iso(r.atualizado_em) ?? iso(r.aberto_em)) as string,
     assumido_em: iso(r.assumido_em),
     finalizado_em: iso(r.finalizado_em),
   };
   if (u.master) { c.resumo = mascararTexto(c.resumo); c.documento = mascararDoc(c.documento); }
   return c;
+}
+
+// Valor salvo em Configurações (crm_config "prazos_atendimento"); o que faltar ou vier errado fica no padrão.
+function limparPrazos(v: unknown): Prazos {
+  const r: Prazos = JSON.parse(JSON.stringify(PRAZOS_PADRAO));
+  const x = (v ?? {}) as Record<string, Record<string, unknown>>;
+  for (const e of ['aguardando', 'pendente'] as const) {
+    const a = Number(x[e]?.amarelo), b = Number(x[e]?.vermelho);
+    if (Number.isInteger(a) && Number.isInteger(b) && a >= 1 && b > a && b <= 30 * 24 * 60) r[e] = { amarelo: a, vermelho: b };
+  }
+  return r;
+}
+
+async function lerPrazos(u: Usuario): Promise<Prazos> {
+  const r = await db(u).query(`select valor from crm_config where chave = 'prazos_atendimento'`);
+  return limparPrazos(r.rows[0]?.valor);
 }
 
 async function nomesEtapas(u: Usuario): Promise<Record<Etapa, string>> {
@@ -67,27 +91,30 @@ async function nomesEtapas(u: Usuario): Promise<Record<Etapa, string>> {
 }
 
 const SELECT_CARTAO = `
-  select a.id, a.topico_id, a.etapa, a.resumo, a.aberto_por, a.aberto_em, a.responsavel, a.assumido_em, a.finalizado_em,
+  select a.id, a.topico_id, a.etapa, a.resumo, a.aberto_por, a.aberto_em, a.atualizado_em, a.responsavel, a.assumido_em, a.finalizado_em,
          a.oportunidade_id, a.contato_id, c.nome, c.telefone, c.documento,
          (select count(*) from notas n where n.alvo_tipo = 'atendimentos' and n.alvo_id = a.id and not n.arquivado) as notas
     from atendimentos a left join contatos c on c.id = a.contato_id`;
 
 export async function lerQuadro(u: Usuario): Promise<Quadro> {
   const f = fuso();
-  const [tops, etapas, cards, fin] = await Promise.all([
+  const [tops, etapas, cards, fin, prazos] = await Promise.all([
     db(u).query(`select id, nome, icone, ordem from crm_topicos where not arquivado order by ordem, nome`),
     nomesEtapas(u),
+    // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
+    // e os abertos mais novos, nunca os que esperam há mais tempo.
     db(u).query(
       `${SELECT_CARTAO}
         where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
           and (a.etapa <> 'finalizado' or a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1))
-        order by a.aberto_em desc limit 600`, [f, u.master]),
+        order by (a.etapa = 'finalizado'), a.aberto_em limit 1000`, [f, u.master]),
     db(u).query(
       `select count(*)::int n from atendimentos a where not a.arquivado and a.etapa = 'finalizado' and ($2::boolean or ${SQL_SEM_SOMBRA})
           and a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1)`, [f, u.master]),
+    lerPrazos(u),
   ]);
   return {
-    topicos: tops.rows as Topico[], etapas, fuso: f, lidoEm: new Date().toISOString(),
+    topicos: tops.rows as Topico[], etapas, fuso: f, lidoEm: new Date().toISOString(), prazos,
     cartoes: cards.rows.map((r) => limparCartao(u, r)), finalizadosHoje: fin.rows[0].n,
   };
 }
@@ -324,17 +351,19 @@ export async function arquivarOportunidade(u: Usuario, id: string) {
 
 export type ConfigCrm = {
   etapasAtendimento: Record<Etapa, string>;
+  prazos: Prazos;
   topicos: { id: string; nome: string; icone: string; ordem: number; palavras: string | null }[];
   funil: { id: string; nome: string; tipo: string; ordem: number; gatilho: string | null }[];
 };
 
 export async function lerConfigCrm(u: Usuario): Promise<ConfigCrm> {
-  const [et, tp, fn] = await Promise.all([
+  const [et, tp, fn, prazos] = await Promise.all([
     nomesEtapas(u),
     db(u).query(`select id, nome, icone, ordem, palavras from crm_topicos where not arquivado order by ordem, nome`),
     db(u).query(`select id, nome, tipo, ordem, gatilho from crm_etapas where not arquivado order by ordem, nome`),
+    lerPrazos(u),
   ]);
-  return { etapasAtendimento: et, topicos: tp.rows, funil: fn.rows };
+  return { etapasAtendimento: et, prazos, topicos: tp.rows, funil: fn.rows };
 }
 
 const idDe = (nome: string) => nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'item';
@@ -377,6 +406,18 @@ export async function salvarNomesEtapas(u: Usuario, nomes: Record<string, unknow
   const valor: Partial<Record<Etapa, string>> = {};
   for (const e of ETAPAS) valor[e] = textoObrigatorio(nomes[e], `o nome de "${NOMES_PADRAO[e]}"`, 40);
   await api.definirConfig(atorDe(u), 'etapas_atendimento', valor);
+}
+
+// Prazos do quadro (Configurações). Chega em minutos; amarelo antes do vermelho, até 30 dias.
+export async function salvarPrazos(u: Usuario, dados: Record<string, Record<string, unknown>>) {
+  const valor = {} as Prazos;
+  for (const [e, nome] of [['aguardando', 'Aguardando'], ['pendente', 'Pendente interno']] as const) {
+    const a = Number(dados?.[e]?.amarelo), b = Number(dados?.[e]?.vermelho);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b > 30 * 24 * 60) throw new ErroApi(400, `${nome}: use números inteiros, de 1 minuto a 30 dias.`);
+    if (b <= a) throw new ErroApi(400, `${nome}: o vermelho precisa vir depois do amarelo.`);
+    valor[e] = { amarelo: a, vermelho: b };
+  }
+  await api.definirConfig(atorDe(u), 'prazos_atendimento', valor);
 }
 
 // Avisa o n8n quando a equipe finaliza um atendimento, para a IA poder retomar a conversa (fase 2, 2.4).
