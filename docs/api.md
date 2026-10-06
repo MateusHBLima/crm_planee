@@ -36,7 +36,7 @@ Dois atalhos pelo telefone, para o agente não precisar saber ids:
 
 O CPF inteiro nunca sai pela API nem pelo MCP (LGPD): na ficha vem só o final (3 dígitos) e em `contatos` (listar, obter, criar, atualizar) o campo `documento` vem como `***` + os 2 últimos dígitos. O filtro `documento` continua aceitando o número inteiro. O MCP aceita no máximo 20 chamadas por lote. Toda mudança fica em `painel_auditoria` com a chave que fez.
 
-## Agendamentos, comprovantes e alerta (migração 013)
+## Agendamentos, comprovantes e alerta (migrações 013 e 014)
 
 Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovantes) e `pagamentos.conferir` (conferir e registrar pela tela), liberadas em Empresas.
 
@@ -44,14 +44,17 @@ Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovant
   - Cria o agendamento ou, se o mesmo `sistema` + `codigo_externo` já existir, atualiza. O contato é achado pelo telefone (com e sem o 9) ou criado.
   - `situacao`: `agendado | confirmado | realizado | cancelado | faltou`.
   - Resposta: `{id, criado, contato_id}`. Escopo `crm`.
-- **Comprovante:** `POST /api/v1/pagamentos` com `{telefone | contato_id, servico: {sistema, codigo_externo} | servico_id, valor, pago_em, forma, descricao, wamid?, arquivo: {nome, mime, base64}, analise?}`.
+- **Comprovante:** `POST /api/v1/pagamentos` com `{telefone | contato_id, servico: {sistema, codigo_externo} | servico_id, valor, pago_em, forma, descricao, wamid?, arquivo: {nome, mime, base64}, analise?, comprovante?}`.
   - Aceita PDF, JPG, PNG e WEBP, até 10 MB. O conteúdo precisa bater com o tipo.
   - O arquivo fica no banco da empresa (`pagamentos_arquivos`).
   - Resposta: `{id, contato_id, servico_id, alerta_atendimento_id}`. Escopo `crm`.
+  - `comprovante` (migração 014): `{pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em}`, o que está escrito no comprovante. Todos opcionais. `id_pix` é o ID E2E, só letras e números; `recebedor_documento` é CNPJ ou CPF.
+  - **Repetido:** o mesmo `wamid`, ou o mesmo `id_pix` para o mesmo contato e agendamento, não cria outro pagamento. A resposta traz o que já existe, com `repetido: true`. Se o primeiro veio sem arquivo e este traz, o arquivo é anexado.
+  - **ID Pix reaproveitado:** o mesmo `id_pix` já usado por outro contato ou em outro agendamento marca o pagamento novo como `suspeito`, com o motivo, e abre o alerta. Esse motivo continua mesmo que a análise da IA venha depois dizendo `ok`.
 - **Análise:** `PATCH /api/v1/pagamentos/{id}` com `{analise: {resultado: "ok" | "suspeito", motivos: [...]}}`.
   - `suspeito` abre um cartão no quadro, no assunto de valores, em "aguardando", com `alerta = true`. Ele fica vermelho desde que abre.
   - É um cartão só por pagamento.
-  - Também dá para mudar valor, data, forma, descrição e serviço. "Conferido" não muda pela API: só uma pessoa, pela tela.
+  - Também dá para mudar valor, data, forma, descrição, serviço e `comprovante`. "Conferido" não muda pela API: só uma pessoa, pela tela.
 - **Arquivo:** `GET /api/v1/pagamentos/{id}/arquivo`. Escopo `leitura`.
 - **Ficha:** `GET /api/v1/ficha` traz também `servicos` e `pagamentos`, sem o arquivo.
 - **No painel:**

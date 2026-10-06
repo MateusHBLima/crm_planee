@@ -132,6 +132,24 @@ function DetalheServico({ id, contatoId, fmt, podeConferir, onFechar, onErro, on
   );
 }
 
+// O que estava escrito no comprovante, lido pela IA (migração 014).
+function DadosComprovante({ k, fmt }: { k: NonNullable<Pagamento['comprovante']>; fmt: Fmt }) {
+  const doc = (d: string) => (d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : d);
+  const linhas: [string, string][] = [];
+  if (k.pagador) linhas.push(['Pagador', k.pagador + (k.banco ? ` · ${k.banco}` : '')]);
+  else if (k.banco) linhas.push(['Banco', k.banco]);
+  if (k.recebedor || k.recebedor_documento) linhas.push(['Recebedor', [k.recebedor, k.recebedor_documento && doc(k.recebedor_documento)].filter(Boolean).join(' · ')]);
+  if (k.emitido_em) linhas.push(['No comprovante', fmt.quando(k.emitido_em)]);
+  if (k.id_pix) linhas.push(['ID Pix', k.id_pix]);
+  return (
+    <div className={c.detLinhas} data-comprovante>
+      {linhas.map(([r, v]) => (
+        <div key={r} className={c.detLinha}><span className={c.metaRot}>{r}</span><span className={r === 'ID Pix' ? c.mono : undefined} style={r === 'ID Pix' ? { wordBreak: 'break-all' } : undefined}>{v}</span></div>
+      ))}
+    </div>
+  );
+}
+
 function CartaoPagamento({ p, fmt, podeConferir, contatoId, onMudou, onErro }: {
   p: Pagamento; fmt: Fmt; podeConferir: boolean; contatoId: string; onMudou: (d: THistorico) => void; onErro: (t: string) => void;
 }) {
@@ -154,6 +172,7 @@ function CartaoPagamento({ p, fmt, podeConferir, contatoId, onMudou, onErro }: {
         {p.pago_em ? `Pago em ${fmt.quando(p.pago_em)}` : 'Data do pagamento não informada'}
         {p.forma ? ` · ${FORMA[p.forma] ?? p.forma}` : ''}{p.descricao ? ` · ${p.descricao}` : ''}
       </p>
+      {p.comprovante && <DadosComprovante k={p.comprovante} fmt={fmt} />}
       {p.analise === 'suspeito' && (
         <ul className={c.motivos} data-motivos>{(p.analise_motivos.length ? p.analise_motivos : ['A análise não informou o motivo.']).map((m, i) => <li key={i}>{m}</li>)}</ul>
       )}
