@@ -14,8 +14,12 @@ create table if not exists avisos_detalhe (
 );
 alter table avisos_detalhe enable row level security;
 
--- Saúde e vigia (Interno Planee) contam mensagens por horário: índice por data de envio.
-create index if not exists wa_mensagens_enviada_idx on wa_mensagens (enviada_em desc);
+-- Saúde e vigia (Interno Planee) contam mensagens por horário: índice por data de envio (só onde há WhatsApp neste banco).
+do $$ begin
+  if to_regclass('wa_mensagens') is not null then
+    create index if not exists wa_mensagens_enviada_idx on wa_mensagens (enviada_em desc);
+  end if;
+end $$;
 -- Eventos da Meta com erro no receptor (só onde o receptor grava neste banco).
 do $$ begin
   if to_regclass('wa_eventos') is not null then
