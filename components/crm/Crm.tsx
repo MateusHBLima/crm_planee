@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import {
-  arquivarAtendimento, assumirAtendimento, carregarQuadro, moverAtendimento, mudarAssunto, type Resposta,
-} from '@/lib/painel/acoes';
+import { arquivarAtendimento, assumirAtendimento, moverAtendimento, mudarAssunto, type Resposta } from '@/lib/painel/acoes';
+import { carregarQuadro } from '@/lib/painel/leitura-cliente';
 import { Icone } from '@/components/Icone';
 import { Quadro } from './Quadro';
 import { Detalhe } from './Detalhe';
@@ -75,6 +74,12 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
     const vis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', vis);
     return () => { parado = true; window.clearInterval(id); document.removeEventListener('visibilitychange', vis); };
+  }, []);
+
+  // Link direto para um cartão (/crm?cartao=<id>): o Interno Planee abre o aviso de comprovante no cartão certo.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('cartao');
+    if (id && /^[0-9a-f-]{36}$/i.test(id)) setAberto(id);
   }, []);
 
   useEffect(() => {

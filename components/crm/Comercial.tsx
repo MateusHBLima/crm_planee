@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { arquivarOportunidade, carregarComercial, editarOportunidade } from '@/lib/painel/acoes';
+import { arquivarOportunidade, editarOportunidade } from '@/lib/painel/acoes';
+import { carregarComercial } from '@/lib/painel/leitura-cliente';
 import { Icone } from '@/components/Icone';
 import { Campo, Janela, NovaOportunidade, useEnvio } from './Formularios';
 import { casaBusca, criarFormatos, telefoneBonito } from './util';

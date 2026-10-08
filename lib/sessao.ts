@@ -24,9 +24,37 @@ export type Sessao = { usuario: Usuario } | { usuario: null; motivo: 'sessao' | 
 
 type Vinculo = Empresa & { nivel: 'admin' | 'membro'; permissoes_vinculo: string[] };
 
+// Telas e ações conferem tudo no banco central a cada pedido (desativar alguém vale na hora).
 export const sessaoAtual = cache(async (): Promise<Sessao> => {
   const acesso = (await cookies()).get(COOKIE_ACESSO)?.value;
   if (!acesso || !bancoConfigurado()) return { usuario: null, motivo: 'sessao' };
+  return montarSessao(acesso);
+});
+
+// Só as leituras automáticas (GET /api/painel/ler: quadro a cada 15 s, Inbox a cada 10 s) reaproveitam a sessão
+// já montada por alguns segundos (mesmo token, mesmo endereço, mesma empresa escolhida). O banco central fica em
+// outra região e cada leitura pagava essa ida. Telas e ações continuam conferindo na hora; mudança na tela de
+// gestão limpa a memória (esquecerSessoes). Pior caso: alguém desativado ainda lê por até SESSAO_MS.
+const SESSAO_MS = 15_000;
+const memoria = new Map<string, { s: Sessao; ate: number }>();
+export function esquecerSessoes() { memoria.clear(); }
+
+export async function usuarioParaLeitura(): Promise<Usuario | null> {
+  const acesso = (await cookies()).get(COOKIE_ACESSO)?.value;
+  if (!acesso || !bancoConfigurado()) return null;
+  const chave = `${acesso}|${hostDeCabecalhos(await headers())}|${(await cookies()).get(COOKIE_EMPRESA)?.value ?? ''}`;
+  const agora = Date.now();
+  const lembrada = memoria.get(chave);
+  if (lembrada && lembrada.ate > agora) return lembrada.s.usuario;
+  const s = await sessaoAtual();
+  if (s.usuario) {
+    if (memoria.size > 500) for (const [k, v] of memoria) if (v.ate <= agora) memoria.delete(k);
+    if (memoria.size <= 1000) memoria.set(chave, { s, ate: agora + SESSAO_MS });
+  }
+  return s.usuario;
+}
+
+async function montarSessao(acesso: string): Promise<Sessao> {
   let auth: { id: string; email: string } | null = null;
   try { auth = await usuarioDoToken(acesso); } catch { auth = null; }
   if (!auth) return { usuario: null, motivo: 'sessao' };
@@ -91,7 +119,7 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
       empresa: empresa ? { id: empresa.id, nome: empresa.nome, ativo: empresa.ativo, modulos: empresa.modulos, banco_url_cifrado: empresa.banco_url_cifrado } : null,
     },
   };
-});
+}
 
 export async function usuarioAtual(): Promise<Usuario | null> {
   return (await sessaoAtual()).usuario;

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Cartao, Etapa, Evento, Quadro as TQuadro } from '@/lib/painel/crm';
-import { anotarAtendimento, carregarDetalhe } from '@/lib/painel/acoes';
+import { anotarAtendimento } from '@/lib/painel/acoes';
+import { carregarDetalhe } from '@/lib/painel/leitura-cliente';
 import { Icone } from '@/components/Icone';
 import { Acoes, EtapaPill, Relativo } from './Quadro';
 import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';

@@ -11,23 +11,24 @@ case "$DATABASE_URL" in *@localhost*|*@127.0.0.1*) ;; *) echo "Recusado: DATABAS
 PORTA_APP=${PORTA_APP:-3100}; PORTA_AUTH=${PORTA_AUTH:-54321}
 export BASE_URL="http://localhost:$PORTA_APP"
 
-echo "1/9 Banco: recria o schema, aplica as migrações 001 a 009 e a semente fictícia; cria o banco da 2ª empresa"
+echo "1/11 Banco: recria o schema, aplica as migrações 001 a 017 e a semente fictícia; cria o banco da 2ª empresa"
 psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
-         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql; do
+         supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
+         supabase/migrations/015_avisos_central.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
 export OUTRA_DATABASE_URL="${DATABASE_URL%/*}/painel_teste_outra"
 psql -q "${DATABASE_URL%/*}/postgres" -c "drop database if exists painel_teste_outra" -c "create database painel_teste_outra" >/dev/null
-for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql; do
+for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql supabase/migrations/005_dados_auditoria_sem_fk.sql supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql; do
   psql -q -v ON_ERROR_STOP=1 "$OUTRA_DATABASE_URL" -f "$f" >/dev/null
 done
 psql -q "$OUTRA_DATABASE_URL" -c "delete from notas; delete from atendimentos; insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000001','receita','Cartão só da Clínica Outra','IA')" >/dev/null
 
-echo "2/9 Dependências dos testes"
+echo "2/11 Dependências dos testes"
 (cd "$T" && npm install --no-audit --no-fund --silent)
 [ -n "${CHROMIUM_PATH:-}" ] || (cd "$T" && npx playwright install chromium >/dev/null)
 
@@ -35,7 +36,7 @@ sobe_auth() { TTL=$1 PORTA=$PORTA_AUTH node "$T/auth-falso.js" > /dev/null 2>&1 
 para() { for p in ${APP_PID:-} ${AUTH_PID:-}; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done; }
 trap para EXIT
 
-echo "3/9 App: build e start com o Auth falso"
+echo "3/11 App: build e start com o Auth falso"
 sobe_auth 3600
 export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste PAINEL_CHAVE_CIFRA="chave-de-teste-local-com-mais-de-32-caracteres"
 # Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
@@ -47,21 +48,27 @@ npm run build >/dev/null
 node node_modules/next/dist/bin/next start -p "$PORTA_APP" > /dev/null 2>&1 & APP_PID=$!
 for i in $(seq 1 30); do curl -sf "$BASE_URL/entrar" >/dev/null && break; sleep 1; done
 
-echo "4/9 Testes de ponta a ponta"
+echo "4/11 Testes de ponta a ponta"
 node "$T/e2e.js"
 
-echo "5/9 CRM completo: criar e editar pela tela, Configurações, avisos, ficha e funil da IA"
+echo "5/11 CRM completo: criar e editar pela tela, Configurações, avisos, ficha e funil da IA"
 node "$T/crm-completo.js"
 
-echo "6/9 Empresas, domínios, níveis e permissões (banco central)"
+echo "6/11 Empresas, domínios, níveis e permissões (banco central)"
 node "$T/central.js"
 
-echo "7/9 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
+echo "7/11 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
 node "$T/inbox.js"
 
-echo "8/9 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
+echo "8/11 Avisos para a Planee: menu da mensagem, fila do Interno, resposta, novidades, integrações, vigia e saúde"
+node "$T/avisos.js"
+
+echo "9/11 Mensagens automáticas da IA: recusa, registro de envios, ficha, histórico, selo e filtro de follow-up"
+node "$T/automaticas.js"
+
+echo "10/11 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
 node "$T/seguranca.js"
 
-echo "9/9 Renovação do token (Auth com token de 30 s)"
+echo "11/11 Renovação do token (Auth com token de 30 s)"
 kill $AUTH_PID; sobe_auth 30
 node "$T/renovacao.js"

@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers';
 import { ErroApi, registrarErro } from '@/lib/db';
 import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
-import { usuarioAtual, type Usuario } from '@/lib/sessao';
+import { esquecerSessoes, usuarioAtual, type Usuario } from '@/lib/sessao';
 import * as g from './gestao';
 import type { Resposta } from './acoes';
 
@@ -18,6 +18,9 @@ async function comUsuario<T>(fn: (u: Usuario) => Promise<T>): Promise<Resposta<T
     if (e instanceof ErroApi) return { ok: false, erro: e.message };
     registrarErro('gestao', e);
     return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
+  } finally {
+    // Empresa, pessoa, vínculo ou permissão pode ter mudado: a próxima tela monta a sessão de novo.
+    esquecerSessoes();
   }
 }
 

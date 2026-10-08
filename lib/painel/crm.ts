@@ -101,24 +101,30 @@ const SELECT_CARTAO = `
 
 export async function lerQuadro(u: Usuario): Promise<Quadro> {
   const f = fuso();
-  const [tops, etapas, cards, fin, prazos] = await Promise.all([
-    db(u).query(`select id, nome, icone, ordem from crm_topicos where not arquivado order by ordem, nome`),
-    nomesEtapas(u),
-    // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
-    // e os abertos mais novos, nunca os que esperam há mais tempo.
-    db(u).query(
-      `${SELECT_CARTAO}
+  // Uma consulta só (uma ida ao banco, uma conexão): assuntos, nomes das etapas, prazos, cartões e a contagem de
+  // finalizados de hoje. O banco fica em outra região; cinco consultas em paralelo abriam cinco conexões.
+  // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
+  // e os abertos mais novos, nunca os que esperam há mais tempo.
+  const r = await db(u).query(
+    `with hoje as (select (date_trunc('day', now() at time zone $1) at time zone $1) as ini),
+     cartoes as (
+       ${SELECT_CARTAO}
         where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
-          and (a.etapa <> 'finalizado' or a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1))
-        order by (a.etapa = 'finalizado'), a.aberto_em limit 1000`, [f, u.master]),
-    db(u).query(
-      `select count(*)::int n from atendimentos a where not a.arquivado and a.etapa = 'finalizado' and ($2::boolean or ${SQL_SEM_SOMBRA})
-          and a.finalizado_em >= (date_trunc('day', now() at time zone $1) at time zone $1)`, [f, u.master]),
-    lerPrazos(u),
-  ]);
+          and (a.etapa <> 'finalizado' or a.finalizado_em >= (select ini from hoje))
+        order by (a.etapa = 'finalizado'), a.aberto_em limit 1000)
+     select
+       (select coalesce(json_agg(t order by t.ordem, t.nome), '[]'::json)
+          from (select id, nome, icone, ordem from crm_topicos where not arquivado) t) as topicos,
+       (select valor from crm_config where chave = 'etapas_atendimento') as etapas,
+       (select valor from crm_config where chave = 'prazos_atendimento') as prazos,
+       (select count(*)::int from atendimentos a where not a.arquivado and a.etapa = 'finalizado'
+           and ($2::boolean or ${SQL_SEM_SOMBRA}) and a.finalizado_em >= (select ini from hoje)) as fin,
+       (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes`, [f, u.master]);
+  const x = r.rows[0];
   return {
-    topicos: tops.rows as Topico[], etapas, fuso: f, lidoEm: new Date().toISOString(), prazos,
-    cartoes: cards.rows.map((r) => limparCartao(u, r)), finalizadosHoje: fin.rows[0].n,
+    topicos: x.topicos as Topico[], etapas: { ...NOMES_PADRAO, ...((x.etapas ?? {}) as Partial<Record<Etapa, string>>) },
+    fuso: f, lidoEm: new Date().toISOString(), prazos: limparPrazos(x.prazos),
+    cartoes: (x.cartoes as Record<string, unknown>[]).map((c) => limparCartao(u, c)), finalizadosHoje: x.fin,
   };
 }
 
@@ -126,17 +132,24 @@ export type Evento = { quando: string; texto: string; quem: string | null; tipo:
 export type Detalhe = { cartao: Cartao; eventos: Evento[] };
 
 export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
-  const [a, etapas] = await Promise.all([db(u).query(`${SELECT_CARTAO} where a.id = $1`, [id]), nomesEtapas(u)]);
-  if (!a.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
-  const cartao = limparCartao(u, a.rows[0]);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id))) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
+  // Uma ida só ao banco: o cartão, os nomes das etapas, as notas e o que aconteceu (auditoria).
+  const r = await db(u).query(
+    `select (select row_to_json(c) from (${SELECT_CARTAO} where a.id = $1::uuid) c) as cartao,
+            (select valor from crm_config where chave = 'etapas_atendimento') as etapas,
+            (select coalesce(json_agg(n order by n.criado_em), '[]'::json)
+               from (select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1::uuid and not arquivado) n) as notas,
+            (select coalesce(json_agg(x order by x.quando), '[]'::json)
+               from (select p.quando, p.acao, p.detalhe, coalesce(u.nome, k.nome) as quem
+                       from painel_auditoria p left join painel_usuarios u on u.id = p.usuario_id left join api_chaves k on k.id = p.chave_id
+                      where p.recurso = 'atendimentos' and p.alvo_id::text = $1::text) x) as aud`, [id]);
+  const linha = r.rows[0];
+  if (!linha?.cartao) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
+  const etapas = { ...NOMES_PADRAO, ...((linha.etapas ?? {}) as Partial<Record<Etapa, string>>) };
+  const cartao = limparCartao(u, linha.cartao);
   if (cartao.sombra && !u.master) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
-  const [notas, aud] = await Promise.all([
-    db(u).query(`select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1 and not arquivado order by criado_em`, [id]),
-    db(u).query(
-      `select p.quando, p.acao, p.detalhe, coalesce(u.nome, k.nome) as quem
-         from painel_auditoria p left join painel_usuarios u on u.id = p.usuario_id left join api_chaves k on k.id = p.chave_id
-        where p.recurso = 'atendimentos' and p.alvo_id = $1 order by p.quando`, [id]),
-  ]);
+  const notas = { rows: linha.notas as { texto: string; autor: string; criado_em: string }[] };
+  const aud = { rows: linha.aud as { quando: string; acao: string; detalhe: unknown; quem: string | null }[] };
   const eventos: Evento[] = [
     { quando: cartao.aberto_em, texto: `Aberto${cartao.aberto_por ? ' por ' + cartao.aberto_por : ''}`, quem: null, tipo: 'acao' },
   ];
@@ -215,15 +228,23 @@ export async function arquivarAtendimento(u: Usuario, id: string) {
 // ---- Comercial e contatos (leitura) ----
 
 export async function lerComercial(u: Usuario) {
-  const [et, ops] = await Promise.all([
-    db(u).query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`),
-    db(u).query(
-      `select o.id, o.etapa_id, o.contato_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
-         from oportunidades o left join contatos c on c.id = o.contato_id
-        where not o.arquivado order by o.atualizado_em desc limit 600`),
-  ]);
-  void u;
-  return { etapas: et.rows as { id: string; nome: string; tipo: string }[], oportunidades: ops.rows.map((r) => ({ ...r, atualizado_em: new Date(r.atualizado_em).toISOString(), valor: r.valor === null ? null : Number(r.valor) })) };
+  // Uma ida só ao banco: etapas do funil e oportunidades.
+  const r = await db(u).query(
+    `select (select coalesce(json_agg(e order by e.ordem, e.nome), '[]'::json)
+               from (select id, nome, tipo, ordem from crm_etapas where not arquivado) e) as etapas,
+            (select coalesce(json_agg(o order by o.atualizado_em desc), '[]'::json)
+               from (select o.id, o.etapa_id, o.contato_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
+                       from oportunidades o left join contatos c on c.id = o.contato_id
+                      where not o.arquivado order by o.atualizado_em desc limit 600) o) as ops`);
+  const x = r.rows[0];
+  return {
+    etapas: x.etapas as { id: string; nome: string; tipo: string }[],
+    oportunidades: (x.ops as Record<string, unknown>[]).map((o) => ({
+      id: String(o.id), etapa_id: String(o.etapa_id), contato_id: (o.contato_id as string) ?? null, interesse: (o.interesse as string) ?? null,
+      nome: (o.nome as string) ?? null, telefone: (o.telefone as string) ?? null,
+      atualizado_em: new Date(o.atualizado_em as string).toISOString(), valor: o.valor === null ? null : Number(o.valor),
+    })),
+  };
 }
 
 export async function lerContatos(u: Usuario) {

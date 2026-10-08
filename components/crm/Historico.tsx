@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import type { EventoHistorico, Historico as THistorico, Pagamento, Servico } from '@/lib/painel/servicos';
-import { carregarHistorico, carregarServico, conferirPagamento, registrarPagamento } from '@/lib/painel/acoes';
+import { conferirPagamento, mudarAutomaticas, registrarPagamento } from '@/lib/painel/acoes';
+import { carregarHistorico, carregarServico } from '@/lib/painel/leitura-cliente';
 import { Campo, Janela } from './Formularios';
 import type { criarFormatos } from './util';
 import c from './crm.module.css';
@@ -14,7 +15,7 @@ type Fmt = ReturnType<typeof criarFormatos>;
 const reais = (v: number | null) => (v === null ? '' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const FORMA: Record<string, string> = { pix: 'Pix', cartao: 'Cartão', boleto: 'Boleto', dinheiro: 'Dinheiro', outro: 'Outro' };
 const SITUACAO: Record<string, string> = { agendado: 'Agendado', confirmado: 'Confirmado', realizado: 'Realizado', cancelado: 'Cancelado', faltou: 'Faltou' };
-const ROTULO_TIPO: Record<EventoHistorico['tipo'], string> = { atendimento: 'Atendimento', nota: 'Nota', servico: 'Agendamento', pagamento: 'Pagamento' };
+const ROTULO_TIPO: Record<EventoHistorico['tipo'], string> = { atendimento: 'Atendimento', nota: 'Nota', servico: 'Agendamento', pagamento: 'Pagamento', automatica: 'Mensagem automática' };
 
 export function HistoricoPaciente({ contatoId, fmt, podeConferir, compacto = false, onAbrirAtendimento, onErro }: {
   contatoId: string; fmt: Fmt; podeConferir: boolean; compacto?: boolean;
@@ -58,6 +59,14 @@ export function HistoricoPaciente({ contatoId, fmt, podeConferir, compacto = fal
           <button type="button" className={c.acaoSec} onClick={() => setNovoPag(true)}>Registrar pagamento</button>
         )}
       </div>
+      {h.automaticas && (
+        <Automaticas a={h.automaticas} compacto={compacto} fmt={fmt}
+          onMudar={async (parar, motivo) => {
+            const r = await mudarAutomaticas(contatoId, parar, motivo);
+            if (r.ok) setH(r.dados); else onErro(r.erro);
+            return r.ok;
+          }} />
+      )}
       {!vis.length ? <p className={c.detMeta}>Nada registrado ainda.</p> : (
         <ol className={c.linhaTempo}>
           {vis.map((e, i) => (
@@ -234,5 +243,41 @@ function NovoPagamento({ contatoId, servicos, onFechar, onPronto }: {
         </div>
       </form>
     </Janela>
+  );
+}
+
+// Mensagens automáticas da Sara (aniversário, lembretes, follow-up): o selo do momento e, na ficha, o botão para
+// parar ou voltar a enviar. Parar vale para todos os cadastros do mesmo telefone.
+function Automaticas({ a, compacto, fmt, onMudar }: {
+  a: NonNullable<THistorico['automaticas']>; compacto: boolean; fmt: Fmt; onMudar: (parar: boolean, motivo?: string) => Promise<boolean>;
+}) {
+  const [pedindo, setPedindo] = useState(false);
+  const [motivo, setMotivo] = useState('');
+  const [enviando, iniciar] = useTransition();
+  const mudar = (parar: boolean) => iniciar(async () => { if (await onMudar(parar, parar ? motivo.trim() || undefined : undefined)) { setPedindo(false); setMotivo(''); } });
+  return (
+    <div className={c.blocoAuto} aria-label="Mensagens automáticas">
+      <div className={c.linhaAuto}>
+        {a.recusa
+          ? <span className={c.seloAuto} data-selo="parou">Não recebe mensagens automáticas desde {fmt.quando(a.recusa.desde)}{a.recusa.motivo ? ` · ${a.recusa.motivo}` : ''}{a.recusa.por ? ` · ${a.recusa.por}` : ''}</span>
+          : <span className={c.seloAuto} data-selo="ok">Recebe mensagens automáticas</span>}
+        {a.selo && a.selo.tipo !== 'parou' && <span className={c.seloAuto} data-selo={a.selo.tipo}>{a.selo.texto}</span>}
+        {!compacto && a.podeMudar && !pedindo && (
+          a.recusa
+            ? <button type="button" className={c.acaoSec} disabled={enviando} onClick={() => mudar(false)}>{enviando ? 'Salvando…' : 'Voltar a enviar'}</button>
+            : <button type="button" className={c.acaoSec} onClick={() => setPedindo(true)}>Parar mensagens automáticas</button>
+        )}
+      </div>
+      {pedindo && (
+        <form className={c.linhaAuto} onSubmit={(e) => { e.preventDefault(); mudar(true); }}>
+          <label className={c.campo} htmlFor="auto-motivo" style={{ flex: '1 1 220px' }}>
+            <span>Motivo (opcional)</span>
+            <input id="auto-motivo" value={motivo} maxLength={300} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: pediu pelo WhatsApp para não receber" />
+          </label>
+          <button type="button" className={c.acaoSec} onClick={() => setPedindo(false)}>Cancelar</button>
+          <button type="submit" className={c.acaoPri} disabled={enviando}>{enviando ? 'Salvando…' : 'Parar'}</button>
+        </form>
+      )}
+    </div>
   );
 }

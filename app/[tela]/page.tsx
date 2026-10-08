@@ -10,6 +10,8 @@ import { hostDeCabecalhos } from '@/lib/empresa';
 import { lerConfigCrm, lerQuadro } from '@/lib/painel/crm';
 import { listarConversas } from '@/lib/painel/inbox';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
+import { Interno } from '@/components/planee/Interno';
+import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
 import { listarEmpresas, listarEquipe } from '@/lib/painel/gestao';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
 import { ErroApi } from '@/lib/db';
@@ -78,6 +80,24 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
         <ConfigCrm key={usuario.empresa.id} inicial={config} />
+      </Shell>
+    );
+  }
+
+  // Interno Planee (master): fila de avisos, saúde, novidades e integrações. Os dados vêm pelas leituras GET.
+  if (atual.id === 'interno') {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Interno empresas={usuario.empresas} nome={usuario.nome} />
+      </Shell>
+    );
+  }
+
+  // Tela "Planee" da empresa: avisos que a equipe mandou, respostas, novidades e manutenção.
+  if (atual.id === 'planee' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <PlaneeEmpresa key={usuario.empresa.id} empresa={usuario.empresa.nome} />
       </Shell>
     );
   }

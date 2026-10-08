@@ -87,7 +87,7 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   await p.fill('#email', 'admin2@teste.local'); await p.fill('#codigo', codigoAdmin.toLowerCase()); await p.fill('#senha', 'senhaforte1'); await p.fill('#repete', 'senhaforte1');
   await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(1000);
   ok('admin cria a senha e entra', p.url().endsWith('/crm'), p.url());
-  ok('admin só vê o que a empresa tem (CRM) e a Equipe', (await nav(p)) === 'CRM,Equipe', await nav(p));
+  ok('admin só vê o que a empresa tem (CRM), a Planee (avisos) e a Equipe', (await nav(p)) === 'CRM,Planee,Equipe', await nav(p));
   ok('admin vê só o CRM da empresa dele', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 1 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0);
   await p.goto(OUTRA + '/resultados'); ok('admin não abre tela fora dos módulos', p.url().endsWith('/crm'), p.url());
   await p.goto(OUTRA + '/empresas'); ok('admin não abre Empresas', !p.url().endsWith('/empresas'), p.url());

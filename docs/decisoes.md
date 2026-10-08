@@ -86,6 +86,25 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Mídias:** o receptor baixa pela Meta e guarda no Supabase Storage, numa pasta privada.
     - **Ainda não decidido:** o envio pelo painel (fase 1.3) vai pelo receptor ou pelo n8n.
 
+29. **Avisos para a Planee, saúde dos clientes e novidades (08/10).**
+    - **Avisar a Planee:** cada mensagem da Inbox tem o menu ⋯ com "Avisar a Planee" (tipo + comentário). A tela Planee da empresa também tem "Novo aviso", sem mensagem. Sem 👍/👎: retorno sem contexto não ajuda.
+    - **Uma fila só** no Interno Planee, com os avisos de todas as empresas: aberto, em análise ou resolvido, quem está cuidando e a resposta. A equipe vê a resposta na tela Planee.
+    - **LGPD:** no banco central fica só o índice (`avisos`: empresa, tipo, estado, título curto, 4 últimos dígitos). Comentário, conversa e trecho da mensagem ficam no banco da empresa (`avisos_detalhe`).
+    - **Automáticos** (vigia de 15 em 15 min, `PAINEL_VIGIA=0` desliga):
+      - comprovante suspeito: um por pagamento;
+      - número sem mensagens em horário comercial: sinal de número desconectado;
+      - envios falhando na última hora;
+      - token de integração vencendo: a partir de 30 dias antes, lembra a cada 3 dias até a data mudar em Integrações.
+      Volume (paciente sem resposta etc.) fica para depois.
+    - **Saúde:** uma linha por cliente com o detalhe por empresa (números, falhas, integrações, avisos).
+    - **Novidades e manutenção:** para todas as empresas ou só uma; manutenção vira faixa no topo das telas até o fim.
+
+30. **Mensagens automáticas da IA no CRM (08/10).**
+    - **O relógio fica no n8n da Sara.** A tabela de toques e o workflow de 5 em 5 minutos são dela; o painel não envia mensagem (regra 7).
+    - **A recusa ("não quero mais receber") fica no contato do CRM.** Vale para todos os cadastros do mesmo telefone, e a IA confere a ficha antes de cada envio.
+    - **Cada envio é registrado** (enviado, falhou ou cancelado) com uma chave única. Aparece no histórico do contato.
+    - **O follow-up aparece como selo calculado** na conversa e no histórico, mais o filtro "Em follow-up" na Inbox. Não vira etapa do funil nem cartão do quadro.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

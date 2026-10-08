@@ -152,6 +152,8 @@ export function catalogo() {
       'POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.',
       'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.',
       'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
+      'POST /api/v1/automaticas/recusa {"telefone" | "contato_id","parar":true|false,"motivo"?} — para ou libera as mensagens automáticas da pessoa (todos os cadastros do telefone). Marcar de novo mantém a data original. A ficha traz automaticas.permitidas. Escopo crm.',
+      'POST /api/v1/automaticas/envios {"telefone","tipo","situacao":"enviado|falhou|cancelado","chave","quando"?,"texto"?,"wamid"?,"motivo"?,"servico"?:{sistema,codigo_externo}} — registra o envio automático na linha do tempo do contato; mesma chave atualiza (repetido=true). Escopo crm.',
     ],
     recursos: Object.values(RECURSOS).map((r) => ({
       nome: r.nome,

@@ -63,6 +63,26 @@ Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovant
   - O detalhe do cartão mostra os 8 eventos mais recentes.
   - Quando a Planee abre um comprovante, isso fica registrado na auditoria central.
 
+## Mensagens automáticas da IA (migração 017)
+
+O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. O CRM guarda a recusa e o resultado de cada envio.
+
+- **Recusa:** `POST /api/v1/automaticas/recusa` com `{telefone | contato_id, parar: true|false, motivo?, por?}`. Escopo `crm`.
+  - Vale para todos os cadastros do mesmo telefone.
+  - Marcar de novo mantém a data e o motivo originais. Liberar limpa tudo.
+  - Devolve `{ok, contato_id, contatos, parar, desde, motivo, por}`. Pelo MCP: `parar_automaticas`.
+- **Envio:** `POST /api/v1/automaticas/envios` com `{telefone, tipo, situacao, chave, quando?, texto?, wamid?, motivo?, servico?: {sistema, codigo_externo}, nome?}`. Escopo `crm`.
+  - `tipo`: `aniversario`, `lembrete_2d`, `lembrete_dia`, `followup_1h`, `followup_3h`, `followup_3d`, `followup_7d`, `followup_14d`, `followup_30d` ou `outro` (aceita outros nomes em letras minúsculas e `_`).
+  - `situacao`: `enviado`, `falhou` ou `cancelado`.
+  - `chave` é única por envio: a mesma chave atualiza (`repetido: true`) em vez de duplicar.
+  - Devolve `{ok, id, contato_id, repetido, servico_id}`. Pelo MCP: `registrar_envio_automatico`.
+- **Ficha:** `GET /api/v1/ficha` traz `automaticas: {permitidas, desde, motivo, por, ultimos_envios}`. A IA confere `permitidas` antes de cada envio.
+- **No painel:**
+  - o histórico do contato mostra cada envio e a recusa, com os botões "Parar mensagens automáticas" e "Voltar a enviar" (`crm.editar`);
+  - a conversa na Inbox mostra o selo do follow-up ("Follow-up 1h enviado", "… · sem resposta", "Respondeu ao follow-up", "Parou: pediu para não receber");
+  - a lista da Inbox tem o filtro "Em follow-up".
+- **Texto na Inbox na hora:** depois de cada envio, chame também o `POST /whatsapp/envio` do receptor.
+
 ## Painel → n8n
 
 Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
@@ -87,3 +107,13 @@ O resultado aparece uma vez só. Cole direto no conector (ou no n8n); não mande
 ## Configuração do deploy
 
 Variável `DATABASE_URL` na stack `painel` do Portainer: a string do "connection pooler" do Supabase (Settings → Database → Connection string). Sem ela, a API responde 503. O conector do Claude usa `https://adm.planeelabia.com/api/mcp/<chave>`.
+
+## Leituras internas das telas (não é API pública)
+
+As telas do painel leem por `GET /api/painel/ler/<recurso>`, com o login da pessoa (cookie), não com chave. Não serve para integração: use a API acima. Os recursos estão em `lib/painel/leituras.ts`:
+
+- **CRM:** `quadro`, `detalhe`, `comercial`, `contatos`, `atendimentos_contato`, `notas_contato`, `historico`, `servico`.
+- **Inbox:** `conversas`, `conversa`.
+- **Avisos para a Planee e Interno:** `planee_empresa`, `faixa`, `avisos`, `aviso`, `saude`, `saude_empresa`, `novidades`, `integracoes`. Do `avisos` em diante, só o master.
+
+Gravar continua por ações do servidor. As rotas GET rodam em paralelo, então a atualização automática não segura o clique da pessoa. O cabeçalho `Server-Timing` mostra o tempo da sessão e do banco em cada pedido.
