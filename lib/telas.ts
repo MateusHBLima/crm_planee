@@ -46,9 +46,10 @@ const TELAS: Tela[] = [
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Consultas marcadas pela IA, conversas por dia, espera pela equipe. Fase 1.3.', exige: (u) => pode(u, 'resultados.ver') },
   { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', exige: (u) => pode(u, 'crm.config') || pode(u, 'agente.config') },
+  { id: 'planee', nome: 'Planee', icone: 'conversa', descricao: 'Avisos para a Planee, respostas, novidades e manutenções.', exige: (u) => Boolean(u.empresa) && u.nivel !== 'master' },
   { id: 'equipe', nome: 'Equipe', icone: 'pessoa', descricao: 'Pessoas da empresa, níveis e permissões.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
   { id: 'empresas', nome: 'Empresas', icone: 'clientes', descricao: 'Empresas, domínios, módulos liberados e admins.', exige: (u) => u.nivel === 'master' },
-  { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Custo, cache, falhas e alertas de todos os clientes. Fase 1.4.', exige: (u) => u.nivel === 'master' },
+  { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Avisos de todos os clientes, saúde, novidades e integrações.', exige: (u) => u.nivel === 'master' },
 ];
 
 export const IDS_TELAS = TELAS.map((t) => t.id);

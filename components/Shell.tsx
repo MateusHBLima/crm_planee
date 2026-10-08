@@ -8,6 +8,7 @@ import { AlternarTema } from './AlternarTema';
 import { Icone } from './Icone';
 import { TrocarEmpresa } from './TrocarEmpresa';
 import { SairDaEmpresa } from './SairDaEmpresa';
+import { Faixa } from './planee/Faixa';
 import s from './shell.module.css';
 
 export function Shell({ atual, usuario, largo, children }: {
@@ -58,6 +59,7 @@ export function Shell({ atual, usuario, largo, children }: {
       </aside>
       <main className={largo ? s.conteudoLargo : s.conteudo}>
         {dentro && <SairDaEmpresa nome={usuario.empresa!.nome} />}
+        {usuario.empresa && <Faixa largo={largo} />}
         {children}
       </main>
     </div>

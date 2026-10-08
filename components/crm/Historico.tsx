@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import type { EventoHistorico, Historico as THistorico, Pagamento, Servico } from '@/lib/painel/servicos';
-import { carregarHistorico, carregarServico, conferirPagamento, registrarPagamento } from '@/lib/painel/acoes';
+import { conferirPagamento, registrarPagamento } from '@/lib/painel/acoes';
+import { carregarHistorico, carregarServico } from '@/lib/painel/leitura-cliente';
 import { Campo, Janela } from './Formularios';
 import type { criarFormatos } from './util';
 import c from './crm.module.css';

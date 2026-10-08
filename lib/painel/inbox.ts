@@ -3,6 +3,7 @@ import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
+import { completarFalasDaIa } from './falas-ia';
 
 // Inbox: espelho do WhatsApp (fase 1.1) e resposta pelo painel (fase 2.3). Lê as tabelas wa_* que o receptor
 // (servicos/receptor) grava no banco de cada empresa (migração 008). O painel não fala com a Meta: a resposta vai
@@ -137,6 +138,8 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
       order by m.enviada_em desc, m.id desc limit $4`, [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
   const temMais = r.rows.length > POR_PAGINA;
   const linhas = r.rows.slice(0, POR_PAGINA).reverse();
+  // Mensagens da IA sem texto (a Meta só devolve o status): completa pelo histórico da IA (lib/painel/falas-ia.ts).
+  await completarFalasDaIa(banco, waId, linhas);
 
   const wamids = linhas.map((m) => m.wamid as string);
   const citados = [...new Set(linhas.map((m) => m.resposta_a as string | null).filter((x): x is string => Boolean(x)))];

@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirConversa, assumirConversa, carregarConversas, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
+import { assumirConversa, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
+import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
+import { AvisarPlanee, type AlvoAviso } from '@/components/planee/AvisarPlanee';
+import sp from '@/components/planee/planee.module.css';
 import c from './inbox.module.css';
 
 // Inbox (fases 1.1, 2.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
@@ -77,6 +80,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
   const [pendentes, setPendentes] = useState<Pendente[]>([]);
   const [mudandoDono, setMudandoDono] = useState(false);
+  const [avisando, setAvisando] = useState<AlvoAviso | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -178,6 +183,19 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     setDados((x) => (x ? { ...x, conversa: d } : x));
     atualizarLinha(d);
   }, [tratar, atualizarLinha]);
+
+  // Link direto para uma conversa (/inbox?numero=...&wa=...): o Interno Planee abre o aviso na conversa certa.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const numero = q.get('numero'); const wa = q.get('wa');
+    if (numero && wa && /^\d{5,30}$/.test(numero) && /^\d{8,20}$/.test(wa)) abrir({ numero_id: numero, wa_id: wa });
+  }, [abrir]);
+
+  useEffect(() => {
+    if (!ok) return;
+    const t = window.setTimeout(() => setOk(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [ok]);
 
   // Busca no servidor (nome ou dígitos do número), com uma pausa curta enquanto a pessoa digita.
   const primeira = useRef(true);
@@ -322,7 +340,11 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                 return (
                   <div key={m.id} className={c.bloco}>
                     {novoDia && <div className={c.dia} role="separator"><span>{datas.separador(m.em)}</span></div>}
-                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} />
+                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'}
+                      onAvisar={mascarado || !aberta ? undefined : () => setAvisando({
+                        numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato'),
+                        trecho: m.texto || (MIDIA[m.tipo] ?? null),
+                      })} />
                   </div>
                 );
               })}
@@ -344,7 +366,12 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
         {!podeResponder && <footer className={c.rodape}>Somente leitura: sua conta não tem a permissão para responder pelo painel.</footer>}
       </section>
 
+      {avisando && (
+        <AvisarPlanee alvo={avisando} onFechar={() => setAvisando(null)}
+          onPronto={() => { setAvisando(null); setOk('Aviso enviado para a Planee. A resposta aparece na tela Planee.'); }} />
+      )}
       <div className={c.aviso} role="status" aria-live="polite">
+        {ok && !aviso && <span className={c.avisoOk}>{ok}</span>}
         {aviso && (
           <span className={c.avisoErro}>
             {aviso}
@@ -391,13 +418,40 @@ function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; o
   );
 }
 
-function Bolha({ m, hora, nomeContato }: { m: Mensagem; hora: string; nomeContato: string }) {
+const autorDe = (m: Mensagem, nomeContato: string) =>
+  m.direcao === 'entrada' ? nomeContato : m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] || 'Clínica';
+
+// Menu "⋯" de cada mensagem. Hoje só "Avisar a Planee"; outras ações entram aqui.
+function MenuMensagem({ lado, onAvisar }: { lado: 'esquerda' | 'direita'; onAvisar: () => void }) {
+  const [aberto, setAberto] = useState(false);
+  const caixa = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => { if (!caixa.current?.contains(e.target as Node)) setAberto(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberto(false); };
+    document.addEventListener('mousedown', fora); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+  }, [aberto]);
+  return (
+    <span className={sp.menuCaixa} ref={caixa}>
+      <button type="button" className={sp.menuBotao} aria-label="Opções da mensagem" aria-haspopup="menu" aria-expanded={aberto}
+        onClick={() => setAberto((x) => !x)}>⋯</button>
+      {aberto && (
+        <span className={sp.menu} role="menu" data-lado={lado}>
+          <button type="button" role="menuitem" autoFocus onClick={() => { setAberto(false); onAvisar(); }}>Avisar a Planee</button>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function Bolha({ m, hora, nomeContato, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; onAvisar?: () => void }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
   const autor = m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] ?? '';
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
   const rotMidia = MIDIA[m.tipo];
   let conteudo: React.ReactNode;
-  if (m.origem === 'api' && m.tipo === 'desconhecido') {
+  if (m.origem === 'api' && m.tipo === 'desconhecido' && !m.texto) {
     conteudo = <p className={c.semTexto}>Mensagem da Sara (texto ainda não registrado)</p>;
   } else if (m.tipo === 'unsupported') {
     conteudo = <p className={c.semTexto}>Tipo de mensagem não suportado</p>;
@@ -441,6 +495,7 @@ function Bolha({ m, hora, nomeContato }: { m: Mensagem; hora: string; nomeContat
         {m.editada && <span className={c.marca}>editada</span>}
         {m.apagada && <span className={c.marcaApagada}>apagada</span>}
         {st && <span className={c.status} data-status={m.status} title={st.nome} aria-label={st.nome}>{st.marca}</span>}
+        {onAvisar && <MenuMensagem lado={m.direcao === 'saida' ? 'direita' : 'esquerda'} onAvisar={onAvisar} />}
       </span>
     </div>
   );

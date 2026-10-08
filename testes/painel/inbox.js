@@ -23,6 +23,11 @@ async function entrar(p, base, email, senha = 'senha123', destino = '/inbox') {
 // Guarda o corpo das respostas das ações da Inbox (o que de fato chega ao navegador) e, em "acoes",
 // o id e os argumentos de cada ação chamada (para chamá-la de novo direto, sem a tela).
 async function capturar(p, lista, acoes = []) {
+  // Leituras (lista e conversa) vêm de GET /api/painel/ler/*; ações (gravar) continuam em POST /inbox.
+  await p.route((u) => u.pathname.startsWith('/api/painel/ler/'), async (route) => {
+    const r = await route.fetch(); const corpo = await r.text(); lista.push(corpo);
+    await route.fulfill({ response: r, body: corpo });
+  });
   await p.route((u) => u.pathname === '/inbox', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
     acoes.push({ id: route.request().headers()['next-action'], corpo: route.request().postData() || '' });
@@ -75,6 +80,7 @@ insert into wa_conversas (numero_id, wa_id, ultima_em, ultima_resumo, ultima_dir
 insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, midia, resposta_a, status, editada_em, versoes, apagada_em, enviada_em, bruto, erro) values
   ('${NUM}', '${BIA}', 'wamid.TI1', 'entrada', 'contato', 'text', 'Oi, gostaria de marcar uma consulta', null, null, null, null, null, null, ${ONTEM}, '{"segredo":"BRUTO_SECRETO"}', null),
   ('${NUM}', '${BIA}', 'wamid.TI2', 'saida', 'api', 'desconhecido', null, null, null, 'entregue', null, null, null, ${ONTEM} + interval '10 minutes', null, null),
+  ('${NUM}', '${BIA}', 'wamid.TI2b', 'saida', 'api', 'desconhecido', null, null, null, 'entregue', null, null, null, ${ONTEM} + interval '10 minutes 4 seconds', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI3', 'entrada', 'contato', 'image', 'Foto do pedido médico', '{"id":"m1","mime_type":"image/jpeg","caminho":"/midia/CAMINHO_SECRETO.jpg"}', null, null, null, null, null, now() - interval '60 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI4', 'saida', 'celular', 'text', 'Recebido, obrigado!', null, null, 'lida', now() - interval '45 minutes', '["Recebido"]', null, now() - interval '50 minutes', null, '{"x":"ERRO_SECRETO"}'),
   ('${NUM}', '${BIA}', 'wamid.TI5', 'entrada', 'contato', 'text', 'mensagem que vou apagar', null, null, null, null, null, now() - interval '39 minutes', now() - interval '40 minutes', null, null),
@@ -120,7 +126,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const txt = ((await conversa(p).textContent()) || '').replace(/\s+/g, ' ');
   ok('conversa abre com as mensagens', txt.includes('Oi, gostaria de marcar uma consulta') && txt.includes('Pode ser às 15h?'), txt.slice(0, 200));
   ok('mensagem da Sara sem texto', txt.includes('Mensagem da Sara (texto ainda não registrado)'));
-  ok('rótulos por origem (Sara, Equipe (celular), Histórico)', (await conversa(p).locator('[data-direcao="saida"]', { hasText: 'Sara' }).count()) === 1
+  ok('rótulos por origem (Sara, Equipe (celular), Histórico)', (await conversa(p).locator('[data-direcao="saida"]', { hasText: 'Sara' }).count()) === 2
     && txt.includes('Equipe (celular)') && txt.includes('Histórico'));
   ok('foto como etiqueta com a legenda', (await conversa(p).getByText('Foto', { exact: true }).count()) === 1 && txt.includes('Foto do pedido médico'));
   ok('documento com o nome do arquivo (sem repetir)', txt.includes('Documento: exame.pdf') && txt.split('exame.pdf').length === 2);
@@ -128,6 +134,25 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('marcas de editada e apagada', (await conversa(p).locator('[data-id]', { hasText: 'Recebido, obrigado!' }).getByText('editada').count()) === 1
     && (await conversa(p).locator('[data-id]', { hasText: 'mensagem que vou apagar' }).getByText('apagada').count()) === 1);
   ok('reação embaixo da bolha', (await conversa(p).locator('[data-id]', { hasText: 'Recebido, obrigado!' }).getByText('👍').count()) === 1);
+
+  // Texto da IA pelo histórico (visão falas_ia, supabase/visoes/falas_ia_n8n.sql): os dois balões sem texto recebem
+  // os dois parágrafos da resposta, na ordem, e o texto fica gravado na mensagem. A fala do paciente não entra.
+  const quando = (seg) => `to_char(((${ONTEM}) + interval '10 minutes' + interval '${seg} seconds') at time zone 'America/Sao_Paulo', 'DD-MM-YYYY HH24:MI:SS')`;
+  sql(`create table if not exists ia_hist_teste (telefone text, "timestamp" text, conversation_history jsonb);
+       delete from ia_hist_teste;
+       insert into ia_hist_teste values
+         ('${BIA}@s.whatsapp.net', ${quando(-3)}, '{"role":"model","parts":[{"text":"Olá! Eu sou a Sara.\\n\\nComo posso te chamar?"}]}'),
+         ('${BIA}@s.whatsapp.net', ${quando(-60)}, '{"role":"user","parts":[{"text":"FALA_DO_PACIENTE"}]}'),
+         ('${BIA}@s.whatsapp.net', 'data-ruim', '{"role":"model","parts":[{"text":"LINHA_RUIM"}]}');`);
+  sql(fs.readFileSync(__dirname + '/../../supabase/visoes/falas_ia_n8n.sql', 'utf8').replace('public.mensagens_gemini_cliente', 'ia_hist_teste'));
+  await item(p, 'Carlos Ficticio').getByRole('button').click(); await p.waitForTimeout(800);
+  await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Como posso te chamar?').first().waitFor({ timeout: 8000 }).catch(() => {});
+  const txtIa = ((await conversa(p).textContent()) || '').replace(/\s+/g, ' ');
+  ok('texto da Sara vem do histórico, um parágrafo por balão', txtIa.indexOf('Olá! Eu sou a Sara.') >= 0 && txtIa.indexOf('Olá! Eu sou a Sara.') < txtIa.indexOf('Como posso te chamar?')
+    && !txtIa.includes('texto ainda não registrado') && !txtIa.includes('FALA_DO_PACIENTE') && !txtIa.includes('LINHA_RUIM')
+    && (await conversa(p).locator('[data-direcao="saida"]', { hasText: 'Sara' }).count()) === 2, txtIa.slice(0, 220));
+  ok('texto da Sara fica gravado na mensagem', sql(`select string_agg(texto, '|' order by enviada_em) || '#' || count(*) filter (where bruto->>'texto_de' = 'historico_ia') from wa_mensagens where wamid in ('wamid.TI2','wamid.TI2b')`) === 'Olá! Eu sou a Sara.|Como posso te chamar?#2');
   ok('resposta mostra a mensagem citada', ((await conversa(p).locator('[data-id]', { hasText: 'Pode ser às 15h?' }).locator('blockquote').textContent()) || '').includes('Oi, gostaria de marcar'));
   ok('status da saída (lida, enviada)', (await conversa(p).locator('[aria-label="Lida"]').count()) === 1 && (await conversa(p).locator('[aria-label="Enviada"]').count()) === 1);
   const seps = await conversa(p).locator('[role=separator]').allTextContents();

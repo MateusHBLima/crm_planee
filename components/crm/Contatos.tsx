@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { Cartao, Quadro as TQuadro } from '@/lib/painel/crm';
-import { anotarNoContato, carregarAtendimentosDoContato, carregarContatos, carregarNotasDoContato } from '@/lib/painel/acoes';
+import { anotarNoContato } from '@/lib/painel/acoes';
+import { carregarAtendimentosDoContato, carregarContatos, carregarNotasDoContato } from '@/lib/painel/leitura-cliente';
 import { Icone } from '@/components/Icone';
 import { EtapaPill } from './Quadro';
 import { FormContato, NovoAtendimento } from './Formularios';

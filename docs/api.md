@@ -87,3 +87,13 @@ O resultado aparece uma vez só. Cole direto no conector (ou no n8n); não mande
 ## Configuração do deploy
 
 Variável `DATABASE_URL` na stack `painel` do Portainer: a string do "connection pooler" do Supabase (Settings → Database → Connection string). Sem ela, a API responde 503. O conector do Claude usa `https://adm.planeelabia.com/api/mcp/<chave>`.
+
+## Leituras internas das telas (não é API pública)
+
+As telas do painel leem por `GET /api/painel/ler/<recurso>`, com o login da pessoa (cookie), não com chave. Não serve para integração: use a API acima. Os recursos estão em `lib/painel/leituras.ts`:
+
+- **CRM:** `quadro`, `detalhe`, `comercial`, `contatos`, `atendimentos_contato`, `notas_contato`, `historico`, `servico`.
+- **Inbox:** `conversas`, `conversa`.
+- **Avisos para a Planee e Interno:** `planee_empresa`, `faixa`, `avisos`, `aviso`, `saude`, `saude_empresa`, `novidades`, `integracoes`. Do `avisos` em diante, só o master.
+
+Gravar continua por ações do servidor. As rotas GET rodam em paralelo, então a atualização automática não segura o clique da pessoa. O cabeçalho `Server-Timing` mostra o tempo da sessão e do banco em cada pedido.

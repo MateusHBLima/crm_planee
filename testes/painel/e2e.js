@@ -24,7 +24,7 @@ async function entrar(p, email, senha='senha123') {
   await entrar(p, 'semacesso@teste.local'); ok('e-mail sem acesso é barrado', (await p.textContent('[role=alert]')||'').includes('não tem acesso'));
   await entrar(p, 'amanda@teste.local'); ok('Amanda entra e cai no CRM', p.url().endsWith('/crm'), p.url());
   await p.screenshot({ path: out + '01_quadro_claro.png' });
-  const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox e CRM', nav.join(',') === 'Inbox,CRM', nav.join(','));
+  const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox, CRM e Planee (avisos)', nav.join(',') === 'Inbox,CRM,Planee', nav.join(','));
   const cols = await p.$$eval('section[aria-label]', (s) => s.map((x) => x.getAttribute('aria-label'))); ok('colunas por assunto', cols.includes('Receita') && cols.includes('Valores e pagamento'), cols.join('|'));
   ok('secretária não tem filtro de sombra (cartão sombra é só da Planee)', (await p.locator('button:has-text("Só sombra")').count()) === 0);
   // Assumir o cartão da Rita

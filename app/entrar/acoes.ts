@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies, headers } from 'next/headers';
+import { esquecerSessoes } from '@/lib/sessao';
 import { redirect } from 'next/navigation';
 import { bancoConfigurado, central } from '@/lib/db';
 import {
@@ -54,6 +55,7 @@ export async function sair() {
   const c = await cookies();
   const acesso = c.get(COOKIE_ACESSO)?.value;
   if (acesso) await encerrarSessao(acesso);
+  esquecerSessoes();
   c.delete(COOKIE_ACESSO);
   c.delete(COOKIE_RENOVA);
   redirect('/entrar');

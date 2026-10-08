@@ -1,7 +1,8 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { transacao, ErroApi } from '@/lib/db';
+import { transacao, ErroApi, empresaDoBancoPadrao } from '@/lib/db';
+import { avisoDoSistema } from '@/lib/avisos-sistema';
 import { recurso as acharRecurso, type Recurso } from './recursos';
 import { bancoDe, type Chave } from './auth';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
@@ -521,6 +522,18 @@ async function abrirAlerta(c: PoolClient, chave: Chave, pagamentoId: string) {
   return a.rows[0].id as string;
 }
 
+// O comprovante suspeito também entra na fila de avisos da Planee (Interno Planee), um por pagamento: a Planee
+// confere se a análise da IA acertou. Depois do commit; nunca derruba o pedido. Sem dado do paciente no título.
+async function avisarPlanee(chave: Chave, pagamentoId: string, atendimentoId: string) {
+  const empresa = chave.empresa?.id ?? empresaDoBancoPadrao();
+  if (!empresa) return;
+  await avisoDoSistema(empresa, {
+    tipo: 'comprovante_suspeito', chave: `comprovante:${empresa}:${pagamentoId}`,
+    titulo: 'Comprovante suspeito: conferir a análise da IA e o cartão de valores',
+    ref: { alvo: 'cartao', alvo_id: atendimentoId, pagamento_id: pagamentoId },
+  });
+}
+
 // Comprovante reaproveitado: o mesmo ID Pix já está em outro pagamento de outro contato ou de outro agendamento.
 // Marca o pagamento como suspeito (o motivo fica mesmo que a análise da IA venha depois dizendo "ok").
 async function marcarPixRepetido(c: PoolClient, pagamentoId: string) {
@@ -599,7 +612,7 @@ export async function criarPagamento(chave: Chave, corpo: unknown) {
             await c.query('insert into pagamentos_arquivos (pagamento_id, dados) values ($1, $2) on conflict (pagamento_id) do nothing', [x.id, arq.dados]);
             await auditar(c, chave, 'atualizar', 'pagamentos', x.id, { arquivo: { mime: arq.mime, tamanho: arq.dados.length, sha256: arq.sha256 }, repetido: true });
           }
-          return { id: x.id as string, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: (x.alerta_atendimento_id as string) ?? null, repetido: true };
+          return { id: x.id as string, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: (x.alerta_atendimento_id as string) ?? null, repetido: true, novoAlerta: false };
         }
       }
       const linha: Record<string, unknown> = {
@@ -623,8 +636,11 @@ export async function criarPagamento(chave: Chave, corpo: unknown) {
       });
       if (e2e) await marcarPixRepetido(c, id);
       const alerta = await abrirAlerta(c, chave, id);
-      return { id, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: alerta };
-    }, bancoDe(chave));
+      return { id, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: alerta, novoAlerta: Boolean(alerta) };
+    }, bancoDe(chave)).then(async ({ novoAlerta, ...r }) => {
+      if (novoAlerta && r.alerta_atendimento_id) await avisarPlanee(chave, r.id, r.alerta_atendimento_id);
+      return r;
+    });
   } catch (e) {
     if (e instanceof ErroApi) throw e;
     if (semTabela(e)) exigirTabelas(e);
@@ -679,7 +695,10 @@ export async function atualizarPagamento(chave: Chave, id: string, corpo: unknow
       const r = await c.query(`select id, contato_id, servico_id, valor, pago_em, forma, descricao, analise, analise_motivos, alerta_atendimento_id, conferido_em, conferido_por
                                  from pagamentos where id = $1`, [id]);
       return { ...r.rows[0], valor: r.rows[0].valor === null ? null : Number(r.rows[0].valor), alerta_aberto: alerta };
-    }, bancoDe(chave));
+    }, bancoDe(chave)).then(async (r) => {
+      if (r.alerta_aberto) await avisarPlanee(chave, id, r.alerta_aberto);
+      return r;
+    });
   } catch (e) { if (e instanceof ErroApi) throw e; if (semTabela(e)) exigirTabelas(e); if (semColuna(e) && comp) throw falta014(); traduzErroBanco(e); }
 }
 
