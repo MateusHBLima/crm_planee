@@ -1,9 +1,10 @@
 import 'server-only';
-import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
+import { bancoDaEmpresa, central, ErroApi, registrarErro } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 import { completarFalasDaIa } from './falas-ia';
+import { seloDoTelefone, type Selo } from '@/lib/automaticas';
 
 // Inbox: espelho do WhatsApp (fase 1.1) e resposta pelo painel (fase 2.3). Lê as tabelas wa_* que o receptor
 // (servicos/receptor) grava no banco de cada empresa (migração 008). O painel não fala com a Meta: a resposta vai
@@ -60,7 +61,8 @@ export type Mensagem = {
   reacoes: { emoji: string; daEmpresa: boolean }[];
   citada: { encontrada: boolean; tipo: string | null; texto: string | null; direcao: string | null } | null;
 };
-export type ConversaAberta = { conversa: Conversa; mensagens: Mensagem[]; temMais: boolean; fuso: string };
+// selo: mensagens automáticas da IA (follow-up, recusa), migração 017; null sem selo ou sem a 017.
+export type ConversaAberta = { conversa: Conversa; mensagens: Mensagem[]; temMais: boolean; fuso: string; selo: Selo | null };
 
 function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
   let resumo = r.ultima_resumo == null ? null : String(r.ultima_resumo);
@@ -84,17 +86,34 @@ const SELECT_CONVERSA = `
            where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
 
-export async function listarConversas(u: Usuario, busca?: string): Promise<ListaConversas> {
+// Filtro "Em follow-up": o contato recebeu follow-up da IA nos últimos 31 dias e não respondeu depois (migração 017).
+const SQL_EM_FOLLOWUP = `
+        and exists (select 1 from envios_automaticos e join contatos ct on ct.id = e.contato_id
+                     where e.tipo like 'followup%' and e.situacao = 'enviado' and e.quando > now() - interval '31 days'
+                       and ct.automaticas_paradas_em is null
+                       and substr(regexp_replace(e.telefone, '\\D', '', 'g'), 3, 2) = substr(c.wa_id, 3, 2)
+                       and right(regexp_replace(e.telefone, '\\D', '', 'g'), 8) = right(c.wa_id, 8)
+                       and e.quando > coalesce(c.ultima_entrada_em, '-infinity'::timestamptz))`;
+
+export async function listarConversas(u: Usuario, busca?: string, filtro?: string | null): Promise<ListaConversas> {
   const q = String(busca ?? '').trim().slice(0, 80);
   // Busca pelo nome (sem curinga vindo da tela) ou pelos dígitos do número (3 ou mais).
   const nome = q.replace(/[\\%_]/g, (x) => '\\' + x);
   const dig = q.replace(/\D/g, '');
-  const r = await consultar(() => db(u).query(
-    `${SELECT_CONVERSA}
-      where not c.arquivada
-        and ($1 = '' or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
-             or (length($2) >= 3 and c.wa_id like '%' || $2 || '%'))
-      order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
+  const followup = filtro === 'followup';
+  let r;
+  try {
+    r = await consultar(() => db(u).query(
+      `${SELECT_CONVERSA}
+        where not c.arquivada
+          and ($1 = '' or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
+               or (length($2) >= 3 and c.wa_id like '%' || $2 || '%'))${followup ? SQL_EM_FOLLOWUP : ''}
+        order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
+  } catch (e) {
+    // Banco ainda sem a 017: o filtro de follow-up volta vazio, em vez de erro.
+    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString() };
+    throw e;
+  }
   return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString() };
 }
 
@@ -178,7 +197,16 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   });
 
   await registrarAcessoDoMaster(u, numeroId, waId);
-  return { conversa, mensagens, temMais, fuso: fuso() };
+  // Selo das automáticas (follow-up, recusa) só na primeira página: paginar para trás não muda o cabeçalho.
+  let selo: Selo | null = null;
+  if (!antesDeId) {
+    try {
+      const ent = await banco.query('select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2', [numeroId, waId]);
+      selo = await seloDoTelefone(banco, waId, ent.rows[0]?.ultima_entrada_em ? new Date(ent.rows[0].ultima_entrada_em).toISOString() : null);
+      if (selo && u.master) selo = { ...selo, texto: mascararTexto(selo.texto) };
+    } catch (e) { registrarErro('selo das automáticas', e); }
+  }
+  return { conversa, mensagens, temMais, fuso: fuso(), selo };
 }
 
 // A equipe da empresa abriu a conversa: zera as não lidas. O master (Planee) só olha: não muda o estado da clínica.

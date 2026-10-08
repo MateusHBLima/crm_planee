@@ -4,6 +4,7 @@ import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo, RECURSOS } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
+import * as auto from '@/lib/api/automaticas';
 
 // Conector MCP (Streamable HTTP, respostas JSON) para chats do Claude criarem e editarem o CRM.
 // Chave: cabeçalho Authorization: Bearer <chave>, ou no caminho /api/mcp/<chave> para conectores
@@ -23,6 +24,8 @@ const FERRAMENTAS = [
   { name: 'arquivar', description: 'Arquiva um registro (nada é apagado de vez).', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' } }, required: ['recurso', 'id'] } },
   { name: 'ficha_do_contato', description: 'Tudo o que o CRM sabe de um telefone: quem é (nome, final do CPF, desde quando), atendimentos abertos e recentes, notas, oportunidades do funil e as etapas do funil. Use antes de responder para não repetir oferta nem perder o contexto.', inputSchema: { type: 'object', properties: { telefone: { type: 'string', description: 'DDD + número, com ou sem 55' } }, required: ['telefone'] } },
   { name: 'mover_no_funil', description: 'Coloca o telefone numa etapa do funil comercial: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). etapa_id vem de etapas_funil na ficha.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, etapa_id: { type: 'string' }, interesse: { type: 'string' }, valor: { type: 'number' }, nome: { type: 'string' } }, required: ['telefone', 'etapa_id'] } },
+  { name: 'parar_automaticas', description: 'Para (parar=true) ou volta a liberar (parar=false) as mensagens automáticas (aniversário, lembretes, follow-up) para o telefone. Use quando o paciente pedir para não receber mais mensagens.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, parar: { type: 'boolean' }, motivo: { type: 'string' } }, required: ['telefone', 'parar'] } },
+  { name: 'registrar_envio_automatico', description: 'Registra no CRM uma mensagem automática enviada, que falhou ou foi cancelada. "chave" é única por envio: repetir atualiza em vez de duplicar.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, tipo: { type: 'string', description: 'aniversario, lembrete_2d, lembrete_dia, followup_1h, followup_3h, followup_3d, followup_7d, followup_14d, followup_30d ou outro' }, situacao: { type: 'string', enum: ['enviado', 'falhou', 'cancelado'] }, quando: { type: 'string' }, texto: { type: 'string' }, wamid: { type: 'string' }, motivo: { type: 'string' }, servico: { type: 'object', properties: { sistema: { type: 'string' }, codigo_externo: { type: 'string' } } }, chave: { type: 'string' } }, required: ['telefone', 'tipo', 'situacao', 'chave'] } },
   { name: 'ler_config', description: 'Lê a configuração do CRM (todas ou uma chave).', inputSchema: { type: 'object', properties: { chave: { type: 'string' } } } },
   { name: 'definir_config', description: 'Cria ou altera uma configuração do CRM (ex.: termo_contato, etapas_atendimento, campos_cartao).', inputSchema: { type: 'object', properties: { chave: { type: 'string' }, valor: {} }, required: ['chave', 'valor'] } },
 ];
@@ -44,6 +47,8 @@ async function chamar(chaveTexto: string | null, host: string | null, nome: stri
     case 'arquivar': return s.arquivar(chave, rec, String(a.id ?? ''));
     case 'ficha_do_contato': return s.ficha(chave, a.telefone);
     case 'mover_no_funil': return s.moverNoFunil(chave, a);
+    case 'parar_automaticas': return auto.recusaAutomaticas(chave, a);
+    case 'registrar_envio_automatico': return auto.registrarEnvioAutomatico(chave, a);
     case 'ler_config': return s.lerConfig(chave, a.chave ? String(a.chave) : undefined);
     case 'definir_config': return s.definirConfig(chave, String(a.chave ?? ''), a.valor);
     default: throw new ErroApi(404, `Ferramenta "${nome}" não existe.`);

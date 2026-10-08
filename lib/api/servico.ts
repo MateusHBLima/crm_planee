@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { transacao, ErroApi, empresaDoBancoPadrao } from '@/lib/db';
 import { avisoDoSistema } from '@/lib/avisos-sistema';
+import { resumoParaFicha } from '@/lib/automaticas';
 import { recurso as acharRecurso, type Recurso } from './recursos';
 import { bancoDe, type Chave } from './auth';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
@@ -23,7 +24,7 @@ function validarId(r: Recurso, id: string) {
   if (!ok) throw new ErroApi(400, r.idTipo === 'uuid' ? 'id inválido: esperado uuid.' : 'id inválido: use letras minúsculas, números, _ ou -.');
 }
 
-function exigirEscopo(chave: Chave, escopo: string) {
+export function exigirEscopo(chave: Chave, escopo: string) {
   if (!chave.escopos.includes(escopo)) {
     throw new ErroApi(403, chave.usuario_id ? 'Você não tem permissão para isso nesta empresa.' : `Esta chave não tem o escopo "${escopo}".`);
   }
@@ -51,7 +52,7 @@ function traduzErroBanco(e: unknown): never {
   throw e;
 }
 
-async function auditar(c: PoolClient, chave: Chave, acao: string, recurso: string, alvo: string | null, detalhe: unknown) {
+export async function auditar(c: PoolClient, chave: Chave, acao: string, recurso: string, alvo: string | null, detalhe: unknown) {
   const d = detalhe === undefined ? null : JSON.stringify(detalhe);
   // Escrita feita por uma pessoa no painel grava usuario_id (coluna da migração 003).
   if (chave.usuario_id) {
@@ -233,7 +234,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
     chaveTelefone(tel),
   );
   const etapas = await db.query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`);
-  if (!cont.rowCount) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows };
+  if (!cont.rowCount) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows, automaticas: { permitidas: true, desde: null, motivo: null, por: null, ultimos_envios: [] } };
   const ids = cont.rows.map((c) => c.id);
   const [atend, ops, notas] = await Promise.all([
     db.query(
@@ -265,9 +266,12 @@ export async function ficha(chave: Chave, telefone: unknown) {
          from pagamentos where contato_id = any($1) and not arquivado order by criado_em desc limit 20`, [ids])
       .catch((e) => { if ((e as { code?: string }).code === '42P01') return { rows: [] }; throw e; }),
   ]);
+  // Mensagens automáticas (migração 017): se pode enviar e os últimos envios. A IA confere antes de cada envio.
+  const automaticas = await resumoParaFicha(db, ids);
   return {
     encontrado: true,
     telefone: tel,
+    automaticas,
     servicos: servs.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
     pagamentos: pags.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
     contatos: cont.rows.map((c) => ({
@@ -353,14 +357,14 @@ function exigirTabelas(e: unknown): never {
   throw e;
 }
 
-const texto = (v: unknown, max: number) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
+export const texto = (v: unknown, max: number) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 function numero(v: unknown, campo: string): number | null {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
   if (!Number.isFinite(n) || n < 0 || n > 10_000_000) throw new ErroApi(400, `${campo} inválido.`);
   return Math.round(n * 100) / 100;
 }
-function quando(v: unknown, campo: string): string | null {
+export function quando(v: unknown, campo: string): string | null {
   if (v === undefined || v === null || v === '') return null;
   const d = new Date(String(v));
   if (Number.isNaN(d.getTime())) throw new ErroApi(400, `${campo}: use data e hora ISO (ex.: 2026-10-14T15:00:00-03:00).`);
@@ -368,7 +372,7 @@ function quando(v: unknown, campo: string): string | null {
 }
 
 // Acha o contato pelo telefone (com e sem o 9) ou cria. Nome só preenche contato sem nome.
-async function contatoDoTelefone(c: PoolClient, chave: Chave, telefone: unknown, nome: string | null): Promise<string> {
+export async function contatoDoTelefone(c: PoolClient, chave: Chave, telefone: unknown, nome: string | null): Promise<string> {
   const tel = normalizarTelefone(telefone);
   const cont = await c.query(`select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`, chaveTelefone(tel));
   if (cont.rowCount) {

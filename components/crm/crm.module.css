@@ -225,3 +225,12 @@
 .cartaoPagTopo { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; }
 .motivos { margin: 0; padding-left: 18px; font-size: 13px; color: var(--rs-ink); }
 .linkAcao { display: inline-flex; align-items: center; text-decoration: none; color: var(--ink); }
+
+/* Mensagens automáticas da Sara na ficha e no cartão (migração 017) */
+.blocoAuto { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); margin-bottom: 10px; }
+.linhaAuto { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.seloAuto { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--fn-bg); color: var(--fn-ink); line-height: 1.35; }
+.seloAuto[data-selo='ok'] { background: var(--surface-3); color: var(--ink-2); }
+.seloAuto[data-selo='parou'] { background: var(--rs-bg); color: var(--rs-ink); }
+.seloAuto[data-selo='sem_resposta'] { background: var(--ag-bg); color: var(--ag-ink); }
+.seloAuto[data-selo='respondeu'] { background: var(--ia-bg); color: var(--ia-ink); }

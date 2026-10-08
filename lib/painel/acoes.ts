@@ -120,6 +120,10 @@ export async function carregarServico(id: string) {
 export async function conferirPagamento(contatoId: string, pagamentoId: string, sim: boolean) {
   return comUsuario(async (u) => { await sv.conferir(u, pagamentoId, sim); return sv.historicoContato(u, contatoId); });
 }
+// Mensagens automáticas da IA: parar ou voltar a enviar para o contato (crm.editar). Devolve o histórico atualizado.
+export async function mudarAutomaticas(contatoId: string, parar: boolean, motivo?: string) {
+  return comUsuario(async (u) => { await sv.mudarAutomaticas(u, contatoId, parar, motivo); return sv.historicoContato(u, contatoId); });
+}
 export async function registrarPagamento(contatoId: string, form: FormData) {
   return comUsuario(async (u) => { await sv.registrarPagamento(u, contatoId, form); return sv.historicoContato(u, contatoId); });
 }

@@ -28,7 +28,7 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   notas_contato: (u, q) => crm.notasDoContato(u, exigir(q, 'id')),
   historico: (u, q) => sv.historicoContato(u, exigir(q, 'id')),
   servico: (u, q) => sv.detalheServico(u, exigir(q, 'id')),
-  conversas: (u, q) => inbox.listarConversas(u, q.get('busca') ?? undefined),
+  conversas: (u, q) => inbox.listarConversas(u, q.get('busca') ?? undefined, q.get('filtro')),
   // Abrir ou atualizar a conversa marca como lida (a equipe; o master só olha). Paginar para trás não marca.
   conversa: async (u, q) => {
     const numero = exigir(q, 'numero'); const wa = exigir(q, 'wa'); const antes = q.get('antes');

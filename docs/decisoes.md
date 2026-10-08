@@ -99,6 +99,12 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Saúde:** uma linha por cliente com o detalhe por empresa (números, falhas, integrações, avisos).
     - **Novidades e manutenção:** para todas as empresas ou só uma; manutenção vira faixa no topo das telas até o fim.
 
+30. **Mensagens automáticas da IA no CRM (08/10).**
+    - **O relógio fica no n8n da Sara.** A tabela de toques e o workflow de 5 em 5 minutos são dela; o painel não envia mensagem (regra 7).
+    - **A recusa ("não quero mais receber") fica no contato do CRM.** Vale para todos os cadastros do mesmo telefone, e a IA confere a ficha antes de cada envio.
+    - **Cada envio é registrado** (enviado, falhou ou cancelado) com uma chave única. Aparece no histórico do contato.
+    - **O follow-up aparece como selo calculado** na conversa e no histórico, mais o filtro "Em follow-up" na Inbox. Não vira etapa do funil nem cartão do quadro.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

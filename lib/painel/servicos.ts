@@ -1,10 +1,12 @@
 import 'server-only';
 import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
 import * as api from '@/lib/api/servico';
+import { recusaAutomaticas } from '@/lib/api/automaticas';
 import { atorDe, pode, type Usuario } from '@/lib/sessao';
 import type { Chave } from '@/lib/api/auth';
 import { auditar } from './gestao';
 import { mascararTexto } from './crm';
+import { enviosDe, recusaDe, seloDosContatos, type Recusa, type Selo } from '@/lib/automaticas';
 
 // Histórico do paciente e serviços/pagamentos para as telas do CRM (migração 013).
 // Ver serviços e comprovantes: pagamentos.ver. Conferir e registrar pagamento: pagamentos.conferir.
@@ -36,10 +38,12 @@ export type Pagamento = {
   comprovante: { pagador: string | null; banco: string | null; id_pix: string | null; recebedor: string | null; recebedor_documento: string | null; emitido_em: string | null } | null;
 };
 export type EventoHistorico = {
-  quando: string; tipo: 'atendimento' | 'nota' | 'servico' | 'pagamento'; texto: string; quem: string | null;
+  quando: string; tipo: 'atendimento' | 'nota' | 'servico' | 'pagamento' | 'automatica'; texto: string; quem: string | null;
   ref: { tipo: 'atendimento' | 'servico' | 'pagamento'; id: string } | null; destaque?: 'alerta' | 'ok';
 };
-export type Historico = { eventos: EventoHistorico[]; servicos: Servico[]; pagamentos: Pagamento[]; podePagamentos: boolean; instalado: boolean };
+// automaticas: mensagens automáticas da IA (migração 017). null = banco sem a 017.
+export type Automaticas = { recusa: Recusa | null; selo: Selo | null; podeMudar: boolean };
+export type Historico = { eventos: EventoHistorico[]; servicos: Servico[]; pagamentos: Pagamento[]; podePagamentos: boolean; instalado: boolean; automaticas: Automaticas | null };
 
 const SITUACAO: Record<string, string> = { agendado: 'agendado', confirmado: 'confirmado', realizado: 'realizado', cancelado: 'cancelado', faltou: 'faltou' };
 const reais = (v: number | null) => (v === null ? '' : 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
@@ -133,8 +137,9 @@ export async function historicoContato(u: Usuario, contatoId: string): Promise<H
       if (p.conferido_em) eventos.push({ quando: p.conferido_em, tipo: 'pagamento', texto: 'Comprovante conferido', quem: p.conferido_por, ref, destaque: 'ok' });
     }
   }
+  const automaticas = await automaticasDoContato(u, banco, contatoId, eventos);
   eventos.sort((x, y) => y.quando.localeCompare(x.quando));
-  return { eventos, servicos, pagamentos, podePagamentos: podePag, instalado };
+  return { eventos, servicos, pagamentos, podePagamentos: podePag, instalado, automaticas };
 }
 
 // Detalhe do agendamento: tudo do serviço e os comprovantes dele.
@@ -192,4 +197,57 @@ export async function arquivoParaTela(u: Usuario, pagamentoId: string) {
   const a = await api.arquivoDoPagamento({ ...atorDe(u), escopos: ['leitura'] }, pagamentoId);
   if (u.master && u.empresa) await auditar(central(), u, u.empresa.id, 'abrir_comprovante', pagamentoId, undefined).catch(() => undefined);
   return a;
+}
+
+// ---- Mensagens automáticas da IA no histórico (migração 017) ----
+
+const SITUACAO_ENVIO: Record<string, string> = { enviado: 'enviado', falhou: 'falhou', cancelado: 'cancelado' };
+
+// Todos os cadastros do mesmo telefone contam (a recusa e os envios são da pessoa).
+async function mesmoTelefone(banco: ReturnType<typeof db>, contatoId: string): Promise<string[]> {
+  const r = await banco.query(
+    `select o.id from contatos c join contatos o on not o.arquivado
+        and substr(regexp_replace(o.telefone, '\\D', '', 'g'), 3, 2) = substr(regexp_replace(c.telefone, '\\D', '', 'g'), 3, 2)
+        and right(regexp_replace(o.telefone, '\\D', '', 'g'), 8) = right(regexp_replace(c.telefone, '\\D', '', 'g'), 8)
+      where c.id = $1 and length(regexp_replace(c.telefone, '\\D', '', 'g')) >= 10`, [contatoId]);
+  const ids = r.rows.map((x) => String(x.id));
+  return ids.includes(contatoId) ? ids : [contatoId, ...ids];
+}
+
+async function automaticasDoContato(u: Usuario, banco: ReturnType<typeof db>, contatoId: string, eventos: EventoHistorico[]): Promise<Automaticas | null> {
+  try {
+    await banco.query('select automaticas_paradas_em from contatos limit 0');
+  } catch (e) { if (semTabela(e)) return null; throw e; }
+  const ids = await mesmoTelefone(banco, contatoId);
+  const [recusa, envios] = await Promise.all([recusaDe(banco, ids), enviosDe(banco, ids, 100)]);
+  const masc = (t: string) => (u.master ? mascararTexto(t) : t);
+  for (const e of envios) {
+    const motivo = e.motivo ? `: ${masc(e.motivo)}` : '';
+    const trecho = e.situacao === 'enviado' && e.texto ? ` · "${masc(e.texto).replace(/\s+/g, ' ').slice(0, 120)}${e.texto.length > 120 ? '…' : ''}"` : '';
+    eventos.push({
+      quando: e.quando, tipo: 'automatica', texto: `${e.tipo_nome} ${SITUACAO_ENVIO[e.situacao] ?? e.situacao}${motivo}${trecho}`,
+      quem: e.criado_por, ref: null, destaque: e.situacao === 'falhou' ? 'alerta' : undefined,
+    });
+  }
+  if (recusa) eventos.push({ quando: recusa.desde, tipo: 'automatica', texto: `Parou as mensagens automáticas${recusa.motivo ? `: ${masc(recusa.motivo)}` : ''}`, quem: recusa.por, ref: null, destaque: 'alerta' });
+  // Última mensagem recebida do telefone (Inbox), para o selo saber se o paciente respondeu ao follow-up.
+  let ultimaEntrada: string | null = null;
+  try {
+    const r = await banco.query(
+      `select max(w.ultima_entrada_em) as em from wa_conversas w join contatos c on c.id = $1
+        where substr(w.wa_id, 3, 2) = substr(regexp_replace(c.telefone, '\\D', '', 'g'), 3, 2)
+          and right(w.wa_id, 8) = right(regexp_replace(c.telefone, '\\D', '', 'g'), 8)`, [contatoId]);
+    ultimaEntrada = r.rows[0]?.em ? new Date(r.rows[0].em).toISOString() : null;
+  } catch (e) { if (!semTabela(e)) throw e; }
+  let selo = await seloDosContatos(banco, ids, ultimaEntrada);
+  if (selo && u.master) selo = { ...selo, texto: mascararTexto(selo.texto) };
+  return { recusa: recusa && u.master ? { ...recusa, motivo: recusa.motivo ? mascararTexto(recusa.motivo) : null } : recusa, selo, podeMudar: pode(u, 'crm.editar') };
+}
+
+// Parar ou voltar a enviar as mensagens automáticas pela ficha do contato (equipe com crm.editar).
+export async function mudarAutomaticas(u: Usuario, contatoId: string, parar: boolean, motivo?: string | null) {
+  validar(contatoId, 'Contato');
+  db(u);
+  if (!pode(u, 'crm.editar')) throw new ErroApi(403, 'Você não tem permissão para mudar isso nesta empresa.');
+  await recusaAutomaticas(atorDe(u), { contato_id: contatoId, parar, motivo: motivo ?? undefined });
 }

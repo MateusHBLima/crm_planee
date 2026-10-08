@@ -72,6 +72,9 @@ function criarDatas(fuso: string) {
 export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string }) {
   const [lista, setLista] = useState(inicial);
   const [busca, setBusca] = useState('');
+  const [soFollowup, setSoFollowup] = useState(false);
+  const filtroRef = useRef<string | null>(null);
+  filtroRef.current = soFollowup ? 'followup' : null;
   const [aberta, setAberta] = useState<Chave | null>(null);
   const [dados, setDados] = useState<Aberta | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -113,7 +116,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     setCarregando(false);
     if (!d) return;
     ajuste.current = { tipo: 'fim' };
-    setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais });
+    setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
     atualizarLinha(d.conversa);
   }, [tratar, atualizarLinha]);
 
@@ -145,7 +148,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
       if (!x) return x;
       const mensagens = mesclar(x.mensagens, d.mensagens);
       if (pertoDoFim && mensagens.length !== x.mensagens.length) ajuste.current = { tipo: 'fim' };
-      return { ...x, conversa: d.conversa, mensagens };
+      return { ...x, conversa: d.conversa, mensagens, selo: d.selo };
     });
   }, []);
 
@@ -202,12 +205,12 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   useEffect(() => {
     if (primeira.current) { primeira.current = false; return; }
     const t = window.setTimeout(async () => {
-      const r = await carregarConversas(busca);
+      const r = await carregarConversas(busca, filtroRef.current);
       if (r.ok && buscaRef.current === busca) setLista(r.dados);
       else if (!r.ok) tratar(r);
     }, 300);
     return () => window.clearTimeout(t);
-  }, [busca, tratar]);
+  }, [busca, soFollowup, tratar]);
 
   // Atualização automática da lista e da conversa aberta, só com a aba do navegador visível.
   useEffect(() => {
@@ -216,7 +219,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
       if (parado || document.hidden) return;
       const k = abertaRef.current;
       const [l, conv] = await Promise.all([
-        carregarConversas(buscaRef.current),
+        carregarConversas(buscaRef.current, filtroRef.current),
         k ? abrirConversa(k.numero_id, k.wa_id) : Promise.resolve(null),
       ]);
       if (parado) return;
@@ -251,6 +254,10 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
             <Icone nome="busca" tamanho={16} />
             <input id="busca-inbox" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou número" />
           </label>
+          <div className={c.filtros}>
+            <button type="button" className={c.filtro} aria-pressed={soFollowup} onClick={() => setSoFollowup((x) => !x)}
+              title="Contatos que receberam follow-up da Sara e ainda não responderam">Em follow-up</button>
+          </div>
           {falhouAtualizar && <p className={c.subErro}>Sem conexão com o banco agora. Tentando de novo.</p>}
           {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado, acesso registrado e as não lidas da clínica não mudam.</p>}
         </div>
@@ -277,7 +284,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
         </ul>
         {!total && (
           <div className={c.vazio}>
-            {busca.trim() ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda. Quando o WhatsApp da empresa receber mensagens, elas aparecem aqui.'}
+            {soFollowup ? 'Ninguém em follow-up sem resposta agora.' : busca.trim() ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda. Quando o WhatsApp da empresa receber mensagens, elas aparecem aqui.'}
           </div>
         )}
       </section>
@@ -309,6 +316,11 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                           ? `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}`
                           : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
                       </span>
+                      {dados?.selo && (
+                        <span className={c.seloAuto} data-selo={dados.selo.tipo} title={`Mensagens automáticas da Sara · desde ${datas.hora(dados.selo.desde)}`}>
+                          {dados.selo.texto}
+                        </span>
+                      )}
                     </span>
                   </div>
                   {podeResponder && (

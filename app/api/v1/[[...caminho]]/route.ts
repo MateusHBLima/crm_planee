@@ -4,6 +4,7 @@ import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
+import * as auto from '@/lib/api/automaticas';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,11 @@ async function tratar(req: NextRequest, ctx: Ctx) {
     if (rec === 'ficha' && !id) {
       if (req.method !== 'GET') throw new ErroApi(405, 'Use GET /api/v1/ficha?telefone=55...');
       return NextResponse.json(await s.ficha(chave, req.nextUrl.searchParams.get('telefone')));
+    }
+    // Mensagens automáticas da IA (migração 017): recusa do contato e registro de cada envio.
+    if (rec === 'automaticas' && (id === 'recusa' || id === 'envios')) {
+      if (req.method !== 'POST') throw new ErroApi(405, `Use POST /api/v1/automaticas/${id}.`);
+      return NextResponse.json(id === 'recusa' ? await auto.recusaAutomaticas(chave, await corpo(req)) : await auto.registrarEnvioAutomatico(chave, await corpo(req)));
     }
     if (rec === 'funil' && !id) {
       if (req.method !== 'POST') throw new ErroApi(405, 'Use POST /api/v1/funil com {"telefone", "etapa_id"}.');

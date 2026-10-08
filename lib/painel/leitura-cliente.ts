@@ -32,7 +32,7 @@ export const carregarAtendimentosDoContato = (id: string): R<typeof crm.lerAtend
 export const carregarNotasDoContato = (id: string): R<typeof crm.notasDoContato> => ler('notas_contato', { id });
 export const carregarHistorico = (id: string): R<typeof sv.historicoContato> => ler('historico', { id });
 export const carregarServico = (id: string): R<typeof sv.detalheServico> => ler('servico', { id });
-export const carregarConversas = (busca?: string): R<typeof inbox.listarConversas> => ler('conversas', { busca });
+export const carregarConversas = (busca?: string, filtro?: string | null): R<typeof inbox.listarConversas> => ler('conversas', { busca, filtro });
 export const abrirConversa = (numeroId: string, waId: string, antesDeId?: string | null): R<typeof inbox.lerConversa> =>
   ler('conversa', { numero: numeroId, wa: waId, antes: antesDeId ?? null });
 
