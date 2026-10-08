@@ -23,8 +23,8 @@ export function ordenar(a: Cartao, b: Cartao) {
     || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; agora: number | null; ocupado: boolean; podeEditar: boolean; podeConfig: boolean;
+export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
   onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort(ordenar);
@@ -52,7 +52,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, p
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : 'Nada aberto'}</div>}
           </section>
         );

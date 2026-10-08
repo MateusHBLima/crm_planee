@@ -337,6 +337,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
   await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
   await p.goto(GERAL + '/inbox');
+  await item(p, 'Beatriz Ficticia').first().waitFor({ timeout: 8000 }).catch(() => undefined); // a lista chega depois da tela (09/10)
   ok('master abre a Inbox da empresa escolhida', p.url().endsWith('/inbox') && (await item(p, 'Beatriz Ficticia').count()) === 1, p.url());
   ok('master vê o aviso da visão da Planee', (await p.getByText(/Visão da Planee/).count()) === 1);
   await item(p, 'Beatriz Ficticia').getByRole('button').click();

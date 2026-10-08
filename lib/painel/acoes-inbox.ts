@@ -12,10 +12,7 @@ export async function carregarConversas(busca?: string) {
 // Abre (ou atualiza, ou pagina para trás) uma conversa. A equipe da empresa marca como lida ao abrir;
 // o master só olha. Devolve as mensagens e a linha da lista já com as não lidas atualizadas.
 export async function abrirConversa(numeroId: string, waId: string, antesDeId?: string | null) {
-  return comUsuario(async (u) => {
-    if (!antesDeId) await inbox.marcarLida(u, numeroId, waId);
-    return inbox.lerConversa(u, numeroId, waId, antesDeId);
-  }, 'inbox');
+  return comUsuario((u) => inbox.lerConversa(u, numeroId, waId, antesDeId, { marcar: !antesDeId }), 'inbox');
 }
 
 // Resposta pelo painel: vai ao webhook do n8n; a mensagem entra no espelho quando o receptor registra o envio.

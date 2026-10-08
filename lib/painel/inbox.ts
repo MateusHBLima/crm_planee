@@ -140,52 +140,74 @@ async function registrarAcessoDoMaster(u: Usuario, numeroId: string, waId: strin
   if (!ja.rowCount) await auditar(c, u, u.empresa.id, 'abrir_conversa', alvo, undefined);
 }
 
-export async function lerConversa(u: Usuario, numeroId: string, waId: string, antesDeId?: string | null): Promise<ConversaAberta> {
+// Abrir a conversa (09/10): uma ida ao banco traz o resumo da conversa, a página de mensagens, as reações e as
+// citadas; depois, em paralelo, o texto da Sara que faltava, o selo, o "lida" e o registro de acesso do master.
+// Antes eram ~8 idas em fila (~2 s com o banco em outra região); agora são 2.
+export async function lerConversa(u: Usuario, numeroId: string, waId: string, antesDeId?: string | null, opcoes: { marcar?: boolean } = {}): Promise<ConversaAberta> {
   validar(numeroId, waId);
   if (antesDeId != null && !/^\d{1,18}$/.test(String(antesDeId))) throw new ErroApi(400, 'Página inválida.');
-  const conversa = await lerConversaResumo(u, numeroId, waId);
   const banco = db(u);
   // Página mais recente, ou a anterior a uma mensagem (mesma ordem da tela: horário da Meta e id).
   const r = await consultar(() => banco.query(
-    `select m.id::text as id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
-            m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
-            m.editada_em, m.apagada_em, m.enviada_em
-       from wa_mensagens m
-      where m.numero_id = $1 and m.wa_id = $2 and m.tipo <> 'reaction'
-        and ($3::bigint is null or (m.enviada_em, m.id) < (select a.enviada_em, a.id from wa_mensagens a
-                                                            where a.id = $3::bigint and a.numero_id = $1 and a.wa_id = $2))
-      order by m.enviada_em desc, m.id desc limit $4`, [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
-  const temMais = r.rows.length > POR_PAGINA;
-  const linhas = r.rows.slice(0, POR_PAGINA).reverse();
-  // Mensagens da IA sem texto (a Meta só devolve o status): completa pelo histórico da IA (lib/painel/falas-ia.ts).
-  await completarFalasDaIa(banco, waId, linhas);
+    `with conv as (${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2),
+     pag as (
+       select m.id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
+              m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
+              m.editada_em, m.apagada_em, m.enviada_em, coalesce(m.bruto->>'texto_de', '') as texto_de
+         from wa_mensagens m
+        where exists (select 1 from conv) and m.numero_id = $1 and m.wa_id = $2 and m.tipo <> 'reaction'
+          and ($3::bigint is null or (m.enviada_em, m.id) < (select a.enviada_em, a.id from wa_mensagens a
+                                                              where a.id = $3::bigint and a.numero_id = $1 and a.wa_id = $2))
+        order by m.enviada_em desc, m.id desc limit $4)
+     select (select row_to_json(conv) from conv) as conversa,
+            coalesce((select json_agg(json_build_object('id', p.id::text, 'wamid', p.wamid, 'direcao', p.direcao, 'por', p.por, 'origem', p.origem,
+                        'tipo', p.tipo, 'texto', p.texto, 'resposta_a', p.resposta_a, 'status', p.status, 'mime_type', p.mime_type,
+                        'filename', p.filename, 'tem_midia', p.tem_midia, 'editada_em', p.editada_em, 'apagada_em', p.apagada_em,
+                        'enviada_em', p.enviada_em, 'texto_de', p.texto_de) order by p.enviada_em desc, p.id desc) from pag p), '[]'::json) as msgs,
+            coalesce((select json_agg(x) from (select wamid, autor, emoji from wa_reacoes
+                        where numero_id = $1 and wamid in (select wamid from pag) order by em) x), '[]'::json) as reacoes,
+            coalesce((select json_agg(x) from (select wamid, tipo, left(texto, 160) as texto, direcao from wa_mensagens
+                        where numero_id = $1 and wamid in (select resposta_a from pag where resposta_a is not null)) x), '[]'::json) as citadas`,
+    [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
+  const x = r.rows[0] ?? {};
+  if (!x.conversa) throw new ErroApi(404, 'Conversa não encontrada.');
+  const conversa = limparConversa(u, x.conversa as Record<string, unknown>);
+  const todas = x.msgs as Record<string, unknown>[];
+  const temMais = todas.length > POR_PAGINA;
+  const linhas = todas.slice(0, POR_PAGINA).reverse();
+  const primeira = !antesDeId;
+  const marcar = Boolean(opcoes.marcar) && primeira && !u.master;
+  const entrada = (x.conversa as Record<string, unknown>).ultima_entrada_em;
 
-  const wamids = linhas.map((m) => m.wamid as string);
-  const citados = [...new Set(linhas.map((m) => m.resposta_a as string | null).filter((x): x is string => Boolean(x)))];
-  const [reacoes, citadas] = await Promise.all([
-    wamids.length
-      ? banco.query(`select wamid, autor, emoji from wa_reacoes where numero_id = $1 and wamid = any($2::text[]) order by em`, [numeroId, wamids])
-      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
-    citados.length
-      ? banco.query(`select wamid, tipo, left(texto, 160) as texto, direcao from wa_mensagens where numero_id = $1 and wamid = any($2::text[])`, [numeroId, citados])
-      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+  // Em paralelo: o texto da Sara que faltava (lib/painel/falas-ia.ts), o selo das automáticas (só na primeira página),
+  // o "lida" da equipe e o registro de acesso do master. Selo e registro são extras: falha neles não derruba a tela.
+  const [, seloBruto] = await Promise.all([
+    completarFalasDaIa(banco, waId, linhas),
+    primeira
+      ? seloDoTelefone(banco, waId, entrada ? new Date(entrada as string).toISOString() : null).catch((e) => { registrarErro('selo das automáticas', e); return null; })
+      : Promise.resolve(null),
+    marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(),
+    registrarAcessoDoMaster(u, numeroId, waId),
   ]);
+  if (marcar) conversa.nao_lidas = 0;
+  const selo: Selo | null = seloBruto && u.master ? { ...seloBruto, texto: mascararTexto(seloBruto.texto) } : seloBruto;
+
   const porWamid = new Map<string, Mensagem['reacoes']>();
-  for (const x of reacoes.rows) {
-    const l = porWamid.get(String(x.wamid)) ?? [];
-    l.push({ emoji: String(x.emoji), daEmpresa: x.autor === 'empresa' });
-    porWamid.set(String(x.wamid), l);
+  for (const y of x.reacoes as Record<string, unknown>[]) {
+    const l = porWamid.get(String(y.wamid)) ?? [];
+    l.push({ emoji: String(y.emoji), daEmpresa: y.autor === 'empresa' });
+    porWamid.set(String(y.wamid), l);
   }
   const mascarar = (t: string | null) => (t && u.master ? mascararTexto(t) : t);
-  const citadaPor = new Map(citadas.rows.map((x) => [String(x.wamid), x]));
+  const citadaPor = new Map((x.citadas as Record<string, unknown>[]).map((y) => [String(y.wamid), y]));
 
   const mensagens: Mensagem[] = linhas.map((m) => {
     const cit = m.resposta_a ? citadaPor.get(String(m.resposta_a)) : undefined;
     return {
-      id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao, origem: m.origem, tipo: String(m.tipo),
+      id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao as Mensagem['direcao'], origem: m.origem as Mensagem['origem'], tipo: String(m.tipo),
       texto: mascarar(m.texto == null ? null : String(m.texto)),
-      midia: m.tem_midia ? { mime_type: m.mime_type ?? null, filename: m.filename ?? null } : null,
-      status: m.direcao === 'saida' ? (m.status ?? null) : null,
+      midia: m.tem_midia ? { mime_type: (m.mime_type as string | null) ?? null, filename: (m.filename as string | null) ?? null } : null,
+      status: m.direcao === 'saida' ? ((m.status as string | null) ?? null) : null,
       editada: Boolean(m.editada_em), apagada: Boolean(m.apagada_em), em: iso(m.enviada_em) as string,
       reacoes: porWamid.get(String(m.wamid)) ?? [],
       citada: m.resposta_a
@@ -195,17 +217,6 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
         : null,
     };
   });
-
-  await registrarAcessoDoMaster(u, numeroId, waId);
-  // Selo das automáticas (follow-up, recusa) só na primeira página: paginar para trás não muda o cabeçalho.
-  let selo: Selo | null = null;
-  if (!antesDeId) {
-    try {
-      const ent = await banco.query('select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2', [numeroId, waId]);
-      selo = await seloDoTelefone(banco, waId, ent.rows[0]?.ultima_entrada_em ? new Date(ent.rows[0].ultima_entrada_em).toISOString() : null);
-      if (selo && u.master) selo = { ...selo, texto: mascararTexto(selo.texto) };
-    } catch (e) { registrarErro('selo das automáticas', e); }
-  }
   return { conversa, mensagens, temMais, fuso: fuso(), selo };
 }
 

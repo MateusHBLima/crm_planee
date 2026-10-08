@@ -17,7 +17,9 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   // Comprovante anexado pela tela (até 10 MB) vai numa ação do servidor.
-  experimental: { serverActions: { bodySizeLimit: '12mb' } },
+  // staleTimes: voltar a uma tela visitada há menos de 30 s não pede a página de novo ao servidor (09/10). As telas
+  // não trazem dados na página (vêm pelas leituras GET, que continuam conferindo sessão e permissão a cada pedido).
+  experimental: { serverActions: { bodySizeLimit: '12mb' }, staleTimes: { dynamic: 30 } },
   async headers() {
     return [{ source: '/:path*', headers: SEGURANCA }];
   },

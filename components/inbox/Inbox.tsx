@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
 import { assumirConversa, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
+import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
@@ -69,8 +70,14 @@ function criarDatas(fuso: string) {
   };
 }
 
-export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string }) {
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string; empresaId?: string };
+
+export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
+  const inicialRef = useRef(inicial);
+  // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
+  const memLista = `${empresaId}:conversas`;
+  const memConversa = useCallback((k: Chave) => `${empresaId}:conversa:${chaveDe(k)}`, [empresaId]);
   const [busca, setBusca] = useState('');
   const [soFollowup, setSoFollowup] = useState(false);
   const filtroRef = useRef<string | null>(null);
@@ -110,15 +117,41 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   }, []);
 
   const abrir = useCallback(async (k: Chave) => {
-    setAberta(k); setDados(null); setCarregando(true); setAviso(null);
+    const guardada = lembrado<Aberta>(memConversa(k));
+    setAberta(k); setDados(guardada ?? null); setCarregando(!guardada); setAviso(null);
+    if (guardada) ajuste.current = { tipo: 'fim' };
+    // A equipe abriu: as não lidas somem na hora (o servidor confirma em seguida). O master só olha.
+    if (!mascarado) setLista((l) => ({ ...l, conversas: l.conversas.map((x) => (mesma(x, k) && x.nao_lidas ? { ...x, nao_lidas: 0 } : x)) }));
     const d = tratar(await abrirConversa(k.numero_id, k.wa_id));
     if (!mesma(abertaRef.current, k)) return;
     setCarregando(false);
     if (!d) return;
-    ajuste.current = { tipo: 'fim' };
-    setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    if (guardada) aplicarAtualizacaoRef.current({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    else {
+      ajuste.current = { tipo: 'fim' };
+      setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    }
     atualizarLinha(d.conversa);
-  }, [tratar, atualizarLinha]);
+  }, [tratar, atualizarLinha, memConversa, mascarado]);
+
+  // Leitura antecipada: o mouse parou numa conversa da lista por um instante. Quando a pessoa clica, as mensagens
+  // já estão na memória e aparecem na hora. Não marca como lida (quem marca é o clique).
+  const antecipando = useRef(new Set<string>());
+  const timerPrevia = useRef<number | null>(null);
+  const previa = useCallback((k: Chave) => {
+    if (timerPrevia.current) window.clearTimeout(timerPrevia.current);
+    // O master não antecipa: cada leitura dele vai para a auditoria de acesso, e passar o mouse não é abrir.
+    if (mascarado) return;
+    const chave = memConversa(k);
+    if (lembrado(chave) || antecipando.current.has(chave) || mesma(abertaRef.current, k)) return;
+    timerPrevia.current = window.setTimeout(async () => {
+      antecipando.current.add(chave);
+      const r = await abrirConversa(k.numero_id, k.wa_id, null, true);
+      antecipando.current.delete(chave);
+      if (r.ok && !lembrado(chave)) lembrar(chave, { conversa: r.dados.conversa, mensagens: r.dados.mensagens, temMais: r.dados.temMais, selo: r.dados.selo });
+    }, 150);
+  }, [memConversa, mascarado]);
+  const cancelarPrevia = useCallback(() => { if (timerPrevia.current) window.clearTimeout(timerPrevia.current); timerPrevia.current = null; }, []);
 
   const carregarAntigas = useCallback(async () => {
     const k = abertaRef.current;
@@ -151,6 +184,13 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
       return { ...x, conversa: d.conversa, mensagens, selo: d.selo };
     });
   }, []);
+
+  const aplicarAtualizacaoRef = useRef(aplicarAtualizacao);
+  aplicarAtualizacaoRef.current = aplicarAtualizacao;
+
+  // Guarda na memória da aba a conversa aberta e a lista sem busca (voltar à Inbox ou reabrir mostra na hora).
+  useEffect(() => { if (aberta && dados) lembrar(memConversa(aberta), dados); }, [aberta, dados, memConversa]);
+  useEffect(() => { if (!busca.trim() && !soFollowup) lembrar(memLista, lista); }, [lista, busca, soFollowup, memLista]);
 
   // A bolha "enviando…" sai quando a conversa já traz a mensagem com o mesmo wamid.
   useEffect(() => {
@@ -231,6 +271,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     const id = window.setInterval(tick, ATUALIZA_MS);
     const vis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', vis);
+    // Lista vinda da memória da aba (voltou à Inbox): mostra na hora e já busca a atual.
+    if (Date.now() - new Date(inicialRef.current.lidoEm).getTime() > 3000) tick();
     return () => { parado = true; window.clearInterval(id); document.removeEventListener('visibilitychange', vis); };
   }, [aplicarAtualizacao]);
 
@@ -264,7 +306,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
         <ul className={c.itens}>
           {lista.conversas.map((k) => (
             <li key={k.numero_id + ':' + k.wa_id}>
-              <button type="button" className={c.item} aria-current={mesma(k, aberta) ? 'true' : undefined} data-wa={k.wa_id} onClick={() => abrir(k)}>
+              <button type="button" className={c.item} aria-current={mesma(k, aberta) ? 'true' : undefined} data-wa={k.wa_id} onClick={() => abrir(k)}
+                onMouseEnter={() => previa(k)} onMouseLeave={cancelarPrevia} onFocus={() => previa(k)}>
                 <span className={c.avatar} aria-hidden="true">{iniciais(k)}</span>
                 <span className={c.itemTexto}>
                   <span className={c.itemLinha}>

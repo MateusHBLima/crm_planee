@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { arquivarAtendimento, assumirAtendimento, moverAtendimento, mudarAssunto, type Resposta } from '@/lib/painel/acoes';
 import { carregarQuadro } from '@/lib/painel/leitura-cliente';
+import { lembrar } from '@/lib/painel/memoria-cliente';
 import { Icone } from '@/components/Icone';
 import { Quadro } from './Quadro';
 import { Detalhe } from './Detalhe';
@@ -18,10 +19,23 @@ type Aba = 'atendimento' | 'comercial' | 'contatos';
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
-export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome }: {
+export type PropsCrm = {
   inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; podeConferir?: boolean; mascarado: boolean; nome: string;
-}) {
+  memoria?: string;   // chave da memória da tela (lib/painel/memoria-cliente.ts): voltar ao CRM mostra o último quadro na hora
+};
+
+// Cartão alterado na tela antes da resposta do servidor (09/10): o clique aparece na hora; se o servidor recusar,
+// o quadro volta a ser o do banco e o aviso explica.
+const agoraIso = () => new Date().toISOString();
+
+export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome, memoria }: PropsCrm) {
   const [quadro, setQuadro] = useState(inicial);
+  useEffect(() => { if (memoria) lembrar(memoria, quadro); }, [memoria, quadro]);
+  // Ações em andamento: cartões com clique pendente (só eles ficam travados) e a versão local do quadro.
+  // Uma atualização automática que saiu antes de um clique não sobrescreve o clique quando volta.
+  const [pendentes, setPendentes] = useState<ReadonlySet<string>>(() => new Set());
+  const versao = useRef(0);
+  const emVoo = useRef(0);
   const [aba, setAba] = useState<Aba>('atendimento');
   const [busca, setBusca] = useState('');
   const [origem, setOrigem] = useState<Origem>('todos');
@@ -63,17 +77,21 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   useEffect(() => {
     let parado = false;
     const tick = async () => {
-      if (parado || ocupadoRef.current || (document.hidden && !avisosRef.current)) return;
+      if (parado || ocupadoRef.current || emVoo.current > 0 || (document.hidden && !avisosRef.current)) return;
+      const v = versao.current;
       const r = await carregarQuadro();
       if (parado) return;
-      if (r.ok) { setQuadro(r.dados); setFalhouAtualizar(false); }
+      if (r.ok) { if (v === versao.current && emVoo.current === 0) setQuadro(r.dados); setFalhouAtualizar(false); }
       else if (r.sair) window.location.href = '/entrar?motivo=sessao';
       else setFalhouAtualizar(true);
     };
     const id = window.setInterval(tick, ATUALIZA_MS);
     const vis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', vis);
+    // Quadro vindo da memória (voltou ao CRM): mostra na hora e já busca o atual.
+    if (Date.now() - new Date(inicial.lidoEm).getTime() > 3000) tick();
     return () => { parado = true; window.clearInterval(id); document.removeEventListener('visibilitychange', vis); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Link direto para um cartão (/crm?cartao=<id>): o Interno Planee abre o aviso de comprovante no cartão certo.
@@ -88,16 +106,48 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
     return () => window.clearTimeout(t);
   }, [aviso]);
 
+  // Clique com resposta na hora: aplica no quadro da tela, manda ao servidor e, quando não há outro clique em voo,
+  // troca pelo quadro que o servidor devolveu (o do banco). Erro: tratar() avisa e recarrega o quadro.
+  const executar = useCallback((id: string, local: (q: TQuadro) => TQuadro, chamada: () => Promise<Resposta<TQuadro>>, sucesso: string, depois?: () => void) => {
+    versao.current++; emVoo.current++;
+    setQuadro((q) => local(q));
+    setPendentes((p) => new Set(p).add(id));
+    void (async () => {
+      let r: Resposta<TQuadro>;
+      try { r = await chamada(); } catch { r = { ok: false, erro: 'Sem conexão com o painel agora. Tente de novo.' }; }
+      emVoo.current--;
+      setPendentes((p) => { const n = new Set(p); n.delete(id); return n; });
+      const d = tratar(r, sucesso);
+      if (d) { if (emVoo.current === 0) { versao.current++; setQuadro(d); } depois?.(); }
+    })();
+  }, [tratar]);
+
+  const mudarCartao = (id: string, f: (k: TQuadro['cartoes'][number]) => TQuadro['cartoes'][number]) =>
+    (q: TQuadro): TQuadro => ({ ...q, cartoes: q.cartoes.map((k) => (k.id === id ? f(k) : k)) });
+
   const acoes = useMemo(() => ({
-    assumir: (id: string) => iniciar(async () => { const d = tratar(await assumirAtendimento(id), `Você assumiu o atendimento.`); if (d) setQuadro(d); }),
-    mover: (id: string, etapa: Etapa) => iniciar(async () => {
+    assumir: (id: string) => executar(id,
+      mudarCartao(id, (k) => ({ ...k, etapa: 'em_atendimento', responsavel: nome, assumido_em: k.assumido_em ?? agoraIso(), finalizado_em: null })),
+      () => assumirAtendimento(id), 'Você assumiu o atendimento.'),
+    mover: (id: string, etapa: Etapa) => {
       const de = quadro.cartoes.find((k) => k.id === id)?.etapa;
-      const d = tratar(await moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`); if (d) setQuadro(d);
-    }),
-    assunto: (id: string, topico: string) => iniciar(async () => { const d = tratar(await mudarAssunto(id, topico), 'Assunto alterado.'); if (d) setQuadro(d); }),
-    arquivar: (id: string) => iniciar(async () => { const d = tratar(await arquivarAtendimento(id), 'Atendimento arquivado.'); if (d) { setQuadro(d); setAberto(null); } }),
-    recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro()); if (d) { setQuadro(d); setFalhouAtualizar(false); } }),
-  }), [quadro.etapas, quadro.cartoes, tratar]);
+      executar(id, (q) => {
+        const n = mudarCartao(id, (k) => ({
+          ...k, etapa, responsavel: etapa !== 'aguardando' && !k.responsavel ? nome : k.responsavel,
+          assumido_em: etapa !== 'aguardando' ? (k.assumido_em ?? agoraIso()) : k.assumido_em,
+          finalizado_em: etapa === 'finalizado' ? agoraIso() : null,
+        }))(q);
+        return etapa === 'finalizado' && de !== 'finalizado' ? { ...n, finalizadosHoje: n.finalizadosHoje + 1 } : n;
+      }, () => moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`);
+    },
+    assunto: (id: string, topico: string) => executar(id, mudarCartao(id, (k) => ({ ...k, topico_id: topico })), () => mudarAssunto(id, topico), 'Assunto alterado.'),
+    arquivar: (id: string) => {
+      setAberto(null);
+      executar(id, (q) => ({ ...q, cartoes: q.cartoes.filter((k) => k.id !== id) }), () => arquivarAtendimento(id), 'Atendimento arquivado.');
+    },
+    recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro()); if (d) { versao.current++; setQuadro(d); setFalhouAtualizar(false); } }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [quadro.etapas, quadro.cartoes, tratar, executar, nome]);
 
   const temSombra = quadro.cartoes.some((k) => k.sombra);
   // Topo do quadro: quem espera há mais tempo e quantos passaram do prazo (sem os cartões sombra, que ninguém atende).
@@ -189,7 +239,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
           </div>
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} agora={agora} ocupado={ocupado} podeEditar={podeEditar} podeConfig={podeConfig}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={setAberto} onAssumir={acoes.assumir} onMover={acoes.mover} />
         </>
       )}
@@ -204,7 +254,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       )}
 
       {cartaoAberto && (
-        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado}
+        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
           onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} />
       )}

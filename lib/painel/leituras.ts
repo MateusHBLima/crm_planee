@@ -29,11 +29,11 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   historico: (u, q) => sv.historicoContato(u, exigir(q, 'id')),
   servico: (u, q) => sv.detalheServico(u, exigir(q, 'id')),
   conversas: (u, q) => inbox.listarConversas(u, q.get('busca') ?? undefined, q.get('filtro')),
-  // Abrir ou atualizar a conversa marca como lida (a equipe; o master só olha). Paginar para trás não marca.
-  conversa: async (u, q) => {
-    const numero = exigir(q, 'numero'); const wa = exigir(q, 'wa'); const antes = q.get('antes');
-    if (!antes) await inbox.marcarLida(u, numero, wa);
-    return inbox.lerConversa(u, numero, wa, antes);
+  // Abrir ou atualizar a conversa marca como lida (a equipe; o master só olha). Paginar para trás e a leitura
+  // antecipada (previa=1, mouse em cima da conversa na lista) não marcam.
+  conversa: (u, q) => {
+    const antes = q.get('antes');
+    return inbox.lerConversa(u, exigir(q, 'numero'), exigir(q, 'wa'), antes, { marcar: !antes && q.get('previa') !== '1' });
   },
   // Avisos para a Planee, novidades e saúde (08/10). As da Planee conferem master lá dentro.
   planee_empresa: async (u) => ({ avisos: await av.meusAvisos(u), novidades: await pl.novidadesDaEmpresa(u) }),

@@ -9,6 +9,7 @@ import { Icone } from './Icone';
 import { TrocarEmpresa } from './TrocarEmpresa';
 import { SairDaEmpresa } from './SairDaEmpresa';
 import { Faixa } from './planee/Faixa';
+import { Antecipar } from './Antecipar';
 import s from './shell.module.css';
 
 export function Shell({ atual, usuario, largo, children }: {
@@ -31,7 +32,9 @@ export function Shell({ atual, usuario, largo, children }: {
         {escolhe && <TrocarEmpresa atual={usuario.empresa?.id ?? null} empresas={usuario.empresas} master={usuario.master} />}
         <nav className={s.nav} aria-label="Telas">
           {telas.map((t) => (
-            <Link key={t.id} href={`/${t.id}`} className={s.itemNav} aria-current={t.id === atual ? 'page' : undefined}>
+            // prefetch completo só da Inbox e do CRM: essas páginas não trazem dados (vêm pelas leituras GET), então
+            // buscá-las antes é leve e a troca de tela fica imediata (09/10). As outras seguem o padrão do Next.
+            <Link key={t.id} href={`/${t.id}`} prefetch={t.id === 'inbox' || t.id === 'crm' ? true : null} className={s.itemNav} aria-current={t.id === atual ? 'page' : undefined}>
               <Icone nome={t.icone} />
               <span>{t.nome}</span>
             </Link>
@@ -60,6 +63,7 @@ export function Shell({ atual, usuario, largo, children }: {
       <main className={largo ? s.conteudoLargo : s.conteudo}>
         {dentro && <SairDaEmpresa nome={usuario.empresa!.nome} />}
         {usuario.empresa && <Faixa largo={largo} />}
+        {usuario.empresa && <Antecipar empresaId={usuario.empresa.id} telas={telas.map((t) => t.id)} />}
         {children}
       </main>
     </div>
