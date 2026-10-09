@@ -20,6 +20,12 @@ Não usamos Vercel (removida em 30/09). Antes do PR, cada branch passa pelos tes
 3. Em até 5 minutos, o serviço `atualizador` (Shepherd, `deploy/stack-atualizador.yml`) vê a imagem nova e troca as réplicas do painel uma por vez (a nova sobe antes de a velha sair). O webhook de serviço do Portainer seria o caminho natural, mas é recurso pago.
 4. Conferir: `https://adm.planeelabia.com/api/saude` responde `{"ok":true,"versao":"<commit>"}`.
 
+## DNS fixo nas stacks (09/10)
+
+Em 08/10, o DNS recursivo da Hetzner (HEL1, FSN1 e NBG1) falhou por horas. O painel, o receptor e o n8n deixaram de achar o Supabase. As stacks `painel` e `receptor` passaram a usar resolvedores públicos (`dns: [1.1.1.1, 8.8.8.8]`), igual ao que já foi feito nos três stacks do n8n.
+
+Mudança na stack não chega pela imagem: no Portainer, abra cada stack (`painel` e `receptor`) → **Editor** → acrescente o bloco `dns:` (igual ao do arquivo em `deploy/`) logo antes de `networks:` → **Update the stack**.
+
 ## Voltar versão
 
 No Portainer, stack `painel` → variável `VERSAO` com a versão curta anterior (lista em GitHub → Packages → crm_planee) → **Update the stack**. Para voltar ao normal, apague `VERSAO` (volta a `latest`).
