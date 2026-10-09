@@ -125,6 +125,14 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Status da clínica** (ids acima de 100) vai pelo nome que a clínica deu; os padrão da Feegow, pelo id.
     - **Tela Agenda** (módulo `pagamentos.ver`): o dia por profissional, com etiqueta de quem marcou pela Sara, 1ª consulta, encaixe e situação.
 
+34. **Link de convite de uso único (09/10).** Pedido do Mateus: mandar um link e a pessoa se cadastrar sozinha, sem burocracia.
+    - **Quem gera:** o admin da empresa ou a Planee, na tela Equipe ("Convidar por link"). Só o hash do link fica no banco (`convites_link`, migração 019); o link aparece uma vez.
+    - **Uso único, 7 dias, cancelável.** Dois cadastros ao mesmo tempo com o mesmo link: só um entra.
+    - **Entra como membro com acesso mínimo.** Padrão "Nenhum": a pessoa só vê a tela Planee, com o aviso de que o admin vai liberar. O admin pode escolher um modelo (Secretária, Gestor) já no link, cortado ao que a empresa tem. Admin nunca entra por link.
+    - **Quem já tem senha no painel** (outra empresa) usa a mesma senha; e-mail da Planee (master) e pessoa desativada não entram; quem já está na equipe é mandado para o login, sem gastar o link.
+    - **O link é do domínio da empresa** quando ela tem um; aberto no domínio de outra empresa, é recusado.
+    - O cadastro pelo e-mail com código de primeiro acesso continua valendo.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).
