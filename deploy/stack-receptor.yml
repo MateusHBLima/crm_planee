@@ -8,6 +8,7 @@ services:
   receptor:
     image: ghcr.io/mateushblima/crm_planee-receptor:${VERSAO:-latest}
     environment:
+      # Mesma central do painel (o DATABASE_URL do stack do painel): o cadastro de números da tela Empresas vem de lá.
       - CENTRAL_DATABASE_URL=${CENTRAL_DATABASE_URL:-}
       - DATABASE_URL=${DATABASE_URL}
       - PAINEL_CHAVE_CIFRA=${PAINEL_CHAVE_CIFRA:-}
@@ -22,8 +23,14 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
       - WA_BUCKET=${WA_BUCKET:-whatsapp}
       - WA_RETER_DIAS=${WA_RETER_DIAS:-30}
+      - RECEPTOR_URL_PUBLICA=${RECEPTOR_URL_PUBLICA:-https://adm.planeelabia.com/whatsapp/webhook}
     volumes:
       - receptor_spool:/dados
+    # DNS fixo (09/10): em 08/10 o DNS recursivo da Hetzner falhou por horas e o serviço deixou de achar o banco
+    # (Supabase) e o n8n. Com resolvedores públicos, uma falha da Hetzner não derruba mais o serviço.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - network_public
     logging:

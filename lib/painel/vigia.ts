@@ -6,7 +6,9 @@ import { avisoDoSistema, lembreteDoSistema, resolverDoSistema } from '@/lib/avis
 //   • token de integração vencendo (ex.: Feegow): a partir de 30 dias antes, lembra a cada 3 dias até a data mudar;
 //   • número sem mensagens: em horário comercial, um número que costuma receber mensagens ficou quieto demais
 //     (sinal de número desconectado ou webhook parado);
-//   • envios falhando: muitas mensagens com status "falhou" na última hora.
+//   • envios falhando: muitas mensagens com status "falhou" na última hora;
+//   • fila parada (09/10): em horário comercial, 5 ou mais pedidos do quadro esperando a equipe além do prazo
+//     vermelho (Configurações → prazos). Fecha sozinho quando a fila zera.
 // Cada aviso tem chave própria: rodar de novo (ou em duas réplicas ao mesmo tempo) não duplica.
 // Ligado em instrumentation.ts; PAINEL_VIGIA=0 desliga. O botão "Verificar agora" do Interno Planee roda na hora.
 
@@ -18,8 +20,9 @@ const SILENCIO_MIN_H = 2;
 const COMERCIAL = { de: 8, ate: 20, horasSemana: 72 }; // segunda a sábado, 8 h às 20 h
 const FALHAS_MIN = 5;
 const FALHAS_FRACAO = 0.2;
+const FILA_MIN = 5;
 
-export type ResumoVigia = { em: string; tokens: number; silencio: number; falhas: number; resolvidos: number; empresas: number; sem_banco: string[] };
+export type ResumoVigia = { em: string; tokens: number; silencio: number; falhas: number; fila: number; resolvidos: number; empresas: number; sem_banco: string[] };
 
 const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
 const final4 = (s: string) => String(s).replace(/\D/g, '').slice(-4);
@@ -72,6 +75,35 @@ async function vigiarTokens(agora: Date): Promise<{ abertos: number; resolvidos:
 
 type EmpresaVigia = { id: string; banco_url_cifrado: string | null };
 
+// Fila parada: pedidos em "aguardando" (sem os cartões sombra) há mais que o prazo vermelho da empresa.
+async function vigiarFila(e: EmpresaVigia, agora: Date): Promise<{ aberto: number; resolvidos: number }> {
+  const b = bancoDaEmpresa(e);
+  const r = await b.query(
+    `with p as (select coalesce((select (valor->'aguardando'->>'vermelho')::int from crm_config where chave = 'prazos_atendimento'), 30) as min)
+     select count(*) as atrasados, min(a.aberto_em) as mais_antigo
+       from atendimentos a, p
+      where not a.arquivado and a.etapa = 'aguardando' and a.resumo !~ '^\\s*\\[SOMBRA\\]'
+        and a.aberto_em < $1::timestamptz - make_interval(mins => p.min)`, [agora]);
+  const n = Number(r.rows[0]?.atrasados) || 0;
+  const r2 = relogio(agora);
+  const comercial = r2.semana !== 'Sun' && r2.hora >= COMERCIAL.de && r2.hora < COMERCIAL.ate;
+  let aberto = 0;
+  if (comercial && n >= FILA_MIN) {
+    const horas = Math.floor((agora.getTime() - new Date(r.rows[0].mais_antigo).getTime()) / 3600_000);
+    if (await avisoDoSistema(e.id, {
+      tipo: 'fila_parada', chave: `fila:${e.id}:${r2.dia}`,
+      titulo: `${n} pedidos esperando a equipe além do prazo no quadro (o mais antigo há ${horas >= 24 ? `${Math.floor(horas / 24)} d` : `${horas} h`}). Conferir com a clínica.`,
+      ref: { atrasados: n, mais_antigo: new Date(r.rows[0].mais_antigo).toISOString() },
+    })) aberto++;
+  }
+  let resolvidos = 0;
+  if (n === 0) {
+    const abertos = await central().query(`select id from avisos where empresa_id = $1 and tipo = 'fila_parada' and estado <> 'resolvido'`, [e.id]);
+    resolvidos = await resolverDoSistema(abertos.rows.map((x) => String(x.id)), 'A fila do quadro zerou.');
+  }
+  return { aberto, resolvidos };
+}
+
 async function vigiarEmpresa(e: EmpresaVigia, agora: Date): Promise<{ silencio: number; falhas: number; resolvidos: number }> {
   const b = bancoDaEmpresa(e);
   const [nums, falhas] = await Promise.all([
@@ -118,7 +150,7 @@ async function vigiarEmpresa(e: EmpresaVigia, agora: Date): Promise<{ silencio: 
 let rodando = false;
 
 export async function rodarVigia(agora = new Date()): Promise<ResumoVigia> {
-  const resumo: ResumoVigia = { em: agora.toISOString(), tokens: 0, silencio: 0, falhas: 0, resolvidos: 0, empresas: 0, sem_banco: [] };
+  const resumo: ResumoVigia = { em: agora.toISOString(), tokens: 0, silencio: 0, falhas: 0, fila: 0, resolvidos: 0, empresas: 0, sem_banco: [] };
   if (rodando) return resumo;
   rodando = true;
   try {
@@ -136,6 +168,12 @@ export async function rodarVigia(agora = new Date()): Promise<ResumoVigia> {
       if (vistos.has(chaveBanco)) continue;
       vistos.add(chaveBanco);
       resumo.empresas++;
+      try {
+        const f = await vigiarFila(e, agora);
+        resumo.fila += f.aberto; resumo.resolvidos += f.resolvidos;
+      } catch (err) {
+        if (!['42P01', '42703'].includes((err as { code?: string }).code ?? '')) registrarErro(`vigia fila ${e.id}`, err);
+      }
       try {
         const r = await vigiarEmpresa(e, agora);
         resumo.silencio += r.silencio; resumo.falhas += r.falhas; resumo.resolvidos += r.resolvidos;

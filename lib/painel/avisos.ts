@@ -24,6 +24,7 @@ export const TIPOS_SISTEMA: Record<string, string> = {
   numero_silencioso: 'Número sem mensagens',
   envios_falhando: 'Envios falhando',
   token_vencendo: 'Token de integração vencendo',
+  fila_parada: 'Fila parada no quadro',
 };
 export const ESTADOS = ['aberto', 'em_analise', 'resolvido'] as const;
 export type EstadoAviso = (typeof ESTADOS)[number];

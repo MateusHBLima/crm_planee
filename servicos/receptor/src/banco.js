@@ -27,7 +27,7 @@ export function central() {
 }
 
 // Mesmo formato de lib/cifra.ts do painel (AES-256-GCM, "v1:iv:tag:dados").
-function decifrar(cifrado) {
+export function decifrar(cifrado) {
   if (!config.chaveCifra || config.chaveCifra.length < 32) throw new Error('Falta PAINEL_CHAVE_CIFRA para abrir o banco da empresa.');
   const [v, iv, tag, dados] = String(cifrado).split(':');
   if (v !== 'v1' || !iv || !tag || !dados) throw new Error('Banco da empresa cifrado em formato desconhecido.');

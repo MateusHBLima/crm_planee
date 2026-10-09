@@ -4,18 +4,9 @@ import type { Pool, PoolClient } from 'pg';
 // Leitura das mensagens automáticas da IA (migração 017): recusa no contato, últimos envios e o selo do follow-up.
 // Usado pela ficha da API, pela Inbox e pelo histórico do contato. Banco sem a 017: tudo vazio, nada quebra.
 
-export const TIPOS_AUTOMATICA: Record<string, string> = {
-  aniversario: 'Aniversário',
-  lembrete_2d: 'Lembrete 2 dias antes',
-  lembrete_dia: 'Lembrete no dia',
-  followup_1h: 'Follow-up 1h',
-  followup_3h: 'Follow-up 3h',
-  followup_3d: 'Follow-up 3 dias',
-  followup_7d: 'Follow-up 7 dias',
-  followup_14d: 'Follow-up 14 dias',
-  followup_30d: 'Follow-up 30 dias',
-  outro: 'Mensagem automática',
-};
+// Nomes dos tipos ficam num arquivo sem 'server-only' (a tela de Resultados também usa).
+export { TIPOS_AUTOMATICA } from './automaticas-nomes';
+import { TIPOS_AUTOMATICA } from './automaticas-nomes';
 export const nomeDoTipo = (t: string) => TIPOS_AUTOMATICA[t] ?? `Automática (${t})`;
 
 export type Recusa = { desde: string; motivo: string | null; por: string | null };
@@ -85,16 +76,27 @@ export function calcularSelo(recusa: Recusa | null, ultimoFollowup: EnvioAutomat
     : { tipo: 'followup', texto: `Follow-up ${nome} enviado`, desde: f.quando };
 }
 
-// Selo pelo telefone (Inbox): contatos com o mesmo DDD + 8 últimos dígitos.
+// Selo pelo telefone (Inbox): contatos com o mesmo DDD + 8 últimos dígitos. Uma ida só ao banco (contatos, recusa e
+// último follow-up juntos): o banco da clínica fica em outra região e cada ida custa ~0,2 s (09/10).
 export async function seloDoTelefone(b: Banco, waId: string, ultimaEntrada: string | null): Promise<Selo | null> {
   const d = String(waId ?? '').replace(/\D/g, '');
   if (d.length < 10) return null;
   try {
-    const cs = await b.query(
-      `select id from contatos where not arquivado and substr(regexp_replace(telefone, '\\D', '', 'g'), 3, 2) = $1
-          and right(regexp_replace(telefone, '\\D', '', 'g'), 8) = $2`, [d.slice(2, 4), d.slice(-8)]);
-    const ids = cs.rows.map((x) => String(x.id));
-    return await seloDosContatos(b, ids, ultimaEntrada);
+    const r = await b.query(
+      `with cs as (
+         select id, automaticas_paradas_em, automaticas_motivo, automaticas_por from contatos
+          where not arquivado and substr(regexp_replace(telefone, '\\D', '', 'g'), 3, 2) = $1
+            and right(regexp_replace(telefone, '\\D', '', 'g'), 8) = $2)
+       select (select row_to_json(x) from (select automaticas_paradas_em, automaticas_motivo, automaticas_por from cs
+                 where automaticas_paradas_em is not null order by automaticas_paradas_em limit 1) x) as recusa,
+              (select row_to_json(e) from (select * from envios_automaticos where contato_id in (select id from cs)
+                 and tipo like 'followup%' order by quando desc limit 1) e) as followup`, [d.slice(2, 4), d.slice(-8)]);
+    const x = r.rows[0] ?? {};
+    if (x.recusa) {
+      const rc = x.recusa as Record<string, unknown>;
+      return calcularSelo({ desde: iso(rc.automaticas_paradas_em), motivo: (rc.automaticas_motivo as string) ?? null, por: (rc.automaticas_por as string) ?? null }, null, null);
+    }
+    return calcularSelo(null, x.followup ? limparEnvio(x.followup as Record<string, unknown>) : null, ultimaEntrada);
   } catch (e) { if (semTabela(e)) return null; throw e; }
 }
 

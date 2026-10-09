@@ -99,6 +99,11 @@ const SELECT_CARTAO = `
          (select count(*) from notas n where n.alvo_tipo = 'atendimentos' and n.alvo_id = a.id and not n.arquivado) as notas
     from atendimentos a left join contatos c on c.id = a.contato_id`;
 
+// No quadro, o resumo vai cortado (o cartão mostra poucas linhas; o detalhe traz o texto inteiro). O banco fica em
+// outra região, e o resumo inteiro de 60 cartões dobrava o tamanho da resposta (09/10).
+export const RESUMO_NO_QUADRO = 600;
+const SELECT_CARTAO_QUADRO = SELECT_CARTAO.replace('a.etapa, a.resumo,', `a.etapa, left(a.resumo, ${RESUMO_NO_QUADRO}) as resumo,`);
+
 export async function lerQuadro(u: Usuario): Promise<Quadro> {
   const f = fuso();
   // Uma consulta só (uma ida ao banco, uma conexão): assuntos, nomes das etapas, prazos, cartões e a contagem de
@@ -108,7 +113,7 @@ export async function lerQuadro(u: Usuario): Promise<Quadro> {
   const r = await db(u).query(
     `with hoje as (select (date_trunc('day', now() at time zone $1) at time zone $1) as ini),
      cartoes as (
-       ${SELECT_CARTAO}
+       ${SELECT_CARTAO_QUADRO}
         where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
           and (a.etapa <> 'finalizado' or a.finalizado_em >= (select ini from hoje))
         order by (a.etapa = 'finalizado'), a.aberto_em limit 1000)
@@ -173,56 +178,123 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
 
 // ---- Ações do quadro ----
 
-async function etapaAtual(u: Usuario, id: string): Promise<{ etapa: Etapa; responsavel: string | null; sombra: boolean }> {
-  const r = await db(u).query(`select etapa, responsavel, resumo from atendimentos where id = $1 and not arquivado`, [id]);
-  if (!r.rowCount) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
-  const sombra = SOMBRA.test(String(r.rows[0].resumo ?? ''));
-  if (sombra && !u.master) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
-  return { etapa: r.rows[0].etapa, responsavel: r.rows[0].responsavel, sombra };
+const ERRO_SOMBRA = 'Cartão sombra serve só para conferir o que a Sara nova teria feito: dá para anotar e arquivar, não para mover.';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NAO_ACHADO = 'Atendimento não encontrado. Ele pode ter sido arquivado.';
+const SQL_E_SOMBRA = `(coalesce(resumo, '') ~ '^\\s*\\[SOMBRA\\]')`;
+
+// Ações do quadro em uma ida só ao banco (09/10). O banco da clínica fica em outra região (~0,2 s por ida); antes,
+// cada clique fazia 5 a 8 idas em fila (conferir, begin, update, auditoria, commit...). Agora cada ação é um único
+// comando com CTEs: trava a linha, confere, muda e grava a auditoria juntos (um comando só já é atômico).
+// As regras são as mesmas de antes (e as da API, lib/api/servico.ts): sombra não se move, "aguardando" só se
+// assume uma vez, quem tira do aguardando vira responsável, finalizar avisa o n8n.
+function exigirEditar(u: Usuario) {
+  if (!pode(u, 'crm.editar')) throw new ErroApi(403, 'Você não tem permissão para isso nesta empresa.');
+  return db(u);
 }
 
-const ERRO_SOMBRA = 'Cartão sombra serve só para conferir o que a Sara nova teria feito: dá para anotar e arquivar, não para mover.';
+function traduzir(e: unknown): never {
+  const code = (e as { code?: string }).code;
+  if (code === '23503') throw new ErroApi(400, 'Referência inválida: o registro ligado não existe.');
+  if (code === '22P02') throw new ErroApi(400, 'Formato de valor inválido.');
+  if (code === '23514') throw new ErroApi(400, 'Valor fora do permitido.');
+  throw e;
+}
 
 export async function assumir(u: Usuario, id: string) {
-  if ((await etapaAtual(u, id)).sombra) throw new ErroApi(409, ERRO_SOMBRA);
-  // Atômico: trava a linha e confere "aguardando" na mesma transação (lib/api/servico.ts).
-  await api.assumirAtendimento(atorDe(u), id, u.nome);
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, NAO_ACHADO);
+  const r = await banco.query(
+    `with alvo as (select id, etapa, responsavel, ${SQL_E_SOMBRA} as sombra from atendimentos where id = $1 and not arquivado for update),
+     upd as (update atendimentos a set etapa = 'em_atendimento', responsavel = $2, assumido_em = coalesce(a.assumido_em, now()),
+                    finalizado_em = null, atualizado_em = now()
+               from alvo where a.id = alvo.id and alvo.etapa = 'aguardando' and not alvo.sombra returning a.id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $3::uuid, 'atualizar', 'atendimentos', $1::text, jsonb_build_object('etapa', 'em_atendimento', 'responsavel', $2::text) from upd)
+     select etapa, responsavel, sombra, exists (select 1 from upd) as feito from alvo`, [id, u.nome, u.id]).catch(traduzir);
+  const x = r.rows[0];
+  if (!x || (x.sombra && !u.master)) throw new ErroApi(404, NAO_ACHADO);
+  if (x.sombra) throw new ErroApi(409, ERRO_SOMBRA);
+  if (!x.feito) throw new ErroApi(409, x.responsavel ? `${x.responsavel} já assumiu este atendimento.` : 'Este atendimento já saiu de "aguardando".');
 }
 
 // "de" é a etapa que a tela mostrava. Se outra pessoa mudou o cartão nesse meio-tempo, não sobrescreve:
 // avisa e a tela recarrega (auditoria 01/10, U3).
 export async function mover(u: Usuario, id: string, etapa: Etapa, de?: Etapa) {
   if (!ETAPAS.includes(etapa)) throw new ErroApi(400, 'Etapa inválida.');
-  const atual = await etapaAtual(u, id);
-  if (atual.sombra) throw new ErroApi(409, ERRO_SOMBRA);
-  if (de && ETAPAS.includes(de) && atual.etapa !== de) {
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, NAO_ACHADO);
+  const deOk = de && ETAPAS.includes(de) ? de : null;
+  const r = await banco.query(
+    `with alvo as (select id, etapa, responsavel, contato_id, ${SQL_E_SOMBRA} as sombra from atendimentos where id = $1 and not arquivado for update),
+     upd as (update atendimentos a set etapa = $2::text,
+                    responsavel = case when $2::text <> 'aguardando' and a.responsavel is null then $3::text else a.responsavel end,
+                    assumido_em = case when $2::text <> 'aguardando' then coalesce(a.assumido_em, now()) else a.assumido_em end,
+                    finalizado_em = case when $2::text = 'finalizado' then now() else null end,
+                    atualizado_em = now()
+               from alvo where a.id = alvo.id and not alvo.sombra and ($4::text is null or alvo.etapa = $4::text) and alvo.etapa <> $2::text
+             returning a.id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $5::uuid, 'atualizar', 'atendimentos', $1::text,
+                    jsonb_build_object('etapa', $2::text)
+                      || case when $2::text <> 'aguardando' and alvo.responsavel is null then jsonb_build_object('responsavel', $3::text) else '{}'::jsonb end
+               from upd, alvo)
+     select alvo.etapa, alvo.sombra, exists (select 1 from upd) as feito,
+            (select c.telefone from contatos c where c.id = alvo.contato_id) as telefone
+       from alvo`, [id, etapa, u.nome, deOk, u.id]).catch(traduzir);
+  const x = r.rows[0];
+  if (!x || (x.sombra && !u.master)) throw new ErroApi(404, NAO_ACHADO);
+  if (x.sombra) throw new ErroApi(409, ERRO_SOMBRA);
+  if (!x.feito) {
+    // A tela mostrava outra etapa: alguém mexeu antes (mesmo que tenha sido para a etapa pedida). Senão, já estava lá.
+    if (!deOk || x.etapa === deOk) return;
     const nomes = await nomesEtapas(u);
-    throw new ErroApi(409, `Outra pessoa já mudou este atendimento para "${nomes[atual.etapa]}". O quadro foi atualizado.`);
+    throw new ErroApi(409, `Outra pessoa já mudou este atendimento para "${nomes[x.etapa as Etapa] ?? x.etapa}". O quadro foi atualizado.`);
   }
-  if (atual.etapa === etapa) return;
-  const dados: Record<string, string> = { etapa };
-  // Quem tira do "aguardando" passa a ser o responsável, se ainda não houver um.
-  if (etapa !== 'aguardando' && !atual.responsavel) dados.responsavel = u.nome;
-  await api.atualizar(atorDe(u), 'atendimentos', id, dados);
-  if (etapa !== 'aguardando') await db(u).query(`update atendimentos set assumido_em = coalesce(assumido_em, now()) where id = $1`, [id]);
-  if (etapa === 'finalizado') await avisarFinalizado(u, id);
+  // O aviso ao n8n não segura a tela: a Sara retoma em segundo plano.
+  if (etapa === 'finalizado') void avisarFinalizado(u, id, x.telefone ?? null);
 }
 
 export async function mudarAssunto(u: Usuario, id: string, topico: string) {
-  await api.atualizar(atorDe(u), 'atendimentos', id, { topico_id: topico });
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
+  const t = String(topico ?? '');
+  if (!t || t.length > 60) throw new ErroApi(400, 'Assunto inválido.');
+  const r = await banco.query(
+    `with upd as (update atendimentos set topico_id = $2, atualizado_em = now() where id = $1 returning id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $3::uuid, 'atualizar', 'atendimentos', $1::text, jsonb_build_object('topico_id', $2::text) from upd)
+     select exists (select 1 from upd) as feito`, [id, t, u.id]).catch(traduzir);
+  if (!r.rows[0]?.feito) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
 }
 
 export async function anotar(u: Usuario, id: string, texto: string) {
   const t = texto.trim();
   if (!t) throw new ErroApi(400, 'Escreva a nota antes de salvar.');
   if (t.length > 4000) throw new ErroApi(400, 'A nota passou de 4.000 caracteres.');
-  await etapaAtual(u, id);
-  await api.criar(atorDe(u), 'notas', { alvo_tipo: 'atendimentos', alvo_id: id, texto: t, autor: u.nome });
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, NAO_ACHADO);
+  const r = await banco.query(
+    `with alvo as (select id, ${SQL_E_SOMBRA} as sombra from atendimentos where id = $1 and not arquivado),
+     ins as (insert into notas (alvo_tipo, alvo_id, texto, autor)
+             select 'atendimentos', alvo.id, $2, $3 from alvo where not alvo.sombra or $4::boolean returning id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $5::uuid, 'criar', 'notas', ins.id::text,
+                    jsonb_build_object('alvo_tipo', 'atendimentos', 'alvo_id', $1::text, 'texto', $2::text, 'autor', $3::text) from ins)
+     select alvo.sombra, exists (select 1 from ins) as feito from alvo`, [id, t, u.nome, u.master, u.id]).catch(traduzir);
+  if (!r.rows[0]?.feito) throw new ErroApi(404, NAO_ACHADO);
 }
 
 export async function arquivarAtendimento(u: Usuario, id: string) {
   if (!podeArquivar(u)) throw new ErroApi(403, 'Só gestor ou Planee arquiva atendimentos.');
-  await api.arquivar(atorDe(u), 'atendimentos', id);
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
+  const r = await banco.query(
+    `with upd as (update atendimentos set arquivado = true, atualizado_em = now() where id = $1 returning id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $2::uuid, 'arquivar', 'atendimentos', $1::text, null from upd)
+     select exists (select 1 from upd) as feito`, [id, u.id]).catch(traduzir);
+  if (!r.rows[0]?.feito) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
 }
 
 // ---- Comercial e contatos (leitura) ----
@@ -446,12 +518,15 @@ export async function salvarPrazos(u: Usuario, dados: Record<string, Record<stri
 
 // Avisa o n8n quando a equipe finaliza um atendimento, para a IA poder retomar a conversa (fase 2, 2.4).
 // Só se o endereço estiver configurado; nunca atrasa nem derruba a tela.
-export async function avisarFinalizado(u: Usuario, atendimentoId: string) {
+export async function avisarFinalizado(u: Usuario, atendimentoId: string, telefoneConhecido?: string | null) {
   const url = process.env.N8N_WEBHOOK_PAINEL_RETOMAR;
   if (!url) return;
   try {
-    const r = await db(u).query(`select c.telefone from atendimentos a left join contatos c on c.id = a.contato_id where a.id = $1`, [atendimentoId]);
-    const telefone = r.rows[0]?.telefone;
+    let telefone = telefoneConhecido;
+    if (telefone === undefined) {
+      const r = await db(u).query(`select c.telefone from atendimentos a left join contatos c on c.id = a.contato_id where a.id = $1`, [atendimentoId]);
+      telefone = r.rows[0]?.telefone;
+    }
     if (!telefone) return;
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
     await fetch(url, {

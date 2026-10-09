@@ -16,6 +16,10 @@ export const config = {
   chaveInterna: env.RECEPTOR_CHAVE_INTERNA || '', // a Sara (n8n) usa para registrar o que mandou
   // Minutos que a Sara fica quieta depois que a equipe responde pelo celular (mesmo valor no painel).
   pausaCelularMin: num(env.SARA_PAUSA_CELULAR_MIN, 7),
+  // Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (mesmo valor no painel).
+  donoHoras: num(env.INBOX_ASSUMIR_HORAS, 24),
+  // Endereço público do webhook, usado quando o painel pede para conectar um número (override na Meta).
+  urlPublica: (env.RECEPTOR_URL_PUBLICA || 'https://adm.planeelabia.com/whatsapp/webhook').replace(/\/+$/, ''),
   metaToken: env.META_TOKEN || '',
   graphUrl: (env.META_GRAPH_URL || 'https://graph.facebook.com').replace(/\/+$/, ''),
   graphVersao: env.META_GRAPH_VERSAO || 'v23.0',
@@ -31,7 +35,9 @@ export const config = {
   instancia: env.HOSTNAME || os.hostname(),
   maxCorpo: num(env.WA_MAX_CORPO, 30 * 1024 * 1024),
   intervaloMs: num(env.WA_INTERVALO_MS, 1000),
+  rotasMs: num(env.WA_ROTAS_MS, 60_000), // de quanto em quanto tempo relê os números (cadastro do painel)
   semLacos: env.WA_SEM_LACOS === '1', // testes: roda os laços à mão
 };
 
-export const midiaConfigurada = () => Boolean(config.metaToken && config.supabaseUrl && config.supabaseChave);
+// O token da Meta vem de cada número (cadastro no painel) ou, para os números antigos, de META_TOKEN.
+export const midiaConfigurada = () => Boolean(config.supabaseUrl && config.supabaseChave);

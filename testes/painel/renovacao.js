@@ -4,8 +4,10 @@ const B = process.env.BASE_URL || 'http://localhost:3100';
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}); const ctx = await b.newContext(); const p = await ctx.newPage();
   await p.goto(B + '/crm'); await p.fill('#email', 'amanda@teste.local'); await p.fill('#senha', 'senha123'); await p.click('button[type=submit]'); await p.waitForTimeout(2000);
+  // Espera as leituras em segundo plano (antecipadas, faixa) terminarem: cada uma pode renovar e regravar o cookie.
+  await p.waitForLoadState('networkidle').catch(() => undefined); await p.waitForTimeout(1500);
   const a1 = (await ctx.cookies()).find((c) => c.name === 'pp_at').value;
-  await p.goto(B + '/crm'); await p.waitForTimeout(1000);
+  await p.goto(B + '/crm'); await p.waitForLoadState('networkidle').catch(() => undefined); await p.waitForTimeout(1000);
   const a2 = (await ctx.cookies()).find((c) => c.name === 'pp_at').value;
   const cards = await p.locator('article').count();
   await p.waitForTimeout(31000); // o token de 30 s vence

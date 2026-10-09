@@ -19,6 +19,14 @@ services:
       - PAINEL_FUSO=America/Sao_Paulo
       - EMPRESA_BANCO_PADRAO=${EMPRESA_BANCO_PADRAO:-teste}
       - PAINEL_MFA_MASTER=${PAINEL_MFA_MASTER:-1}
+      # Espelho da agenda da Feegow (09/10): "empresa=token", um par por empresa, separados por vírgula.
+      - FEEGOW_TOKENS=${FEEGOW_TOKENS:-}
+      - PAINEL_AGENDA=${PAINEL_AGENDA:-1}
+    # DNS fixo (09/10): em 08/10 o DNS recursivo da Hetzner falhou por horas e o serviço deixou de achar o banco
+    # (Supabase) e o n8n. Com resolvedores públicos, uma falha da Hetzner não derruba mais o serviço.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     networks:
       - network_public
     deploy:

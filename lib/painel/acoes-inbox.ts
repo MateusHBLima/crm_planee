@@ -12,10 +12,7 @@ export async function carregarConversas(busca?: string) {
 // Abre (ou atualiza, ou pagina para trás) uma conversa. A equipe da empresa marca como lida ao abrir;
 // o master só olha. Devolve as mensagens e a linha da lista já com as não lidas atualizadas.
 export async function abrirConversa(numeroId: string, waId: string, antesDeId?: string | null) {
-  return comUsuario(async (u) => {
-    if (!antesDeId) await inbox.marcarLida(u, numeroId, waId);
-    return inbox.lerConversa(u, numeroId, waId, antesDeId);
-  }, 'inbox');
+  return comUsuario((u) => inbox.lerConversa(u, numeroId, waId, antesDeId, { marcar: !antesDeId }), 'inbox');
 }
 
 // Resposta pelo painel: vai ao webhook do n8n; a mensagem entra no espelho quando o receptor registra o envio.
@@ -25,10 +22,21 @@ export async function enviarMensagem(numeroId: string, waId: string, texto: stri
 }
 
 // Assumir a conversa (a Sara fica quieta) ou devolver para a Sara. Devolve a linha da lista atualizada.
-export async function assumirConversa(numeroId: string, waId: string) {
-  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'humano'), 'inbox');
+// prazo: '24h' (a Sara volta 24 h depois da última resposta da equipe) ou 'sempre' (até alguém devolver).
+export async function assumirConversa(numeroId: string, waId: string, prazo: inbox.PrazoDono = '24h') {
+  return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'humano', prazo), 'inbox');
 }
 
 export async function devolverConversa(numeroId: string, waId: string) {
   return comUsuario((u) => inbox.mudarDono(u, numeroId, waId, 'ia'), 'inbox');
+}
+
+// Corrige o nome do contato na Inbox (e no CRM, para quem edita o CRM). Vazio volta ao nome do WhatsApp.
+export async function renomearContato(numeroId: string, waId: string, nome: string) {
+  return comUsuario((u) => inbox.renomearContato(u, numeroId, waId, nome), 'inbox');
+}
+
+// Link curto (10 min) para ouvir, ver ou baixar a mídia de uma mensagem.
+export async function abrirMidia(numeroId: string, waId: string, mensagemId: string) {
+  return comUsuario((u) => inbox.linkDaMidia(u, numeroId, waId, mensagemId), 'inbox');
 }

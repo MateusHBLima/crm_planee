@@ -18,6 +18,8 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
 }) {
   const [eventos, setEventos] = useState<Evento[] | null>(null);
+  // O quadro traz o resumo cortado; o texto inteiro chega com o detalhe.
+  const [resumo, setResumo] = useState<string | null>(null);
   const [nota, setNota] = useState('');
   const [confirmarArquivo, setConfirmarArquivo] = useState(false);
   const [salvando, iniciar] = useTransition();
@@ -29,7 +31,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
     let vivo = true;
     carregarDetalhe(k.id).then((r) => {
       if (!vivo) return;
-      if (r.ok) setEventos(r.dados.eventos);
+      if (r.ok) { setEventos(r.dados.eventos); setResumo(r.dados.cartao.resumo); }
       else onErro(r.erro);
     });
     return () => { vivo = false; };
@@ -87,7 +89,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
 
           <section className={c.detBloco}>
             <h3 className={c.rotuloSec}>O que foi pedido</h3>
-            <p className={c.detResumo}>{k.resumo || 'Sem resumo.'}</p>
+            <p className={c.detResumo}>{(resumo ?? k.resumo) || 'Sem resumo.'}</p>
             <p className={c.detMeta}>
               Aberto {fmt.quando(k.aberto_em)}{k.aberto_por ? ` por ${k.aberto_por}` : ''}
               {k.etapa !== 'finalizado' ? <> · <Relativo de={k.aberto_em} /></> : k.finalizado_em ? ` · finalizado ${fmt.quando(k.finalizado_em)}` : ''}

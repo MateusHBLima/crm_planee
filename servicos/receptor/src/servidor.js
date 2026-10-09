@@ -3,6 +3,7 @@
 //   POST /whatsapp/webhook   eventos da Meta: confere a assinatura, guarda, repassa para a Sara, responde 200
 //   POST /whatsapp/envio     a Sara (n8n) registra o que mandou pela API (cabeçalho x-receptor-chave)
 //   GET  /whatsapp/atendimento?numero=&wa_id=   a Sara pergunta se pode responder (equipe assumiu? cabeçalho x-receptor-chave)
+//   GET  /whatsapp/midia/<token>   arquivo de mídia por link curto criado pelo painel (Inbox: ouvir, ver, baixar)
 //   GET  /whatsapp/saude     fila, atraso e banco (para monitor externo)
 //   GET  /whatsapp/vivo      o processo está de pé (healthcheck do Docker; não depende do banco)
 import http from 'node:http';
@@ -17,6 +18,8 @@ import { destinoDoRepasse } from './rotas.js';
 import { marcarRepasse, repassar } from './repasse.js';
 import { guardarNoSpool, tamanhoSpool } from './spool.js';
 import { gravarEvento } from './trabalhador.js';
+import { lerArquivo } from './armazenamento.js';
+import { Readable } from 'node:stream';
 import { erroCurto, log } from './log.js';
 
 const responder = (res, status, corpo, tipo = 'application/json') => {
@@ -108,6 +111,32 @@ async function atendimento(req, res, q) {
   }
 }
 
+// Link curto da Inbox: o painel confere quem pode ver e grava o token na central; aqui só se entrega o arquivo
+// enquanto o link vale. Sem cache público e sem o caminho do arquivo na resposta.
+async function midia(req, res, token) {
+  if (!/^[A-Za-z0-9_-]{24,128}$/.test(token)) return responder(res, 404, { erro: 'não encontrado' });
+  let link;
+  try {
+    const r = await comLimite(central().query(`select caminho, mime from wa_midia_links where token = $1 and expira_em > now()`, [token]), 3000);
+    link = r.rows[0];
+  } catch (e) { return responder(res, 503, { erro: 'indisponível' }); }
+  if (!link) return responder(res, 404, { erro: 'link vencido' });
+  try {
+    const range = /^bytes=\d*-\d*$/.test(req.headers.range || '') ? req.headers.range : null;
+    const arq = await lerArquivo(link.caminho, range);
+    const h = (k) => (arq.headers.get(k) ? { [k]: arq.headers.get(k) } : {});
+    res.writeHead(arq.status === 206 ? 206 : 200, {
+      'content-type': link.mime || arq.headers.get('content-type') || 'application/octet-stream',
+      'cache-control': 'private, max-age=600', 'x-content-type-options': 'nosniff', 'accept-ranges': 'bytes',
+      ...h('content-length'), ...(arq.status === 206 ? h('content-range') : {}),
+    });
+    Readable.fromWeb(arq.body).pipe(res);
+  } catch (e) {
+    log('erro', 'não consegui ler a mídia do Storage', { erro: erroCurto(e) });
+    if (!res.headersSent) responder(res, 502, { erro: 'arquivo indisponível' });
+  }
+}
+
 async function saude(res) {
   try {
     const r = await comLimite(central().query(
@@ -136,6 +165,7 @@ export function criarServidor() {
       if (url.pathname === '/whatsapp/webhook' && req.method === 'POST') return await receberEvento(req, res);
       if (url.pathname === '/whatsapp/envio' && req.method === 'POST') return await envio(req, res);
       if (url.pathname === '/whatsapp/atendimento' && req.method === 'GET') return await atendimento(req, res, url.searchParams);
+      if (url.pathname.startsWith('/whatsapp/midia/') && req.method === 'GET') return await midia(req, res, url.pathname.slice('/whatsapp/midia/'.length));
       if (url.pathname === '/whatsapp/saude') return await saude(res);
       if (url.pathname === '/whatsapp/vivo') return responder(res, 200, { ok: true });
       responder(res, 404, { erro: 'não encontrado' });

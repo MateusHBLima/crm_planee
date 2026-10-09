@@ -6,6 +6,8 @@ import type * as sv from './servicos';
 import type * as inbox from './inbox';
 import type * as av from './avisos';
 import type * as pl from './planee';
+import type * as rs from './resultados';
+import type * as ag from './agenda';
 
 type R<F extends (...a: never[]) => Promise<unknown>> = Promise<Resposta<Awaited<ReturnType<F>>>>;
 
@@ -33,8 +35,9 @@ export const carregarNotasDoContato = (id: string): R<typeof crm.notasDoContato>
 export const carregarHistorico = (id: string): R<typeof sv.historicoContato> => ler('historico', { id });
 export const carregarServico = (id: string): R<typeof sv.detalheServico> => ler('servico', { id });
 export const carregarConversas = (busca?: string, filtro?: string | null): R<typeof inbox.listarConversas> => ler('conversas', { busca, filtro });
-export const abrirConversa = (numeroId: string, waId: string, antesDeId?: string | null): R<typeof inbox.lerConversa> =>
-  ler('conversa', { numero: numeroId, wa: waId, antes: antesDeId ?? null });
+// previa: leitura antecipada (o mouse parou em cima da conversa na lista): não marca como lida.
+export const abrirConversa = (numeroId: string, waId: string, antesDeId?: string | null, previa = false): R<typeof inbox.lerConversa> =>
+  ler('conversa', { numero: numeroId, wa: waId, antes: antesDeId ?? null, previa: previa ? '1' : null });
 
 export const carregarPlaneeDaEmpresa = (): Promise<Resposta<{ avisos: av.MeuAviso[]; novidades: pl.Novidade[] }>> => ler('planee_empresa');
 export const carregarFaixa = (): R<typeof pl.faixaDaEmpresa> => ler('faixa');
@@ -44,3 +47,5 @@ export const carregarSaude = (): R<typeof pl.saudeClientes> => ler('saude');
 export const carregarSaudeEmpresa = (id: string): R<typeof pl.saudeEmpresa> => ler('saude_empresa', { id });
 export const carregarNovidades = (): R<typeof pl.listarNovidades> => ler('novidades');
 export const carregarIntegracoes = (): R<typeof pl.listarIntegracoes> => ler('integracoes');
+export const carregarResultados = (periodo: string): R<typeof rs.lerResultados> => ler('resultados', { periodo });
+export const carregarAgenda = (dia: string): R<typeof ag.lerAgenda> => ler('agenda', { dia });

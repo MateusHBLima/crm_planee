@@ -52,7 +52,7 @@ const servidorN8n = http.createServer((req, res) => {
     const responder = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (req.headers['x-painel-segredo'] !== process.env.N8N_WEBHOOK_SEGREDO) return responder({ ok: false, erro: 'segredo' });
     if (req.url === '/painel-retomar') return responder({ ok: true });
-    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131047', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
+    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131026', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
     const wamid = `wamid.TESTE${++n8n.n}`;
     sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
            values (${dolar(d.numero_id)}, ${dolar(d.para)}, '${wamid}', 'saida', 'painel', 'text', ${dolar(d.texto)}, 'enviada', now(), now(),
@@ -61,6 +61,18 @@ const servidorN8n = http.createServer((req, res) => {
           where numero_id = ${dolar(d.numero_id)} and wa_id = ${dolar(d.para)};`);
     responder({ ok: true, wamid });
   });
+});
+
+// Receptor falso (GET /whatsapp/midia/<token>): como o de verdade, só entrega enquanto o link vale na central.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const receptor = { pedidos: [] };
+const servidorReceptor = http.createServer((req, res) => {
+  const tok = (req.url.match(/^\/whatsapp\/midia\/([A-Za-z0-9_-]{24,128})$/) || [])[1];
+  const achou = tok ? sql(`select caminho || '|' || coalesce(mime, '') from wa_midia_links where token = '${tok}' and expira_em > now()`) : '';
+  receptor.pedidos.push({ tok, achou });
+  if (!achou) { res.writeHead(404); return res.end(); }
+  const [, mime] = achou.split('|');
+  res.writeHead(200, { 'content-type': mime || 'application/octet-stream' }); res.end(mime.startsWith('image/') ? PNG : Buffer.alloc(64));
 });
 
 const NUM = '100000000000001';           // phone_number_id fictício da empresa de teste
@@ -81,11 +93,13 @@ insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto,
   ('${NUM}', '${BIA}', 'wamid.TI1', 'entrada', 'contato', 'text', 'Oi, gostaria de marcar uma consulta', null, null, null, null, null, null, ${ONTEM}, '{"segredo":"BRUTO_SECRETO"}', null),
   ('${NUM}', '${BIA}', 'wamid.TI2', 'saida', 'api', 'desconhecido', null, null, null, 'entregue', null, null, null, ${ONTEM} + interval '10 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI2b', 'saida', 'api', 'desconhecido', null, null, null, 'entregue', null, null, null, ${ONTEM} + interval '10 minutes 4 seconds', null, null),
-  ('${NUM}', '${BIA}', 'wamid.TI3', 'entrada', 'contato', 'image', 'Foto do pedido médico', '{"id":"m1","mime_type":"image/jpeg","caminho":"/midia/CAMINHO_SECRETO.jpg"}', null, null, null, null, null, now() - interval '60 minutes', null, null),
+  ('${NUM}', '${BIA}', 'wamid.TI3', 'entrada', 'contato', 'image', 'Foto do pedido médico', '{"id":"m1","mime_type":"image/png","caminho":"teste/100000000000001/CAMINHO_SECRETO.png"}', null, null, null, null, null, now() - interval '60 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI4', 'saida', 'celular', 'text', 'Recebido, obrigado!', null, null, 'lida', now() - interval '45 minutes', '["Recebido"]', null, now() - interval '50 minutes', null, '{"x":"ERRO_SECRETO"}'),
   ('${NUM}', '${BIA}', 'wamid.TI5', 'entrada', 'contato', 'text', 'mensagem que vou apagar', null, null, null, null, null, now() - interval '39 minutes', now() - interval '40 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI6', 'entrada', 'contato', 'text', 'Meu CPF é 123.456.789-09', null, null, null, null, null, null, now() - interval '30 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI7', 'saida', 'celular', 'text', 'Pode ser às 15h?', null, 'wamid.TI1', 'enviada', null, null, null, now() - interval '20 minutes', null, null),
+  ('${NUM}', '${BIA}', 'wamid.TA1', 'entrada', 'contato', 'audio', null, '{"id":"m3","mime_type":"audio/ogg; codecs=opus","caminho":"teste/100000000000001/wamid.TA1.ogg"}', null, null, null, null, null, now() - interval '17 minutes', null, null),
+  ('${NUM}', '${BIA}', 'wamid.TA2', 'entrada', 'contato', 'audio', null, '{"id":"m4","mime_type":"audio/ogg","caminho":"clinica-outra/200000000000002/OUTRA.ogg"}', null, null, null, null, null, now() - interval '16 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI8', 'entrada', 'contato', 'document', 'exame.pdf', '{"id":"m2","mime_type":"application/pdf","filename":"exame.pdf"}', null, null, null, null, null, now() - interval '15 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI9', 'entrada', 'historico', 'text', 'Mensagem antiga importada', null, null, null, null, null, null, now() - interval '10 minutes', null, null),
   ('${NUM}', '${BIA}', 'wamid.TI10', 'entrada', 'contato', 'unsupported', 'Tipo de mensagem não suportado pelo WhatsApp oficial', null, null, null, null, null, null, now() - interval '5 minutes', null, null),
@@ -99,6 +113,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
 (async () => {
   sql(SEMENTE);
   await new Promise((r) => servidorN8n.listen(Number(process.env.PORTA_N8N || 3999), '127.0.0.1', r));
+  await new Promise((r) => servidorReceptor.listen(Number(new URL(process.env.RECEPTOR_URL || 'http://127.0.0.1:3998').port), '127.0.0.1', r));
   const b = await lancar();
   const erros = [];
   const novo = async (vp = { width: 1280, height: 900 }, extra = {}) => {
@@ -128,8 +143,27 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('mensagem da Sara sem texto', txt.includes('Mensagem da Sara (texto ainda não registrado)'));
   ok('rótulos por origem (Sara, Equipe (celular), Histórico)', (await conversa(p).locator('[data-direcao="saida"]', { hasText: 'Sara' }).count()) === 2
     && txt.includes('Equipe (celular)') && txt.includes('Histórico'));
-  ok('foto como etiqueta com a legenda', (await conversa(p).getByText('Foto', { exact: true }).count()) === 1 && txt.includes('Foto do pedido médico'));
-  ok('documento com o nome do arquivo (sem repetir)', txt.includes('Documento: exame.pdf') && txt.split('exame.pdf').length === 2);
+  ok('foto fora da tela ainda não pede o arquivo', !receptor.pedidos.length);
+  await conversa(p).locator('[data-id]', { hasText: 'Foto do pedido médico' }).scrollIntoViewIfNeeded();
+  const foto = conversa(p).locator('[data-id]', { hasText: 'Foto do pedido médico' }).locator('img');
+  await foto.waitFor({ timeout: 8000 }).catch(() => {});
+  const srcFoto = (await foto.getAttribute('src').catch(() => '')) || '';
+  ok('foto aparece sozinha ao entrar na tela, com a legenda, por link curto do receptor', srcFoto.startsWith(process.env.RECEPTOR_URL + '/whatsapp/midia/') && txt.includes('Foto do pedido médico')
+    && (await foto.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false)), srcFoto);
+  ok('documento com o nome do arquivo (sem repetir) e "baixando…" enquanto o receptor não baixou', txt.includes('Documento: exame.pdf · baixando…') && txt.split('exame.pdf').length === 2);
+  const idA1 = sql("select id from wa_mensagens where wamid = 'wamid.TA1'"), idA2 = sql("select id from wa_mensagens where wamid = 'wamid.TA2'");
+  const audio1 = conversa(p).locator(`[data-id="${idA1}"]`);
+  await audio1.getByRole('button', { name: 'Ouvir áudio' }).click();
+  await audio1.locator('audio').waitFor({ timeout: 8000 }).catch(() => {});
+  const srcAudio = (await audio1.locator('audio').getAttribute('src').catch(() => '')) || '';
+  ok('áudio: "Ouvir áudio" vira o player com o arquivo', srcAudio.startsWith(process.env.RECEPTOR_URL + '/whatsapp/midia/') && (await audio1.locator('audio[controls]').count()) === 1, srcAudio);
+  await p.waitForTimeout(500);
+  const tokA = srcAudio.split('/').pop();
+  ok('o receptor entregou o áudio pelo link (tipo sem o codecs)', receptor.pedidos.some((x) => x.tok === tokA && x.achou.endsWith('|audio/ogg')), JSON.stringify(receptor.pedidos.slice(-2)));
+  ok('link curto vale 10 minutos e é da empresa', sql(`select count(*) from wa_midia_links where token = '${tokA}' and empresa_id = 'teste' and expira_em between now() + interval '9 minutes' and now() + interval '11 minutes'`) === '1');
+  const audio2 = conversa(p).locator(`[data-id="${idA2}"]`);
+  await audio2.getByRole('button', { name: 'Ouvir áudio' }).click(); await p.waitForTimeout(1200);
+  ok('arquivo de outra empresa não abre', (await audio2.locator('audio').count()) === 0 && ((await audio2.locator('[role=alert]').textContent().catch(() => '')) || '').includes('Mídia não encontrada'));
   ok('tipo não suportado', txt.includes('Tipo de mensagem não suportado') && !txt.includes('pelo WhatsApp oficial'));
   ok('marcas de editada e apagada', (await conversa(p).locator('[data-id]', { hasText: 'Recebido, obrigado!' }).getByText('editada').count()) === 1
     && (await conversa(p).locator('[data-id]', { hasText: 'mensagem que vou apagar' }).getByText('apagada').count()) === 1);
@@ -167,6 +201,14 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const tudo = respostas.join('\n');
   ok('caminho da mídia, bruto e erro não vão para o navegador', tudo.includes('Pode ser às 15h?') && !tudo.includes('CAMINHO_SECRETO') && !tudo.includes('BRUTO_SECRETO') && !tudo.includes('ERRO_SECRETO'),
     `${respostas.length} respostas; ` + ['Pode ser às 15h?', 'CAMINHO_SECRETO', 'BRUTO_SECRETO', 'ERRO_SECRETO'].map((k) => k + '=' + tudo.includes(k)).join(' '));
+
+  // Empresa com dois números: a lista mostra por qual linha veio cada conversa
+  ok('com um número só, sem etiqueta de linha', (await p.locator('section[aria-label="Conversas"] [data-linha]').count()) === 0);
+  sql(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome) values ('${NUM}', 'teste', 'Principal'), ('100000000000009', 'teste', 'Número de teste')
+       on conflict (phone_number_id) do update set nome = excluded.nome, empresa_id = excluded.empresa_id`);
+  await p.waitForTimeout(11000);
+  ok('com dois números, cada conversa mostra a linha', ((await item(p, 'Beatriz Ficticia').locator('[data-linha]').textContent().catch(() => '')) || '') === 'Principal');
+  sql(`delete from whatsapp_numeros where phone_number_id in ('${NUM}', '100000000000009')`);
 
   // Atualização automática: mensagem nova chega sem recarregar
   sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em) values ('${NUM}', '${BIA}', 'wamid.TI11', 'entrada', 'contato', 'text', 'Chegou agora durante o teste', now());
@@ -223,6 +265,33 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await entrar(p, GERAL, 'amanda@teste.local');
   await item(p, 'Beatriz Ficticia').getByRole('button').click();
   await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  // Nome editável: o lápis troca o nome na Inbox e no contato do CRM com o mesmo telefone, com histórico no banco da empresa
+  sql(`insert into contatos (nome, telefone) values ('Nome antigo no CRM', '${BIA}') on conflict (telefone) do update set nome = excluded.nome, arquivado = false;
+       update painel_vinculos set permissoes = array_append(permissoes, 'crm.editar')
+        where usuario_id = '${idAmanda}' and empresa_id = 'teste' and not 'crm.editar' = any(permissoes);`);
+  let antesNome = acoesR.length;
+  await p.getByRole('button', { name: 'Editar o nome do contato' }).click();
+  await p.fill('#nome-contato', '  Beatriz   Corrigida '); await p.press('#nome-contato', 'Enter');
+  await conversa(p).locator('header').getByText('Beatriz Corrigida').waitFor({ timeout: 8000 }).catch(() => {});
+  const acaoRenomear = (acoesR[antesNome] || {}).id;
+  ok('lápis troca o nome no cabeçalho e na lista', (await conversa(p).locator('header').getByText('Beatriz Corrigida', { exact: true }).count()) === 1 && (await item(p, 'Beatriz Corrigida').count()) === 1);
+  ok('nome do painel gravado sem mexer no nome da agenda', sql(`select nome_painel || '|' || nome_salvo || '|' || nome_painel_por from wa_contatos where wa_id='${BIA}'`) === 'Beatriz Corrigida|Beatriz Ficticia|Amanda Teste');
+  ok('histórico da troca no banco da empresa', sql(`select anterior || '|' || novo || '|' || por from wa_contatos_nomes where wa_id='${BIA}' order by id desc limit 1`) === 'Beatriz Ficticia|Beatriz Corrigida|Amanda Teste');
+  ok('contato do CRM com o mesmo telefone atualizado', sql(`select nome from contatos where telefone='${BIA}'`) === 'Beatriz Corrigida');
+  const audNome = sql(`select coalesce(detalhe::text, '') from central_auditoria where acao = 'renomear_contato' order by id desc limit 1`);
+  ok('auditoria central registra a troca sem o nome', audNome.includes('limpou') && !audNome.includes('Beatriz'), audNome);
+  ok('sincronização da agenda não apaga o nome do painel', (sql(`update wa_contatos set nome_salvo = 'Bia da agenda' where wa_id='${BIA}'`), true)
+    && sql(`select coalesce(nullif(nome_painel,''), nome_salvo) from wa_contatos where wa_id='${BIA}'`) === 'Beatriz Corrigida');
+  sql(`update wa_contatos set nome_salvo = 'Beatriz Ficticia' where wa_id='${BIA}'`);
+  // Vazio volta ao nome da agenda
+  await p.getByRole('button', { name: 'Editar o nome do contato' }).click();
+  await p.fill('#nome-contato', ''); await p.press('#nome-contato', 'Enter');
+  await conversa(p).locator('header').getByText('Beatriz Ficticia').waitFor({ timeout: 8000 }).catch(() => {});
+  ok('nome vazio volta ao nome do WhatsApp', (await conversa(p).locator('header').getByText('Beatriz Ficticia', { exact: true }).count()) === 1
+    && sql(`select coalesce(nome_painel, 'NULO') from wa_contatos where wa_id='${BIA}'`) === 'NULO'
+    && sql(`select nome from contatos where telefone='${BIA}'`) === 'Beatriz Corrigida');
+  const longo = await chamarAcao(p, acaoRenomear, [NUM, BIA, 'x'.repeat(81)]);
+  ok('nome com mais de 80 caracteres é recusado', longo.includes('passou de 80'), longo.slice(0, 120));
   ok('secretária com a permissão vê a caixa de resposta', await p.locator('#resposta-inbox').isEnabled() && (await p.getByText(/Somente leitura/).count()) === 0);
   const audEnvioAntes = Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`));
   await p.fill('#resposta-inbox', 'Resposta fictícia pelo painel'); await p.press('#resposta-inbox', 'Enter');
@@ -241,7 +310,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);
   // Quem responde pelo painel assume a conversa (a Sara fica quieta)
   await p.waitForTimeout(800);
-  ok('responder pelo painel assume a conversa no banco', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true');
+  ok('responder pelo painel assume a conversa por 24 h', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) || '|' || (dono_ate between now() + interval '23 hours' and now() + interval '25 hours') from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true|true');
   const cab = () => p.locator('section[aria-label^="Conversa com"] header');
   ok('cabeçalho mostra "Equipe atendendo · Amanda Teste" e o botão Devolver pra Sara',
     ((await cab().textContent()) || '').includes('Equipe atendendo · Amanda Teste') && (await p.getByRole('button', { name: 'Devolver pra Sara' }).count()) === 1);
@@ -257,7 +326,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // Erro da Meta: mensagem curta na própria caixa, sem o corpo da resposta do n8n
   await p.fill('#resposta-inbox', 'Isto vai FALHAR'); await p.press('#resposta-inbox', 'Enter'); await p.waitForTimeout(2000);
   const erroE = (await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '';
-  ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131047)') && !respR.join('\n').includes('DADO_SENSIVEL')
+  ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131026)') && !respR.join('\n').includes('DADO_SENSIVEL')
     && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
   // Devolver pra Sara: volta para a IA e, com a última mensagem do contato, avisa o n8n para ela responder já
@@ -278,16 +347,43 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // Assumir pelo botão (sem enviar nada)
   antesDono = acoesR.length;
   await p.getByRole('button', { name: 'Assumir', exact: true }).click();
+  ok('Assumir pergunta por quanto tempo', (await p.getByRole('group', { name: 'Assumir por quanto tempo' }).count()) === 1
+    && (await p.getByRole('button', { name: 'Por 24 h' }).count()) === 1 && (await p.getByRole('button', { name: 'Sempre', exact: true }).count()) === 1);
+  await p.getByRole('button', { name: 'Por 24 h' }).click();
   await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
   const acaoAssumir = (acoesR[antesDono] || {}).id;
-  ok('Assumir pelo botão: equipe no banco, sem mandar mensagem', sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'humano'
+  ok('Assumir por 24 h: equipe no banco com prazo, sem mandar mensagem', sql(`select dono || '|' || (dono_ate between now() + interval '23 hours' and now() + interval '25 hours') from wa_conversas where wa_id='${BIA}'`) === 'humano|true'
     && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1);
+  ok('cabeçalho mostra até quando', /Equipe atendendo · Amanda Teste · até \d{2}\/\d{2} \d{2}:\d{2}/.test(((await cab().textContent()) || '')), ((await cab().textContent()) || '').slice(0, 200));
   await p.screenshot({ path: out + '24_inbox_assumida.png' });
   // Devolver com a última mensagem da clínica: não avisa o n8n (não há o que responder)
   sql(`update wa_conversas set ultima_direcao = 'saida' where wa_id = '${BIA}'`);
   const devolve2 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
   ok('devolver sem mensagem do contato pendente não avisa o n8n', devolve2.startsWith('200') && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia'
     && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1, devolve2.slice(0, 120));
+  // Assumir "Sempre": sem prazo, "Fixa" na lista e no cabeçalho; contato esperando há mais de 30 min fica vermelho
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  await p.getByRole('button', { name: 'Assumir', exact: true }).click();
+  await p.getByRole('button', { name: 'Sempre', exact: true }).click();
+  await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
+  ok('Assumir sempre: equipe no banco sem prazo', sql(`select dono || '|' || coalesce(dono_ate::text, 'sem prazo') from wa_conversas where wa_id='${BIA}'`) === 'humano|sem prazo'
+    && sql(`select count(*) from central_auditoria where acao = 'assumir_conversa' and alvo = '${NUM}:1001' and detalhe::text like '%sempre%'`) === '1');
+  ok('cabeçalho e lista mostram "Fixa"', ((await cab().textContent()) || '').includes('Fixa com a equipe · Amanda Teste')
+    && (await item(p, 'Beatriz Ficticia').getByText('Fixa', { exact: true }).count()) === 1);
+  sql(`update wa_conversas set ultima_direcao = 'entrada', ultima_em = now() - interval '40 minutes' where wa_id = '${BIA}'`);
+  await p.waitForTimeout(11000);
+  ok('fixa com o contato sem resposta há 40 min fica vermelha na lista', (await item(p, 'Beatriz Ficticia').locator('[data-esperando="true"]').count()) === 1);
+  sql(`update wa_conversas set ultima_direcao = 'saida', ultima_em = now() where wa_id = '${BIA}'`);
+  // Prazo vencido: a Sara volta sozinha (o painel mostra "Sara atendendo" e o botão Assumir)
+  sql(`update wa_conversas set dono_ate = now() - interval '1 minute' where wa_id = '${BIA}'`);
+  await p.waitForTimeout(11000);
+  ok('prazo vencido: "Sara atendendo" e botão Assumir', ((await cab().textContent()) || '').includes('Sara atendendo')
+    && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1 && (await item(p, 'Beatriz Ficticia').getByText('Equipe', { exact: true }).count()) === 0);
+  const devolve3 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
+  ok('devolver uma conversa já vencida não avisa nem audita de novo', devolve3.startsWith('200')
+    && sql(`select count(*) from central_auditoria where acao = 'devolver_conversa' and alvo = '${NUM}:1001'`) === '2');
+  sql(`update wa_conversas set dono = 'ia', dono_ate = null where wa_id = '${BIA}'`);
   // Equipe respondeu pelo celular agora: a Sara fica pausada (sem mudar o dono)
   sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em) values ('${NUM}', '${DANI}', 'wamid.TDCEL', 'saida', 'celular', 'text', 'Respondi pelo celular', now() - interval '1 minute')`);
   await item(p, 'Daniela Ficticia').getByRole('button').click();
@@ -318,11 +414,15 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`update painel_vinculos set permissoes = array_remove(permissoes, 'inbox.responder') where usuario_id = '${idAmanda}' and empresa_id = 'teste'`);
   const semPerm = await chamarAcao(p, acaoEnviar, [NUM, BIA, 'Tentativa sem permissão']);
   ok('sem inbox.responder: a ação recusa chamada direto', semPerm.includes('não tem permissão para responder') && n8n.pedidos.length === nPed, semPerm.slice(0, 160));
+  const semPermNome = await chamarAcao(p, acaoRenomear, [NUM, BIA, 'Tentativa sem permissão']);
+  ok('sem inbox.responder: renomear recusa chamada direto', Boolean(acaoRenomear) && semPermNome.includes('não tem permissão para editar contatos')
+    && sql(`select coalesce(nome_painel, 'NULO') from wa_contatos where wa_id='${BIA}'`) === 'NULO', semPermNome.slice(0, 160));
   const semPermDono = await chamarAcao(p, acaoAssumir, [NUM, BIA]);
   ok('sem inbox.responder: assumir recusa chamada direto', Boolean(acaoAssumir) && semPermDono.includes('não tem permissão para atender pelo painel')
     && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia', semPermDono.slice(0, 160));
   await p.goto(GERAL + '/inbox'); await item(p, 'Beatriz Ficticia').getByRole('button').click(); await p.waitForTimeout(1500);
   ok('sem inbox.responder: a caixa some', (await p.locator('#resposta-inbox').count()) === 0 && (await p.getByText(/Somente leitura/).count()) === 1);
+  ok('sem inbox.responder: sem o lápis do nome', (await p.getByRole('button', { name: 'Editar o nome do contato' }).count()) === 0);
   ok('sem inbox.responder: sem "Abrir no WhatsApp"', (await p.getByText('Abrir no WhatsApp').count()) === 0);
   ok('sem inbox.responder: sem botão Assumir, mas vê quem atende', (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 0
     && ((await cab().textContent()) || '').includes('Sara atendendo'));
@@ -335,8 +435,9 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   [ctx, p] = await novo();
   const respM = []; await capturar(p, respM);
   await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
+  await Promise.all([p.waitForURL(/\/inbox$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
   await p.goto(GERAL + '/inbox');
+  await item(p, 'Beatriz Ficticia').first().waitFor({ timeout: 8000 }).catch(() => undefined); // a lista chega depois da tela (09/10)
   ok('master abre a Inbox da empresa escolhida', p.url().endsWith('/inbox') && (await item(p, 'Beatriz Ficticia').count()) === 1, p.url());
   ok('master vê o aviso da visão da Planee', (await p.getByText(/Visão da Planee/).count()) === 1);
   await item(p, 'Beatriz Ficticia').getByRole('button').click();
@@ -374,6 +475,6 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`update painel_vinculos set permissoes = array_prepend('inbox.ver', permissoes) where usuario_id = (select id from painel_usuarios where email = 'amanda@teste.local') and empresa_id = 'teste'`);
 
   ok('sem erro de página', erros.length === 0, erros.join(' | ').slice(0, 300));
-  console.log(res.join('\n')); await b.close(); servidorN8n.close();
+  console.log(res.join('\n')); await b.close(); servidorN8n.close(); servidorReceptor.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);
 })().catch((e) => { console.log(res.join('\n')); console.error('ERRO', e.message); process.exit(1); });

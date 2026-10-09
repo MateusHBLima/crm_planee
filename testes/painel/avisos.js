@@ -80,7 +80,10 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   await p.fill('#aviso-comentario', 'Seria bom ver o resumo do dia (teste)');
   await p.locator('[role=dialog]').getByRole('button', { name: 'Enviar para a Planee' }).click();
   await p.getByText('Seria bom ver o resumo do dia').waitFor({ timeout: 8000 }).catch(() => {});
-  ok('aviso sem mensagem (Novo aviso) também funciona', sql(`select count(*) from avisos where origem = 'equipe' and tipo = 'sugestao' and ref->>'wa_final' is null`) === '1');
+  // No CI a gravação pode chegar depois do texto na tela: espera a linha no banco (até 10 s) antes de conferir.
+  const qSugestao = `select count(*) from avisos where origem = 'equipe' and tipo = 'sugestao' and ref->>'wa_final' is null`;
+  for (let i = 0; i < 20 && sql(qSugestao) !== '1'; i++) await p.waitForTimeout(500);
+  ok('aviso sem mensagem (Novo aviso) também funciona', sql(qSugestao) === '1', sql(qSugestao));
   await ctx.close();
 
   // ---- Outra empresa não vê os avisos da empresa de teste ----
@@ -202,6 +205,26 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   sql(`update avisos set estado = 'resolvido', lembrado_em = now() - interval '3 days' where tipo = 'token_vencendo'`);
   await p.getByRole('button', { name: 'Verificar agora' }).click(); await p.waitForTimeout(2500);
   ok('3 dias depois, sem renovar: o lembrete volta a abrir', sql(`select estado || '|' || (lembrado_em > now() - interval '1 minute') from avisos where tipo = 'token_vencendo'`) === 'aberto|true');
+  // Fila parada (09/10): 5 pedidos aguardando além do prazo vermelho. Em horário comercial vira aviso; fora dele, não.
+  const ids = sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por, aberto_em)
+     select '00000000-0000-4000-8000-000000000001', 'outros', 'Fila parada fictícia ' || n, 'IA', now() - interval '3 hours'
+       from generate_series(1, 5) n returning id`).split('\n');
+  await p.getByRole('button', { name: 'Verificar agora' }).click(); await p.waitForTimeout(2500);
+  const sp = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const hora = Number(sp.find((x) => x.type === 'hour').value); const dom = sp.find((x) => x.type === 'weekday').value === 'Sun';
+  const comercial = !dom && hora >= 8 && hora < 20;
+  const filaAv = sql(`select count(*) || '|' || coalesce(min(titulo), '') from avisos where tipo = 'fila_parada' and estado <> 'resolvido'`);
+  ok(`vigia: fila parada ${comercial ? 'vira aviso em horário comercial' : 'não avisa fora do horário comercial'}`,
+    comercial ? /^1\|\d+ pedidos esperando a equipe além do prazo/.test(filaAv) : filaAv.startsWith('0|'), filaAv);
+  sql(`update atendimentos set arquivado = true where id in (${ids.map((i) => `'${i}'`).join(',')})`);
+  // Prazo vermelho de 30 dias: nada fica atrasado e o aviso fecha sozinho. Depois volta o prazo de antes.
+  const prazoAntes = sql(`select coalesce(valor::text, '') from crm_config where chave = 'prazos_atendimento'`);
+  sql(`insert into crm_config (chave, valor) values ('prazos_atendimento', '{"aguardando":{"amarelo":15,"vermelho":43200},"pendente":{"amarelo":1440,"vermelho":2880}}')
+       on conflict (chave) do update set valor = excluded.valor`);
+  await p.getByRole('button', { name: 'Verificar agora' }).click(); await p.waitForTimeout(2500);
+  ok('vigia: fila zerada fecha o aviso sozinho', sql(`select count(*) from avisos where tipo = 'fila_parada' and estado <> 'resolvido'`) === '0');
+  if (prazoAntes) sql(`update crm_config set valor = '${prazoAntes}'::jsonb where chave = 'prazos_atendimento'`);
+  else sql(`delete from crm_config where chave = 'prazos_atendimento'`);
   await p.getByRole('tab', { name: 'Saúde dos clientes' }).click();
   const linhaTeste = p.locator('tr[data-empresa="teste"]');
   await linhaTeste.waitFor({ timeout: 8000 });

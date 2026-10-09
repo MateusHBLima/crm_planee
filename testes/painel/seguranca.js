@@ -61,7 +61,8 @@ async function entrar(p, email, destino = '/crm') {
   ok('secretária não vê cartão sombra', (await p.locator('article', { hasText: 'Cartão sombra de teste' }).count()) === 0);
   await ctx.close();
   [ctx, p] = await novo(); await entrar(p, 'planee@teste.local', '/empresas');
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
+  await Promise.all([p.waitForURL(/\/inbox$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
+  await p.goto(B + '/crm'); await p.waitForTimeout(800);
   const sombra = p.locator('article', { hasText: 'Cartão sombra de teste' });
   ok('master vê o cartão sombra com o selo, sem botões de mover', (await sombra.count()) === 1 && (await sombra.locator('text=sombra').count()) >= 1
     && (await sombra.locator('button:has-text("Assumir")').count()) === 0);

@@ -1,14 +1,15 @@
 import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { Shell } from '@/components/Shell';
-import { Crm } from '@/components/crm/Crm';
-import { Inbox } from '@/components/inbox/Inbox';
+import { CrmTela } from '@/components/crm/CrmTela';
+import { InboxTela } from '@/components/inbox/InboxTela';
+import { Resultados } from '@/components/resultados/Resultados';
+import { Agenda } from '@/components/agenda/Agenda';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
 import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
 import { hostDeCabecalhos } from '@/lib/empresa';
-import { lerConfigCrm, lerQuadro } from '@/lib/painel/crm';
-import { listarConversas } from '@/lib/painel/inbox';
+import { lerConfigCrm } from '@/lib/painel/crm';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
@@ -42,23 +43,40 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     try { return await fn(); } catch (e) { if (e instanceof ErroApi) return { erro: e.message }; throw e; }
   };
 
-  if (atual.id === 'inbox') {
-    const lista = await tentar(() => listarConversas(usuario));
-    if ('erro' in lista) return aviso(lista.erro);
+  // Inbox e CRM abrem sem esperar o banco (09/10): o servidor manda a tela na hora e os dados chegam pela leitura GET
+  // (ou da memória da aba, quando a pessoa volta). O banco da clínica fica em outra região; esperar aqui segurava a
+  // troca de tela por 1 a 2 s. Empresa sem banco: o erro aparece na própria tela, com o mesmo texto de antes.
+  if (atual.id === 'inbox' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <Inbox key={usuario.empresa?.id} inicial={lista} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} nome={usuario.nome} />
+        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} nome={usuario.nome} />
       </Shell>
     );
   }
 
-  if (atual.id === 'crm') {
-    const quadro = await tentar(() => lerQuadro(usuario));
-    if ('erro' in quadro) return aviso(quadro.erro);
+  if (atual.id === 'crm' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <Crm key={usuario.empresa?.id} inicial={quadro} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
+        <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
           podeConfig={pode(usuario, 'crm.config')} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+      </Shell>
+    );
+  }
+
+  // Agenda do dia (09/10): espelho da Feegow e agendamentos da Sara, pela leitura GET (lib/painel/agenda.ts).
+  if (atual.id === 'agenda' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Agenda key={usuario.empresa.id} empresaId={usuario.empresa.id} master={usuario.master} />
+      </Shell>
+    );
+  }
+
+  // Resultados da empresa (fase 1.3): os números chegam pela leitura GET (lib/painel/resultados.ts).
+  if (atual.id === 'resultados' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Resultados key={usuario.empresa.id} empresaId={usuario.empresa.id} empresaNome={usuario.empresa.nome} />
       </Shell>
     );
   }

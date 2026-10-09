@@ -36,7 +36,10 @@ export const sessaoAtual = cache(async (): Promise<Sessao> => {
 // outra região e cada leitura pagava essa ida. Telas e ações continuam conferindo na hora; mudança na tela de
 // gestão limpa a memória (esquecerSessoes). Pior caso: alguém desativado ainda lê por até SESSAO_MS.
 const SESSAO_MS = 15_000;
-const memoria = new Map<string, { s: Sessao; ate: number }>();
+// No globalThis: o Next empacota as rotas e as ações em pacotes separados, cada um com a sua cópia deste módulo.
+// Sem isso, esquecerSessoes() numa ação (ex.: salvar o banco da empresa) não limpava a memória das leituras (09/10).
+const g = globalThis as unknown as { __painelSessoes?: Map<string, { s: Sessao; ate: number }> };
+const memoria = (g.__painelSessoes ??= new Map<string, { s: Sessao; ate: number }>());
 export function esquecerSessoes() { memoria.clear(); }
 
 export async function usuarioParaLeitura(): Promise<Usuario | null> {

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { assumirConversa, devolverConversa, enviarMensagem } from '@/lib/painel/acoes-inbox';
+import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
+import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
@@ -34,6 +35,10 @@ const STATUS: Record<string, { marca: string; nome: string }> = {
   lida: { marca: '✓✓', nome: 'Lida' }, reproduzida: { marca: '✓✓', nome: 'Reproduzida' }, falhou: { marca: '!', nome: 'Não enviada' },
 };
 
+// Conversa fixa com a equipe e o contato esperando resposta há mais de 30 min: a lista destaca em vermelho.
+const ESPERA_FIXA_MS = 30 * 60_000;
+const esperandoEquipe = (k: Conversa) => k.ultima_direcao === 'entrada' && Boolean(k.ultima_em) && Date.now() - new Date(k.ultima_em as string).getTime() > ESPERA_FIXA_MS;
+
 const mesma = (a: Chave | null, b: Chave | null) => Boolean(a && b && a.numero_id === b.numero_id && a.wa_id === b.wa_id);
 const nomeDe = (k: Conversa) => k.nome || telefoneBonito(k.wa_id);
 const iniciais = (k: Conversa) => (k.nome ? k.nome.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() : '#');
@@ -61,6 +66,11 @@ function criarDatas(fuso: string) {
       const k = chave.format(new Date(iso));
       return k === hoje() ? hora.format(new Date(iso)) : k === ontem() ? 'Ontem' : curto.format(new Date(iso));
     },
+    // Prazo: "14:02" hoje, "06/10 14:02" em outro dia
+    prazo(iso: string) {
+      const d = new Date(iso);
+      return chave.format(d) === hoje() ? hora.format(d) : `${curto.format(d)} ${hora.format(d)}`;
+    },
     // Separador da conversa: "Hoje", "Ontem", "segunda-feira, 29 de setembro de 2026"
     separador(iso: string) {
       const k = chave.format(new Date(iso));
@@ -69,8 +79,14 @@ function criarDatas(fuso: string) {
   };
 }
 
-export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string }) {
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string; empresaId?: string };
+
+export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
+  const inicialRef = useRef(inicial);
+  // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
+  const memLista = `${empresaId}:conversas`;
+  const memConversa = useCallback((k: Chave) => `${empresaId}:conversa:${chaveDe(k)}`, [empresaId]);
   const [busca, setBusca] = useState('');
   const [soFollowup, setSoFollowup] = useState(false);
   const filtroRef = useRef<string | null>(null);
@@ -85,6 +101,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   const [mudandoDono, setMudandoDono] = useState(false);
   const [avisando, setAvisando] = useState<AlvoAviso | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [escolhendoPrazo, setEscolhendoPrazo] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -110,15 +127,41 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   }, []);
 
   const abrir = useCallback(async (k: Chave) => {
-    setAberta(k); setDados(null); setCarregando(true); setAviso(null);
+    const guardada = lembrado<Aberta>(memConversa(k));
+    setAberta(k); setDados(guardada ?? null); setCarregando(!guardada); setAviso(null);
+    if (guardada) ajuste.current = { tipo: 'fim' };
+    // A equipe abriu: as não lidas somem na hora (o servidor confirma em seguida). O master só olha.
+    if (!mascarado) setLista((l) => ({ ...l, conversas: l.conversas.map((x) => (mesma(x, k) && x.nao_lidas ? { ...x, nao_lidas: 0 } : x)) }));
     const d = tratar(await abrirConversa(k.numero_id, k.wa_id));
     if (!mesma(abertaRef.current, k)) return;
     setCarregando(false);
     if (!d) return;
-    ajuste.current = { tipo: 'fim' };
-    setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    if (guardada) aplicarAtualizacaoRef.current({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    else {
+      ajuste.current = { tipo: 'fim' };
+      setDados({ conversa: d.conversa, mensagens: d.mensagens, temMais: d.temMais, selo: d.selo });
+    }
     atualizarLinha(d.conversa);
-  }, [tratar, atualizarLinha]);
+  }, [tratar, atualizarLinha, memConversa, mascarado]);
+
+  // Leitura antecipada: o mouse parou numa conversa da lista por um instante. Quando a pessoa clica, as mensagens
+  // já estão na memória e aparecem na hora. Não marca como lida (quem marca é o clique).
+  const antecipando = useRef(new Set<string>());
+  const timerPrevia = useRef<number | null>(null);
+  const previa = useCallback((k: Chave) => {
+    if (timerPrevia.current) window.clearTimeout(timerPrevia.current);
+    // O master não antecipa: cada leitura dele vai para a auditoria de acesso, e passar o mouse não é abrir.
+    if (mascarado) return;
+    const chave = memConversa(k);
+    if (lembrado(chave) || antecipando.current.has(chave) || mesma(abertaRef.current, k)) return;
+    timerPrevia.current = window.setTimeout(async () => {
+      antecipando.current.add(chave);
+      const r = await abrirConversa(k.numero_id, k.wa_id, null, true);
+      antecipando.current.delete(chave);
+      if (r.ok && !lembrado(chave)) lembrar(chave, { conversa: r.dados.conversa, mensagens: r.dados.mensagens, temMais: r.dados.temMais, selo: r.dados.selo });
+    }, 150);
+  }, [memConversa, mascarado]);
+  const cancelarPrevia = useCallback(() => { if (timerPrevia.current) window.clearTimeout(timerPrevia.current); timerPrevia.current = null; }, []);
 
   const carregarAntigas = useCallback(async () => {
     const k = abertaRef.current;
@@ -152,6 +195,13 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     });
   }, []);
 
+  const aplicarAtualizacaoRef = useRef(aplicarAtualizacao);
+  aplicarAtualizacaoRef.current = aplicarAtualizacao;
+
+  // Guarda na memória da aba a conversa aberta e a lista sem busca (voltar à Inbox ou reabrir mostra na hora).
+  useEffect(() => { if (aberta && dados) lembrar(memConversa(aberta), dados); }, [aberta, dados, memConversa]);
+  useEffect(() => { if (!busca.trim() && !soFollowup) lembrar(memLista, lista); }, [lista, busca, soFollowup, memLista]);
+
   // A bolha "enviando…" sai quando a conversa já traz a mensagem com o mesmo wamid.
   useEffect(() => {
     if (!dados || !pendentes.length) return;
@@ -176,11 +226,11 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
   }, [aplicarAtualizacao, atualizarLinha]);
 
   // Assumir (a Sara fica quieta nesta conversa) ou devolver para a Sara.
-  const trocarDono = useCallback(async (dono: 'ia' | 'humano') => {
+  const trocarDono = useCallback(async (dono: 'ia' | 'humano', prazo: '24h' | 'sempre' = '24h') => {
     const k = abertaRef.current;
     if (!k) return;
-    setMudandoDono(true); setAviso(null);
-    const d = tratar(await (dono === 'humano' ? assumirConversa : devolverConversa)(k.numero_id, k.wa_id));
+    setMudandoDono(true); setAviso(null); setEscolhendoPrazo(false);
+    const d = tratar(await (dono === 'humano' ? assumirConversa(k.numero_id, k.wa_id, prazo) : devolverConversa(k.numero_id, k.wa_id)));
     setMudandoDono(false);
     if (!d || !mesma(abertaRef.current, k)) return;
     setDados((x) => (x ? { ...x, conversa: d } : x));
@@ -231,6 +281,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
     const id = window.setInterval(tick, ATUALIZA_MS);
     const vis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', vis);
+    // Lista vinda da memória da aba (voltou à Inbox): mostra na hora e já busca a atual.
+    if (Date.now() - new Date(inicialRef.current.lidoEm).getTime() > 3000) tick();
     return () => { parado = true; window.clearInterval(id); document.removeEventListener('visibilitychange', vis); };
   }, [aplicarAtualizacao]);
 
@@ -264,7 +316,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
         <ul className={c.itens}>
           {lista.conversas.map((k) => (
             <li key={k.numero_id + ':' + k.wa_id}>
-              <button type="button" className={c.item} aria-current={mesma(k, aberta) ? 'true' : undefined} data-wa={k.wa_id} onClick={() => abrir(k)}>
+              <button type="button" className={c.item} aria-current={mesma(k, aberta) ? 'true' : undefined} data-wa={k.wa_id} onClick={() => abrir(k)}
+                onMouseEnter={() => previa(k)} onMouseLeave={cancelarPrevia} onFocus={() => previa(k)}>
                 <span className={c.avatar} aria-hidden="true">{iniciais(k)}</span>
                 <span className={c.itemTexto}>
                   <span className={c.itemLinha}>
@@ -273,7 +326,14 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                   </span>
                   <span className={c.itemLinha}>
                     <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
-                    {k.dono === 'humano' && <span className={c.tagEquipe} title={k.dono_por ? `Com a equipe: ${k.dono_por}` : 'Com a equipe'}>Equipe</span>}
+                    {lista.linhas && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
+                    {k.dono === 'humano' && (
+                      <span className={c.tagEquipe} data-sempre={k.dono_sempre ? 'true' : undefined}
+                        data-esperando={k.dono_sempre && esperandoEquipe(k) ? 'true' : undefined}
+                        title={`${k.dono_sempre ? 'Fixa com' : 'Com'} a equipe${k.dono_por ? ': ' + k.dono_por : ''}${k.dono_ate ? ' até ' + datas.prazo(k.dono_ate) : ''}${k.dono_sempre && esperandoEquipe(k) ? ' · contato sem resposta há mais de 30 min' : ''}`}>
+                        {k.dono_sempre ? 'Fixa' : 'Equipe'}
+                      </span>
+                    )}
                     {k.janela_aberta && <span className={c.janela} title="Janela de 24 h aberta: o contato escreveu nas últimas 24 horas">24h</span>}
                     {k.nao_lidas > 0 && <span className={c.naoLidas} aria-label={`${k.nao_lidas} não lidas`}>{k.nao_lidas}</span>}
                   </span>
@@ -305,15 +365,27 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                 <>
                   <span className={c.avatarGrande} aria-hidden="true">{iniciais(atual)}</span>
                   <div className={c.cabecaTexto}>
-                    <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>
+                    {podeResponder ? (
+                      <NomeEditavel key={chaveDe(atual)} conversa={atual} onSalvar={async (nome) => {
+                        const k = abertaRef.current;
+                        if (!k) return 'Abra uma conversa antes.';
+                        const r = await renomearContato(k.numero_id, k.wa_id, nome);
+                        if (!r.ok) return r.sair ? null : r.erro;
+                        if (mesma(abertaRef.current, k)) { setDados((x) => (x ? { ...x, conversa: r.dados } : x)); atualizarLinha(r.dados); }
+                        return null;
+                      }} />
+                    ) : <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>}
                     <span className={c.cabecaLinha}>
                       <span className={c.mono}>{telefoneBonito(atual.wa_id)}</span>
+                      {lista.linhas && <span className={c.tagLinha} title="Número da empresa desta conversa">{lista.linhas[atual.numero_id] ?? atual.numero_id}</span>}
                       <span className={c.pilula} data-aberta={atual.janela_aberta ? 'true' : 'false'}>
                         {atual.janela_aberta ? 'Janela de 24 h aberta' : 'Janela de 24 h fechada'}
                       </span>
                       <span className={c.dono} data-dono={atual.dono === 'humano' ? 'equipe' : atual.pausa_ate ? 'pausa' : 'sara'}>
                         {atual.dono === 'humano'
-                          ? `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}`
+                          ? atual.dono_sempre
+                            ? `Fixa com a equipe${atual.dono_por ? ' · ' + atual.dono_por : ''}`
+                            : `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}${atual.dono_ate ? ` · até ${datas.prazo(atual.dono_ate)}` : ''}`
                           : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
                       </span>
                       {dados?.selo && (
@@ -329,12 +401,21 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                       Abrir no WhatsApp
                     </a>
                   )}
-                  {podeResponder && (
+                  {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
-                      onClick={() => trocarDono(atual.dono === 'humano' ? 'ia' : 'humano')}
-                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa até você devolver'}>
+                      onClick={() => (atual.dono === 'humano' ? trocarDono('ia') : setEscolhendoPrazo(true))}
+                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa: por 24 h ou sempre'}>
                       {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? 'Devolver pra Sara' : 'Assumir'}
                     </button>
+                  )}
+                  {podeResponder && atual.dono !== 'humano' && escolhendoPrazo && (
+                    <span className={c.prazoDono} role="group" aria-label="Assumir por quanto tempo">
+                      <button type="button" className={c.botaoDonoForte} disabled={mudandoDono} onClick={() => trocarDono('humano', '24h')}
+                        title="A Sara volta sozinha 24 h depois da última resposta da equipe">Por 24 h</button>
+                      <button type="button" className={c.botaoDono} disabled={mudandoDono} onClick={() => trocarDono('humano', 'sempre')}
+                        title="A conversa fica com você até alguém clicar em Devolver pra Sara">Sempre</button>
+                      <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoPrazo(false)}>Cancelar</button>
+                    </span>
                   )}
                 </>
               )}
@@ -352,7 +433,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
                 return (
                   <div key={m.id} className={c.bloco}>
                     {novoDia && <div className={c.dia} role="separator"><span>{datas.separador(m.em)}</span></div>}
-                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'}
+                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} numeroId={dados.conversa.numero_id} waId={dados.conversa.wa_id}
                       onAvisar={mascarado || !aberta ? undefined : () => setAvisando({
                         numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato'),
                         trecho: m.texto || (MIDIA[m.tipo] ?? null),
@@ -392,6 +473,42 @@ export function Inbox({ inicial, mascarado, podeResponder, nome }: { inicial: Li
         )}
       </div>
     </div>
+  );
+}
+
+// Nome do contato com lápis: Enter salva, Esc cancela. Vazio volta ao nome do WhatsApp.
+function NomeEditavel({ conversa, onSalvar }: { conversa: Conversa; onSalvar: (nome: string) => Promise<string | null> }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(conversa.nome ?? '');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const salvar = async () => {
+    if (salvando) return;
+    setSalvando(true); setErro(null);
+    const e = await onSalvar(valor);
+    setSalvando(false);
+    if (e) setErro(e); else setEditando(false);
+  };
+  if (!editando) {
+    return (
+      <span className={c.nomeLinha}>
+        <h2 className={c.cabecaNome}>{nomeDe(conversa)}</h2>
+        <button type="button" className={c.lapis} aria-label="Editar o nome do contato" title="Editar o nome do contato"
+          onClick={() => { setValor(conversa.nome ?? ''); setErro(null); setEditando(true); }}>✎</button>
+      </span>
+    );
+  }
+  return (
+    <span className={c.nomeLinha}>
+      <label htmlFor="nome-contato" className={c.visivelLeitor}>Nome do contato</label>
+      <input id="nome-contato" className={c.nomeCampo} value={valor} maxLength={80} autoFocus disabled={salvando}
+        placeholder="Nome do contato (vazio volta ao do WhatsApp)"
+        onChange={(e) => setValor(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } if (e.key === 'Escape') setEditando(false); }} />
+      <button type="button" className={c.nomeSalvar} onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+      <button type="button" className={c.nomeCancelar} onClick={() => setEditando(false)} disabled={salvando}>Cancelar</button>
+      {erro && <span className={c.nomeErro} role="alert">{erro}</span>}
+    </span>
   );
 }
 
@@ -457,7 +574,81 @@ function MenuMensagem({ lado, onAvisar }: { lado: 'esquerda' | 'direita'; onAvis
   );
 }
 
-function Bolha({ m, hora, nomeContato, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; onAvisar?: () => void }) {
+// Áudio, foto, vídeo e documento como no WhatsApp: a foto aparece sozinha quando entra na tela; áudio e vídeo tocam
+// no player; o documento abre em outra aba. O arquivo vem por um link curto (10 min) que o servidor cria a cada pedido.
+function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; waId: string; rotulo: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const caixa = useRef<HTMLDivElement>(null);
+  const visual = m.tipo === 'image' || m.tipo === 'sticker';
+  const pronta = Boolean(m.midia?.pronta);
+
+  const pedir = useCallback(async (): Promise<string | null> => {
+    setCarregando(true); setErro(null);
+    const r = await abrirMidia(numeroId, waId, m.id);
+    setCarregando(false);
+    if (!r.ok) { setErro(r.erro); return null; }
+    setUrl(r.dados.url);
+    return r.dados.url;
+  }, [numeroId, waId, m.id]);
+
+  useEffect(() => {
+    if (!visual || !pronta || url || erro || !caixa.current) return;
+    const io = new IntersectionObserver((v) => { if (v.some((x) => x.isIntersecting)) { io.disconnect(); void pedir(); } }, { rootMargin: '300px' });
+    io.observe(caixa.current);
+    return () => io.disconnect();
+  }, [visual, pronta, url, erro, pedir]);
+
+  const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
+  const titulo = nomeArquivo ? `${rotulo}: ${nomeArquivo}` : rotulo;
+  if (!pronta) {
+    const situacao = !m.midia ? '' : m.midia.erro ? ' · arquivo indisponível' : ' · baixando…';
+    return <span className={c.midia} data-tipo={m.tipo}>{titulo}{situacao}</span>;
+  }
+
+  let corpo: React.ReactNode;
+  if (visual) {
+    corpo = url
+      ? <a href={url} target="_blank" rel="noopener noreferrer" title="Abrir em tamanho real">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={m.tipo === 'sticker' ? c.figurinha : c.foto} src={url} alt={rotulo} onError={() => { setUrl(null); setErro('Não consegui abrir a imagem.'); }} />
+        </a>
+      : <span className={c.fotoVazia} data-tipo={m.tipo}>{carregando ? 'Carregando…' : rotulo}</span>;
+  } else if (m.tipo === 'audio') {
+    corpo = url
+      ? <audio className={c.audio} controls autoPlay preload="auto" src={url} data-midia="audio" />
+      : <button type="button" className={c.tocar} onClick={() => void pedir()} disabled={carregando} aria-label="Ouvir áudio">
+          <span aria-hidden="true">▶</span> {carregando ? 'Carregando…' : 'Ouvir áudio'}
+        </button>;
+  } else if (m.tipo === 'video') {
+    corpo = url
+      ? <video className={c.video} controls autoPlay playsInline src={url} data-midia="video" />
+      : <button type="button" className={c.tocar} onClick={() => void pedir()} disabled={carregando} aria-label="Assistir vídeo">
+          <span aria-hidden="true">▶</span> {carregando ? 'Carregando…' : 'Assistir vídeo'}
+        </button>;
+  } else {
+    // Documento: a aba abre no clique (o navegador não bloqueia) e recebe o endereço quando o link fica pronto.
+    corpo = (
+      <button type="button" className={c.tocar} disabled={carregando} data-midia="documento"
+        onClick={async () => {
+          const aba = window.open('', '_blank');
+          const link = await pedir();
+          if (aba) { if (link) { aba.opener = null; aba.location.href = link; } else aba.close(); }
+        }}>
+        {carregando ? 'Abrindo…' : `Abrir ${nomeArquivo ? nomeArquivo : 'documento'}`}
+      </button>
+    );
+  }
+  return (
+    <div ref={caixa} className={c.caixaMidia} data-tipo={m.tipo}>
+      {corpo}
+      {erro && <span className={c.erroMidia} role="alert">{erro}</span>}
+    </div>
+  );
+}
+
+function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
   const autor = m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] ?? '';
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
@@ -470,9 +661,12 @@ function Bolha({ m, hora, nomeContato, onAvisar }: { m: Mensagem; hora: string; 
   } else if (rotMidia) {
     const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
     const legenda = m.texto && m.texto !== nomeArquivo ? m.texto : null;
+    const temArquivo = ['image', 'sticker', 'audio', 'video', 'document'].includes(m.tipo);
     conteudo = (
       <>
-        <span className={c.midia} data-tipo={m.tipo}>{nomeArquivo ? `${rotMidia}: ${nomeArquivo}` : rotMidia}</span>
+        {temArquivo
+          ? <Midia m={m} numeroId={numeroId} waId={waId} rotulo={rotMidia} />
+          : <span className={c.midia} data-tipo={m.tipo}>{rotMidia}</span>}
         {legenda && <p className={c.texto}>{legenda}</p>}
       </>
     );

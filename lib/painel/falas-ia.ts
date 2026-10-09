@@ -78,13 +78,19 @@ export async function completarFalasDaIa(banco: Pool, waId: string, linhas: Reco
     .filter((m) => m.origem === 'api' && m.direcao === 'saida' && (m.texto == null || m.texto === '') && (m.tipo === 'desconhecido' || m.tipo === 'text'))
     .map((m) => ({ id: String(m.id), em: new Date(m.enviada_em as string).toISOString() }));
   if (!lacunas.length) return;
-  try {
-    // Balão já procurado sem achar (marcado abaixo) não é procurado de novo: a Inbox atualiza a cada 10 s.
-    const r = await banco.query(
-      `select id::text from wa_mensagens where id = any($1::bigint[]) and coalesce(bruto->>'texto_de', '') <> 'nao_achado'`, [lacunas.map((l) => l.id)]);
-    const vivas = new Set(r.rows.map((x) => String(x.id)));
-    lacunas = lacunas.filter((l) => vivas.has(l.id));
-  } catch (e) { registrarErro('texto da IA na Inbox', e); return; }
+  // Balão já procurado sem achar (marcado abaixo) não é procurado de novo: a Inbox atualiza a cada 10 s. A Inbox já
+  // traz a marca junto com a mensagem (texto_de); sem ela, confere no banco.
+  if (linhas.every((m) => 'texto_de' in m)) {
+    const marcadas = new Set(linhas.filter((m) => m.texto_de === 'nao_achado').map((m) => String(m.id)));
+    lacunas = lacunas.filter((l) => !marcadas.has(l.id));
+  } else {
+    try {
+      const r = await banco.query(
+        `select id::text from wa_mensagens where id = any($1::bigint[]) and coalesce(bruto->>'texto_de', '') <> 'nao_achado'`, [lacunas.map((l) => l.id)]);
+      const vivas = new Set(r.rows.map((x) => String(x.id)));
+      lacunas = lacunas.filter((l) => vivas.has(l.id));
+    } catch (e) { registrarErro('texto da IA na Inbox', e); return; }
+  }
   if (!lacunas.length) return;
   const ts = lacunas.map((l) => new Date(l.em).getTime());
   const de = new Date(Math.min(...ts) - DEPOIS_MS - 60_000).toISOString();
@@ -96,10 +102,12 @@ export async function completarFalasDaIa(banco: Pool, waId: string, linhas: Reco
     const achados = casar(lacunas, r.rows.map((x) => ({ em: new Date(x.em).toISOString(), texto: String(x.texto ?? '') })));
     // Sem fala no histórico depois de 30 min: marca para não procurar mais (a fala é gravada antes do envio).
     const perdidas = lacunas.filter((l) => !achados.has(l.id) && Date.now() - new Date(l.em).getTime() > PROCURAR_ATE_MS).map((l) => l.id);
+    // As gravações não seguram a tela (o texto achado já vai nesta resposta); erro nelas só vai para o log.
+    const gravar = (q: Promise<unknown>) => { q.catch((e) => registrarErro('texto da IA na Inbox (gravar)', e)); };
     if (perdidas.length) {
-      await banco.query(
+      gravar(banco.query(
         `update wa_mensagens set bruto = coalesce(bruto, '{}'::jsonb) || '{"texto_de":"nao_achado"}'::jsonb
-          where id = any($1::bigint[]) and texto is null`, [perdidas]);
+          where id = any($1::bigint[]) and texto is null`, [perdidas]));
     }
     if (!achados.size) return;
     for (const m of linhas) {
@@ -107,12 +115,12 @@ export async function completarFalasDaIa(banco: Pool, waId: string, linhas: Reco
       if (t) { m.texto = t; m.tipo = 'text'; }
     }
     const ids = [...achados.keys()];
-    await banco.query(
+    gravar(banco.query(
       `update wa_mensagens set texto = x.texto, tipo = 'text',
               bruto = coalesce(bruto, '{}'::jsonb) || '{"texto_de":"historico_ia"}'::jsonb
          from (select unnest($1::bigint[]) as id, unnest($2::text[]) as texto) x
         where wa_mensagens.id = x.id and wa_mensagens.texto is null`,
-      [ids, ids.map((i) => achados.get(i) as string)]);
+      [ids, ids.map((i) => achados.get(i) as string)]));
   } catch (e) {
     const code = (e as { code?: string }).code;
     if (code === '42P01' || code === '42703') return; // empresa sem a visão falas_ia: segue sem texto

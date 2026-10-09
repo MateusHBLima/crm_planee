@@ -6,6 +6,7 @@ import { avisoDoSistema } from '@/lib/avisos-sistema';
 import { resumoParaFicha } from '@/lib/automaticas';
 import { recurso as acharRecurso, type Recurso } from './recursos';
 import { bancoDe, type Chave } from './auth';
+import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
@@ -344,7 +345,7 @@ const SITUACOES = ['agendado', 'confirmado', 'realizado', 'cancelado', 'faltou']
 const FORMAS = ['pix', 'cartao', 'boleto', 'dinheiro', 'outro'];
 const MAX_ARQUIVO = 10 * 1024 * 1024;
 // O tipo declarado tem que bater com o começo do arquivo (um PDF começa com %PDF etc.).
-const ASSINATURAS: Record<string, (b: Buffer) => boolean> = {
+export const ASSINATURAS: Record<string, (b: Buffer) => boolean> = {
   'application/pdf': (b) => b.subarray(0, 4).toString('latin1') === '%PDF',
   'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8,
   'image/png': (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
@@ -431,10 +432,13 @@ export async function registrarServico(chave: Chave, corpo: unknown) {
       if (atual.rowCount) {
         const id = atual.rows[0].id as string;
         const cols = Object.keys(campos);
-        if (cols.length) {
-          await c.query(`update servicos set ${cols.map((k, i) => `${k} = $${i + 2}${k === 'detalhes' ? '::jsonb' : ''}`).join(', ')}, arquivado = false, atualizado_em = now() where id = $1`,
-            [id, ...Object.values(campos)]);
-        }
+        // Registro que o espelho da agenda criou antes (lib/agenda/espelho.ts): passa a ser de quem registrou agora
+        // (a Sara), e os detalhes se somam (os da Feegow ficam).
+        const quem = texto(d.criado_por, 80) ?? (chave.usuario_id ? chave.nome : 'IA');
+        await c.query(
+          `update servicos set ${cols.map((k, i) => `${k} = ${k === 'detalhes' ? `coalesce(detalhes, '{}'::jsonb) || $${i + 3}::jsonb` : `$${i + 3}`}`).concat('').join(', ')}
+             criado_por = case when criado_por = 'Feegow (espelho)' then $2 else criado_por end, arquivado = false, atualizado_em = now() where id = $1`,
+          [id, quem, ...Object.values(campos)]);
         await auditar(c, chave, 'atualizar', 'servicos', id, { ...campos, detalhes: undefined, sistema, codigo_externo: codigo });
         return { id, criado: false, contato_id: atual.rows[0].contato_id };
       }
@@ -643,6 +647,8 @@ export async function criarPagamento(chave: Chave, corpo: unknown) {
       return { id, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: alerta, novoAlerta: Boolean(alerta) };
     }, bancoDe(chave)).then(async ({ novoAlerta, ...r }) => {
       if (novoAlerta && r.alerta_atendimento_id) await avisarPlanee(chave, r.id, r.alerta_atendimento_id);
+      // Sem arquivo: tenta copiar a foto ou o PDF que o paciente mandou pelo WhatsApp (lib/api/comprovante-whatsapp.ts).
+      if (!arq) return { ...r, arquivo_do_whatsapp: await tentarArquivoDoWhatsApp(chave, r.id) };
       return r;
     });
   } catch (e) {

@@ -45,7 +45,7 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
     && !sql("select coalesce(convite_hash,'') from painel_usuarios where email='admin2@teste.local'").includes(codigoAdmin.replace('-', '')), codigoAdmin);
   // Empresa nova ainda sem banco próprio não abre o banco padrão (dados de outra empresa)
   await p.goto(GERAL + '/empresas'); // o seletor só lista a empresa nova depois de recarregar
-  await Promise.all([p.waitForURL(/\/crm$/), p.selectOption('#trocar-empresa', 'clinica-outra')]); await p.waitForTimeout(800);
+  await Promise.all([p.waitForURL(/\/(inbox|crm)$/), p.selectOption('#trocar-empresa', 'clinica-outra')]); await p.waitForTimeout(800);
   ok('empresa sem banco próprio não vê o banco padrão', ((await p.textContent('main')) || '').includes('banco desta empresa ainda não foi configurado')
     && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0);
   await p.selectOption('#trocar-empresa', ''); await p.waitForTimeout(1200); await p.goto(GERAL + '/empresas');
@@ -62,8 +62,12 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   // Master troca de empresa no endereço geral e vê o CRM da outra (banco próprio)
   await p.goto(GERAL + '/crm'); await p.selectOption('#trocar-empresa', 'clinica-outra'); await p.waitForTimeout(1500);
   ok('master troca para a Clínica Outra', ((await p.textContent('aside')) || '').includes('Clínica Outra'));
-  ok('CRM da outra empresa vem do banco dela', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 1 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0);
+  await p.goto(GERAL + '/crm');
+  // O quadro chega depois da tela (leitura GET, 09/10).
+  await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).first().waitFor({ timeout: 8000 }).catch(() => undefined);
+  ok('CRM da outra empresa vem do banco dela', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 1 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) === 0, p.url() + ' ' + ((await p.textContent('main')) || '').slice(0, 300));
   await p.selectOption('#trocar-empresa', 'teste'); await p.waitForTimeout(1500);
+  await p.goto(GERAL + '/crm'); await p.waitForTimeout(800);
   ok('e volta para a empresa de teste', (await p.locator('article', { hasText: 'Cartão só da Clínica Outra' }).count()) === 0 && (await p.locator('article', { hasText: 'Jorge Ficticio' }).count()) >= 1);
   await ctx.close();
 
@@ -149,6 +153,55 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   ok('master renomeia a empresa', sql("select nome from empresas where id='clinica-outra'") === 'Clínica Outra (renomeada)'
     && (await p.locator('article[data-empresa="clinica-outra"] h2').textContent()) === 'Clínica Outra (renomeada)'
     && sql("select count(*) from central_auditoria where empresa_id='clinica-outra' and detalhe::text like '%renomeada%'") === '1');
+  await ctx.close();
+
+  // Números de WhatsApp pela tela Empresas: cadastro com token cifrado, Conectar e Puxar histórico (o receptor executa;
+  // aqui o teste faz o papel dele gravando o resultado). Valores fictícios.
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
+  const cN = p.locator('article[data-empresa="clinica-outra"]');
+  await cN.getByRole('button', { name: 'Adicionar número' }).click();
+  const fN = cN.locator('form[aria-label="Novo número de WhatsApp"]');
+  await fN.locator('[name=phone_number_id]').fill('300000000000003');
+  await fN.locator('[name=waba_id]').fill('400000000000004');
+  await fN.locator('[name=nome]').fill('Número de teste');
+  await fN.locator('[name=encaminhar_url]').fill('https://n8n.exemplo.test/webhook/sara');
+  await fN.locator('[name=token]').fill('EAATOKENFICTICIO0123456789abcdef');
+  await fN.locator('[name=app_secret]').fill('abcdef0123456789abcdef0123456789');
+  await fN.getByRole('button', { name: 'Cadastrar número' }).click(); await p.waitForTimeout(1200);
+  const linhaN = sql("select empresa_id || '|' || nome || '|' || left(token_cifrado, 3) || '|' || left(app_secret_cifrado, 3) || '|' || (token_cifrado like '%TOKENFICTICIO%')::text from whatsapp_numeros where phone_number_id='300000000000003'");
+  ok('número cadastrado com token e segredo cifrados', linhaN === 'clinica-outra|Número de teste|v1:|v1:|false', linhaN);
+  ok('token nunca vai para a auditoria', sql("select count(*) from central_auditoria where acao='cadastrar_numero' and alvo='300000000000003' and detalhe::text not like '%FICTICIO%' and detalhe::text not like '%abcdef0123%'") === '1');
+  const numN = cN.locator('[data-numero="300000000000003"]');
+  ok('tela mostra o número e "Token guardado"', (await numN.getByText('Token guardado').count()) === 1 && (await numN.locator('[data-estado="nao"]').count()) === 1);
+  ok('o token não volta para a tela', !((await p.content()).includes('TOKENFICTICIO')));
+  await numN.getByRole('button', { name: 'Conectar' }).click(); await p.waitForTimeout(1000);
+  ok('Conectar marca o pedido para o receptor', sql("select (conectar_pedido_em is not null)::text || '|' || conectar_pedido_por from whatsapp_numeros where phone_number_id='300000000000003'") === 'true|planee@teste.local'
+    && (await numN.locator('[data-estado="conectando"]').count()) === 1);
+  sql("update whatsapp_numeros set conectar_pedido_em = null, conectado_em = now(), verificado_nome = 'Clinica Ficticia', telefone = '5547999990000' where phone_number_id='300000000000003'");
+  await numN.locator('[data-estado="conectado"]').waitFor({ timeout: 9000 }).catch(() => {});
+  ok('a tela relê sozinha e mostra "Conectado"', (await numN.locator('[data-estado="conectado"]').count()) === 1 && ((await numN.textContent()) || '').includes('Clinica Ficticia'));
+  await numN.getByRole('button', { name: 'Puxar histórico' }).click(); await p.waitForTimeout(1000);
+  ok('Puxar histórico marca o pedido', sql("select (historico_pedido_em is not null)::text from whatsapp_numeros where phone_number_id='300000000000003'") === 'true');
+  sql("update whatsapp_numeros set historico_pedido_em = null, historico_status = 'pedido aceito pela Meta', historico_em = now() where phone_number_id='300000000000003'");
+  await numN.getByText('pedido aceito pela Meta', { exact: false }).waitFor({ timeout: 9000 }).catch(() => {});
+  ok('e mostra a resposta da Meta', (await numN.locator('[data-historico]').textContent().catch(() => '') || '').includes('pedido aceito pela Meta'));
+  sql("update whatsapp_numeros set conexao_erro = 'Meta 401 (código 190): token vencido' where phone_number_id='300000000000003'");
+  await p.reload(); await p.waitForTimeout(800);
+  ok('erro de conexão aparece na tela', (await p.locator('[data-numero="300000000000003"] [data-erro]').textContent().catch(() => '') || '').includes('token vencido'));
+  // Editar sem token mantém o guardado
+  const antes = sql("select token_cifrado from whatsapp_numeros where phone_number_id='300000000000003'");
+  const numN2 = p.locator('[data-numero="300000000000003"]');
+  await numN2.getByRole('button', { name: 'Editar' }).click();
+  await numN2.locator('[name=nome]').fill('Teste Planee');
+  await numN2.getByRole('button', { name: 'Salvar número' }).click(); await p.waitForTimeout(1200);
+  ok('editar sem token mantém o token guardado', sql("select nome || '|' || (token_cifrado = $t$" + antes + "$t$)::text from whatsapp_numeros where phone_number_id='300000000000003'") === 'Teste Planee|true');
+  // O mesmo número não entra em outra empresa
+  const cT = p.locator('article[data-empresa="teste"]');
+  await cT.getByRole('button', { name: 'Adicionar número' }).click();
+  await cT.locator('form[aria-label="Novo número de WhatsApp"] [name=phone_number_id]').fill('300000000000003');
+  await cT.getByRole('button', { name: 'Cadastrar número' }).click(); await p.waitForTimeout(1000);
+  ok('o mesmo número não entra em duas empresas', (await aviso(p)).includes('outra empresa') && sql("select empresa_id from whatsapp_numeros where phone_number_id='300000000000003'") === 'clinica-outra', await aviso(p));
   await ctx.close();
 
   ok('sem erro de página', erros.length === 0, erros.join(' | ').slice(0, 300));

@@ -7,7 +7,8 @@ import { marcarRepasse, repassar } from './repasse.js';
 import { baixarMidia } from './meta.js';
 import { extensao, guardarArquivo } from './armazenamento.js';
 import { esvaziarSpool } from './spool.js';
-import { recarregarRotas, todasAsRotas } from './rotas.js';
+import { recarregarRotas, todasAsRotas, tokenDoNumero } from './rotas.js';
+import { conectarPendentes, limparLinksVencidos, pedirHistoricoPendente } from './conexao.js';
 import { erroCurto, log } from './log.js';
 
 export async function gravarEvento(reg) {
@@ -82,7 +83,7 @@ export async function baixarMidiasPendentes() {
         order by recebida_em desc limit 5`, [rt.phone_number_id]);
     for (const m of r.rows) {
       try {
-        const { bytes, mime } = await baixarMidia(m.midia.id);
+        const { bytes, mime } = await baixarMidia(m.midia.id, tokenDoNumero(rt.phone_number_id));
         const caminho = `${rt.empresa_id}/${rt.phone_number_id}/${m.wamid.replace(/[^\w.-]/g, '_')}.${extensao(mime, m.midia.filename)}`;
         await guardarArquivo(caminho, bytes, mime);
         await db.query(`update wa_mensagens set midia = midia || jsonb_build_object('caminho', $2::text, 'tamanho', $3::int, 'baixada_em', now()) where id = $1`,
@@ -118,10 +119,12 @@ export function iniciarLacos() {
       await new Promise((r) => setTimeout(r, ms));
     }
   };
-  laco('rotas', recarregarRotas, 60_000);
+  laco('rotas', recarregarRotas, config.rotasMs);
   laco('spool', esvaziarSpoolNoBanco, 10_000);
   laco('eventos', async () => { while (!parar && (await processarPendentes()) === 20); }, config.intervaloMs);
   laco('repasses', refazerRepasses, 5_000);
   laco('midias', baixarMidiasPendentes, 5_000);
-  laco('limpeza', limparAntigos, 3_600_000);
+  laco('limpeza', async () => { await limparAntigos(); await limparLinksVencidos(); }, 3_600_000);
+  // Pedidos do painel; tabela sem a migração 011 (coluna inexistente) só gera log e tenta de novo depois.
+  laco('conexoes', async () => { await conectarPendentes(); await pedirHistoricoPendente(); }, 10_000);
 }

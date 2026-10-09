@@ -1,6 +1,9 @@
 import 'server-only';
-import { bancoDaEmpresa, central, ErroApi, registrarErro } from '@/lib/db';
-import { pode, type Usuario } from '@/lib/sessao';
+import { randomBytes } from 'node:crypto';
+import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
+import { atorDe, pode, type Usuario } from '@/lib/sessao';
+import * as api from '@/lib/api/servico';
+import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 import { completarFalasDaIa } from './falas-ia';
@@ -24,7 +27,7 @@ async function consultar<T>(fn: () => Promise<T>): Promise<T> {
       throw new ErroApi(503, 'O espelho do WhatsApp ainda não foi instalado no banco desta empresa (migração 008).');
     }
     if ((e as { code?: string }).code === '42703') {
-      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migração 009).');
+      throw new ErroApi(503, 'Falta atualizar o espelho do WhatsApp no banco desta empresa (migrações 009, 010 e 012).');
     }
     throw e;
   }
@@ -37,6 +40,10 @@ const ID_NUMERO = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SO_DIGITOS = /^\d{5,20}$/;
 // Minutos que a Sara fica quieta depois de resposta pelo celular (o receptor usa a mesma variável).
 const PAUSA_CELULAR_MS = () => (Number(process.env.SARA_PAUSA_CELULAR_MIN) || 7) * 60_000;
+// Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (o receptor usa a mesma).
+const ASSUMIR_HORAS = () => Number(process.env.INBOX_ASSUMIR_HORAS) || 24;
+// Conversa com a equipe agora: dono humano sem prazo (sempre) ou com o prazo ainda valendo.
+const SQL_COM_EQUIPE = `(dono = 'humano' and (dono_ate is null or dono_ate > now()))`;
 
 // O receptor grava o nome do tipo quando a mensagem não tem texto (resumo da lista); a tela mostra em português.
 const RESUMO_TIPO: Record<string, string> = {
@@ -51,12 +58,17 @@ export type Conversa = {
   ultima_em: string | null; ultima_resumo: string | null; ultima_direcao: string | null;
   nao_lidas: number; janela_aberta: boolean;
   dono: 'ia' | 'humano'; dono_por: string | null; dono_em: string | null; pausa_ate: string | null;
+  // Com a equipe: até quando (assumida por 24 h) ou sempre (até alguém devolver).
+  dono_ate: string | null; dono_sempre: boolean;
 };
-export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string };
+// linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
+export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null };
 
 export type Mensagem = {
   id: string; wamid: string; por: string | null; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
-  tipo: string; texto: string | null; midia: { mime_type: string | null; filename: string | null } | null;
+  tipo: string; texto: string | null;
+  // pronta: o receptor já baixou o arquivo (dá para ouvir, ver ou baixar); erro: a Meta não entregou o arquivo.
+  midia: { mime_type: string | null; filename: string | null; pronta: boolean; erro: boolean } | null;
   status: string | null; editada: boolean; apagada: boolean; em: string;
   reacoes: { emoji: string; daEmpresa: boolean }[];
   citada: { encontrada: boolean; tipo: string | null; texto: string | null; direcao: string | null } | null;
@@ -70,18 +82,21 @@ function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
   if (resumo && u.master) resumo = mascararTexto(resumo);
   const entrada = r.ultima_entrada_em ? new Date(r.ultima_entrada_em as string).getTime() : 0;
   const pausa = r.celular_em ? new Date(r.celular_em as string).getTime() + PAUSA_CELULAR_MS() : 0;
+  // Prazo vencido: a Sara já voltou (o receptor responde "sara_responde: true"), mesmo com dono = 'humano' gravado.
+  const comEquipe = r.dono === 'humano' && (!r.dono_ate || new Date(r.dono_ate as string).getTime() > Date.now());
   return {
     numero_id: String(r.numero_id), wa_id: String(r.wa_id), nome: (r.nome as string | null) ?? null,
     ultima_em: iso(r.ultima_em), ultima_resumo: resumo, ultima_direcao: (r.ultima_direcao as string | null) ?? null,
     nao_lidas: Number(r.nao_lidas) || 0, janela_aberta: entrada > 0 && Date.now() - entrada < JANELA_MS,
-    dono: r.dono === 'humano' ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
+    dono: comEquipe ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
     pausa_ate: pausa > Date.now() ? new Date(pausa).toISOString() : null,
+    dono_ate: comEquipe ? iso(r.dono_ate) : null, dono_sempre: comEquipe && !r.dono_ate,
   };
 }
 
 const SELECT_CONVERSA = `
-  select c.numero_id, c.wa_id, coalesce(nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
-         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em,
+  select c.numero_id, c.wa_id, coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
+         c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em, c.dono_ate,
          (select max(m.enviada_em) from wa_mensagens m
            where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
@@ -102,19 +117,35 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
   const dig = q.replace(/\D/g, '');
   const followup = filtro === 'followup';
   let r;
+  // Os números da empresa (banco central) vêm junto, em paralelo: com um número só, a tela não mostra a linha.
+  const linhas = linhasDaEmpresa(u);
   try {
     r = await consultar(() => db(u).query(
       `${SELECT_CONVERSA}
         where not c.arquivada
-          and ($1 = '' or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
+          and ($1 = '' or coalesce(k.nome_painel, '') ilike '%' || $1 || '%'
+               or coalesce(k.nome_salvo, '') ilike '%' || $1 || '%' or coalesce(k.nome_perfil, '') ilike '%' || $1 || '%'
                or (length($2) >= 3 and c.wa_id like '%' || $2 || '%'))${followup ? SQL_EM_FOLLOWUP : ''}
         order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
   } catch (e) {
     // Banco ainda sem a 017: o filtro de follow-up volta vazio, em vez de erro.
-    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString() };
+    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
     throw e;
   }
-  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString() };
+  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
+}
+
+// Números cadastrados da empresa (banco central). Com um só, a tela não mostra etiqueta de linha.
+async function linhasDaEmpresa(u: Usuario): Promise<Record<string, string> | null> {
+  try {
+    const r = await central().query(
+      `select n.phone_number_id as id, coalesce(nullif(n.nome, ''), nullif(to_jsonb(n)->>'verificado_nome', ''), n.telefone, n.phone_number_id) as nome
+         from whatsapp_numeros n where n.empresa_id = $1`, [u.empresa!.id]);
+    return r.rowCount && r.rowCount > 1 ? Object.fromEntries(r.rows.map((x) => [String(x.id), String(x.nome)])) : null;
+  } catch (e) {
+    if ((e as { code?: string }).code === '42P01') return null;
+    throw e;
+  }
 }
 
 function validar(numeroId: string, waId: string) {
@@ -140,52 +171,75 @@ async function registrarAcessoDoMaster(u: Usuario, numeroId: string, waId: strin
   if (!ja.rowCount) await auditar(c, u, u.empresa.id, 'abrir_conversa', alvo, undefined);
 }
 
-export async function lerConversa(u: Usuario, numeroId: string, waId: string, antesDeId?: string | null): Promise<ConversaAberta> {
+// Abrir a conversa (09/10): uma ida ao banco traz o resumo da conversa, a página de mensagens, as reações e as
+// citadas; depois, em paralelo, o texto da Sara que faltava, o selo, o "lida" e o registro de acesso do master.
+// Antes eram ~8 idas em fila (~2 s com o banco em outra região); agora são 2.
+export async function lerConversa(u: Usuario, numeroId: string, waId: string, antesDeId?: string | null, opcoes: { marcar?: boolean } = {}): Promise<ConversaAberta> {
   validar(numeroId, waId);
   if (antesDeId != null && !/^\d{1,18}$/.test(String(antesDeId))) throw new ErroApi(400, 'Página inválida.');
-  const conversa = await lerConversaResumo(u, numeroId, waId);
   const banco = db(u);
   // Página mais recente, ou a anterior a uma mensagem (mesma ordem da tela: horário da Meta e id).
   const r = await consultar(() => banco.query(
-    `select m.id::text as id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
-            m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
-            m.editada_em, m.apagada_em, m.enviada_em
-       from wa_mensagens m
-      where m.numero_id = $1 and m.wa_id = $2 and m.tipo <> 'reaction'
-        and ($3::bigint is null or (m.enviada_em, m.id) < (select a.enviada_em, a.id from wa_mensagens a
-                                                            where a.id = $3::bigint and a.numero_id = $1 and a.wa_id = $2))
-      order by m.enviada_em desc, m.id desc limit $4`, [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
-  const temMais = r.rows.length > POR_PAGINA;
-  const linhas = r.rows.slice(0, POR_PAGINA).reverse();
-  // Mensagens da IA sem texto (a Meta só devolve o status): completa pelo histórico da IA (lib/painel/falas-ia.ts).
-  await completarFalasDaIa(banco, waId, linhas);
+    `with conv as (${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2),
+     pag as (
+       select m.id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
+              m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
+              (m.midia->>'caminho') is not null as midia_pronta, (m.midia->>'erro') is not null as midia_erro,
+              m.editada_em, m.apagada_em, m.enviada_em, coalesce(m.bruto->>'texto_de', '') as texto_de
+         from wa_mensagens m
+        where exists (select 1 from conv) and m.numero_id = $1 and m.wa_id = $2 and m.tipo <> 'reaction'
+          and ($3::bigint is null or (m.enviada_em, m.id) < (select a.enviada_em, a.id from wa_mensagens a
+                                                              where a.id = $3::bigint and a.numero_id = $1 and a.wa_id = $2))
+        order by m.enviada_em desc, m.id desc limit $4)
+     select (select row_to_json(conv) from conv) as conversa,
+            coalesce((select json_agg(json_build_object('id', p.id::text, 'wamid', p.wamid, 'direcao', p.direcao, 'por', p.por, 'origem', p.origem,
+                        'tipo', p.tipo, 'texto', p.texto, 'resposta_a', p.resposta_a, 'status', p.status, 'mime_type', p.mime_type,
+                        'filename', p.filename, 'tem_midia', p.tem_midia, 'midia_pronta', p.midia_pronta, 'midia_erro', p.midia_erro, 'editada_em', p.editada_em, 'apagada_em', p.apagada_em,
+                        'enviada_em', p.enviada_em, 'texto_de', p.texto_de) order by p.enviada_em desc, p.id desc) from pag p), '[]'::json) as msgs,
+            coalesce((select json_agg(x) from (select wamid, autor, emoji from wa_reacoes
+                        where numero_id = $1 and wamid in (select wamid from pag) order by em) x), '[]'::json) as reacoes,
+            coalesce((select json_agg(x) from (select wamid, tipo, left(texto, 160) as texto, direcao from wa_mensagens
+                        where numero_id = $1 and wamid in (select resposta_a from pag where resposta_a is not null)) x), '[]'::json) as citadas`,
+    [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
+  const x = r.rows[0] ?? {};
+  if (!x.conversa) throw new ErroApi(404, 'Conversa não encontrada.');
+  const conversa = limparConversa(u, x.conversa as Record<string, unknown>);
+  const todas = x.msgs as Record<string, unknown>[];
+  const temMais = todas.length > POR_PAGINA;
+  const linhas = todas.slice(0, POR_PAGINA).reverse();
+  const primeira = !antesDeId;
+  const marcar = Boolean(opcoes.marcar) && primeira && !u.master;
+  const entrada = (x.conversa as Record<string, unknown>).ultima_entrada_em;
 
-  const wamids = linhas.map((m) => m.wamid as string);
-  const citados = [...new Set(linhas.map((m) => m.resposta_a as string | null).filter((x): x is string => Boolean(x)))];
-  const [reacoes, citadas] = await Promise.all([
-    wamids.length
-      ? banco.query(`select wamid, autor, emoji from wa_reacoes where numero_id = $1 and wamid = any($2::text[]) order by em`, [numeroId, wamids])
-      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
-    citados.length
-      ? banco.query(`select wamid, tipo, left(texto, 160) as texto, direcao from wa_mensagens where numero_id = $1 and wamid = any($2::text[])`, [numeroId, citados])
-      : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+  // Em paralelo: o texto da Sara que faltava (lib/painel/falas-ia.ts), o selo das automáticas (só na primeira página),
+  // o "lida" da equipe e o registro de acesso do master. Selo e registro são extras: falha neles não derruba a tela.
+  const [, seloBruto] = await Promise.all([
+    completarFalasDaIa(banco, waId, linhas),
+    primeira
+      ? seloDoTelefone(banco, waId, entrada ? new Date(entrada as string).toISOString() : null).catch((e) => { registrarErro('selo das automáticas', e); return null; })
+      : Promise.resolve(null),
+    marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(),
+    registrarAcessoDoMaster(u, numeroId, waId),
   ]);
+  if (marcar) conversa.nao_lidas = 0;
+  const selo: Selo | null = seloBruto && u.master ? { ...seloBruto, texto: mascararTexto(seloBruto.texto) } : seloBruto;
+
   const porWamid = new Map<string, Mensagem['reacoes']>();
-  for (const x of reacoes.rows) {
-    const l = porWamid.get(String(x.wamid)) ?? [];
-    l.push({ emoji: String(x.emoji), daEmpresa: x.autor === 'empresa' });
-    porWamid.set(String(x.wamid), l);
+  for (const y of x.reacoes as Record<string, unknown>[]) {
+    const l = porWamid.get(String(y.wamid)) ?? [];
+    l.push({ emoji: String(y.emoji), daEmpresa: y.autor === 'empresa' });
+    porWamid.set(String(y.wamid), l);
   }
   const mascarar = (t: string | null) => (t && u.master ? mascararTexto(t) : t);
-  const citadaPor = new Map(citadas.rows.map((x) => [String(x.wamid), x]));
+  const citadaPor = new Map((x.citadas as Record<string, unknown>[]).map((y) => [String(y.wamid), y]));
 
   const mensagens: Mensagem[] = linhas.map((m) => {
     const cit = m.resposta_a ? citadaPor.get(String(m.resposta_a)) : undefined;
     return {
-      id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao, origem: m.origem, tipo: String(m.tipo),
+      id: String(m.id), wamid: String(m.wamid), por: (m.por as string | null) ?? null, direcao: m.direcao as Mensagem['direcao'], origem: m.origem as Mensagem['origem'], tipo: String(m.tipo),
       texto: mascarar(m.texto == null ? null : String(m.texto)),
-      midia: m.tem_midia ? { mime_type: m.mime_type ?? null, filename: m.filename ?? null } : null,
-      status: m.direcao === 'saida' ? (m.status ?? null) : null,
+      midia: m.tem_midia ? { mime_type: (m.mime_type as string | null) ?? null, filename: (m.filename as string | null) ?? null, pronta: Boolean(m.midia_pronta), erro: Boolean(m.midia_erro) } : null,
+      status: m.direcao === 'saida' ? ((m.status as string | null) ?? null) : null,
       editada: Boolean(m.editada_em), apagada: Boolean(m.apagada_em), em: iso(m.enviada_em) as string,
       reacoes: porWamid.get(String(m.wamid)) ?? [],
       citada: m.resposta_a
@@ -195,18 +249,39 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
         : null,
     };
   });
-
-  await registrarAcessoDoMaster(u, numeroId, waId);
-  // Selo das automáticas (follow-up, recusa) só na primeira página: paginar para trás não muda o cabeçalho.
-  let selo: Selo | null = null;
-  if (!antesDeId) {
-    try {
-      const ent = await banco.query('select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2', [numeroId, waId]);
-      selo = await seloDoTelefone(banco, waId, ent.rows[0]?.ultima_entrada_em ? new Date(ent.rows[0].ultima_entrada_em).toISOString() : null);
-      if (selo && u.master) selo = { ...selo, texto: mascararTexto(selo.texto) };
-    } catch (e) { registrarErro('selo das automáticas', e); }
-  }
   return { conversa, mensagens, temMais, fuso: fuso(), selo };
+}
+
+// ---- Ouvir, ver e baixar as mídias (áudio, foto, vídeo, documento) ----
+// O arquivo fica no Storage (o receptor baixa da Meta). A tela pede um link curto: aqui se confere a sessão, a empresa
+// e a conversa, e grava-se na central um token aleatório que vale 10 min; o receptor entrega o arquivo por ele.
+// O caminho do arquivo nunca vai para o navegador.
+const LINK_MIDIA_MIN = 10;
+const baseReceptor = () => (process.env.RECEPTOR_URL || `https://${process.env.PAINEL_HOST_ADM || 'adm.planeelabia.com'}`).replace(/\/+$/, '');
+
+export async function linkDaMidia(u: Usuario, numeroId: string, waId: string, mensagemId: string): Promise<{ url: string; mime: string | null }> {
+  validar(numeroId, waId);
+  if (!/^\d{1,18}$/.test(String(mensagemId ?? ''))) throw new ErroApi(400, 'Mensagem inválida.');
+  const r = await consultar(() => db(u).query(
+    `select m.midia->>'caminho' as caminho, m.midia->>'mime_type' as mime, (m.midia->>'erro') is not null as erro
+       from wa_mensagens m where m.id = $1 and m.numero_id = $2 and m.wa_id = $3 and m.midia is not null`, [mensagemId, numeroId, waId]));
+  const x = r.rows[0];
+  if (!x) throw new ErroApi(404, 'Mídia não encontrada.');
+  if (!x.caminho) throw new ErroApi(409, x.erro ? 'A Meta não entregou este arquivo.' : 'O arquivo ainda está sendo baixado. Tente em alguns segundos.');
+  // O receptor grava cada arquivo na pasta da empresa dona do número: arquivo de outra empresa não sai daqui.
+  if (!String(x.caminho).startsWith(`${u.empresa!.id}/`)) throw new ErroApi(404, 'Mídia não encontrada.');
+  const token = randomBytes(24).toString('base64url');
+  const mime = x.mime ? String(x.mime).split(';')[0].trim().slice(0, 100) || null : null;
+  try {
+    await central().query(
+      `insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
+      [token, u.empresa!.id, x.caminho, mime, LINK_MIDIA_MIN]);
+  } catch (e) {
+    if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Falta a migração 011 no banco central para abrir as mídias.');
+    throw e;
+  }
+  if (u.master) await auditar(central(), u, u.empresa!.id, 'abrir_midia', `${numeroId}:${waId.slice(-4)}`, undefined);
+  return { url: `${baseReceptor()}/whatsapp/midia/${token}`, mime };
 }
 
 // A equipe da empresa abriu a conversa: zera as não lidas. O master (Planee) só olha: não muda o estado da clínica.
@@ -279,6 +354,8 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   await registrar('falhou');
   // Só o código da Meta (números e letras), nunca o resto da resposta.
   const codigo = resposta && resposta.ok === false && resposta.erro != null ? String(resposta.erro).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 20) : '';
+  // 131047: a janela de 24 h fechou entre a última leitura e o envio.
+  if (codigo === '131047') throw new ErroApi(409, MSG_FORA_DA_JANELA);
   throw new ErroApi(502, codigo ? `A Meta recusou o envio (código ${codigo}).` : 'O serviço de envio não confirmou a mensagem. Tente de novo em instantes.');
 }
 
@@ -287,25 +364,42 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
 const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, extra?: Record<string, unknown>) =>
   auditar(central(), u, u.empresa!.id, acao, `${numeroId}:${waId.slice(-4)}`, extra).catch(() => undefined);
 
+// Responder pelo painel assume por 24 h; se já estava com a equipe por prazo, empurra o prazo (o "sempre" fica).
 async function assumirAoEnviar(u: Usuario, banco: ReturnType<typeof db>, numeroId: string, waId: string) {
   const r = await consultar(() => banco.query(
-    `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3
-      where numero_id = $1 and wa_id = $2 and dono <> 'humano' returning 1`, [numeroId, waId, u.nome]));
-  if (r.rowCount) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true });
+    `with antes as (select ${SQL_COM_EQUIPE} as com_equipe from wa_conversas where numero_id = $1 and wa_id = $2 for update)
+     update wa_conversas c set
+        dono     = 'humano',
+        dono_em  = case when a.com_equipe then c.dono_em else now() end,
+        dono_por = case when a.com_equipe then c.dono_por else $3 end,
+        dono_ate = case when a.com_equipe and c.dono_ate is null then null else now() + make_interval(hours => $4) end
+       from antes a
+      where c.numero_id = $1 and c.wa_id = $2
+      returning a.com_equipe`, [numeroId, waId, u.nome, ASSUMIR_HORAS()]));
+  if (r.rowCount && !r.rows[0].com_equipe) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true, prazo: '24h' });
 }
 
-// Assumir: a Sara fica quieta nesta conversa até alguém devolver. Devolver: a Sara volta a responder; se a última
-// mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR) para ela responder já. Só quem pode responder.
-export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano'): Promise<Conversa> {
+export type PrazoDono = '24h' | 'sempre';
+
+// Assumir por 24 h (a Sara volta sozinha 24 h depois da última resposta da equipe) ou sempre (até alguém devolver).
+// Devolver: a Sara volta a responder; se a última mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR)
+// para ela responder já. Só quem pode responder.
+export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano', prazo: PrazoDono = '24h'): Promise<Conversa> {
   validar(numeroId, waId);
   if (dono !== 'ia' && dono !== 'humano') throw new ErroApi(400, 'Escolha assumir ou devolver.');
+  if (prazo !== '24h' && prazo !== 'sempre') throw new ErroApi(400, 'Escolha por 24 h ou sempre.');
   const banco = db(u);
   if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para atender pelo painel nesta empresa.');
-  const r = await consultar(() => banco.query(
-    `update wa_conversas set dono = $3, dono_em = now(), dono_por = $4
-      where numero_id = $1 and wa_id = $2 and dono <> $3 returning ultima_direcao`, [numeroId, waId, dono, u.nome]));
+  const r = dono === 'humano'
+    ? await consultar(() => banco.query(
+      `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3,
+              dono_ate = case when $4 then null else now() + make_interval(hours => $5) end
+        where numero_id = $1 and wa_id = $2 returning ultima_direcao`, [numeroId, waId, u.nome, prazo === 'sempre', ASSUMIR_HORAS()]))
+    : await consultar(() => banco.query(
+      `update wa_conversas set dono = 'ia', dono_em = now(), dono_por = $3, dono_ate = null
+        where numero_id = $1 and wa_id = $2 and ${SQL_COM_EQUIPE} returning ultima_direcao`, [numeroId, waId, u.nome]));
   if (r.rowCount) {
-    await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId);
+    await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId, dono === 'humano' ? { prazo } : undefined);
     if (dono === 'ia' && r.rows[0].ultima_direcao === 'entrada') await avisarDevolvida(u, numeroId, waId);
   }
   return lerConversaResumo(u, numeroId, waId);
@@ -321,4 +415,55 @@ async function avisarDevolvida(u: Usuario, numeroId: string, waId: string) {
     headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
     body: JSON.stringify({ evento: 'conversa_devolvida', empresa: u.empresa!.id, numero_id: numeroId, wa_id: waId, por: u.nome }),
   }).catch(() => undefined).finally(() => clearTimeout(t));
+}
+
+// ---- Nome do contato corrigido pela equipe ----
+
+const MAX_NOME = 80;
+
+// Troca o nome que o painel mostra. Vazio volta ao nome da agenda do celular ou do perfil do WhatsApp.
+// O nome do painel fica em wa_contatos.nome_painel (a sincronização da agenda não mexe nele) e cada troca vai para
+// wa_contatos_nomes no banco da empresa. Quem também edita o CRM atualiza junto o contato do CRM com o mesmo
+// telefone (pela API do CRM); empresa sem CRM no banco segue só com a Inbox.
+export async function renomearContato(u: Usuario, numeroId: string, waId: string, nome: unknown): Promise<Conversa> {
+  validar(numeroId, waId);
+  const banco = db(u);
+  if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para editar contatos nesta empresa.');
+  const n = String(nome ?? '').replace(/\s+/g, ' ').trim();
+  if (n.length > MAX_NOME) throw new ErroApi(400, `O nome passou de ${MAX_NOME} caracteres.`);
+  const novo = n || null;
+
+  const anterior = await consultar(() => transacao(async (c) => {
+    const a = await c.query(
+      `select coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome
+         from wa_conversas w left join wa_contatos k on k.numero_id = w.numero_id and k.wa_id = w.wa_id
+        where w.numero_id = $1 and w.wa_id = $2`, [numeroId, waId]);
+    if (!a.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
+    await c.query(
+      `insert into wa_contatos (numero_id, wa_id, nome_painel, nome_painel_em, nome_painel_por) values ($1, $2, $3, now(), $4)
+       on conflict (numero_id, wa_id) do update set nome_painel = excluded.nome_painel, nome_painel_em = now(),
+         nome_painel_por = excluded.nome_painel_por, atualizado_em = now()`, [numeroId, waId, novo, u.nome]);
+    await c.query(`insert into wa_contatos_nomes (numero_id, wa_id, anterior, novo, por) values ($1, $2, $3, $4, $5)`,
+      [numeroId, waId, a.rows[0].nome ?? null, novo, u.nome]);
+    return (a.rows[0].nome as string | null) ?? null;
+  }, banco));
+
+  // Na auditoria central só a ação e o alvo; os nomes ficam no banco da empresa.
+  await auditar(central(), u, u.empresa!.id, 'renomear_contato', `${numeroId}:${waId.slice(-4)}`, { limpou: !novo }).catch(() => undefined);
+  if (novo && novo !== anterior) await atualizarNomeNoCrm(u, waId, novo);
+  return lerConversaResumo(u, numeroId, waId);
+}
+
+async function atualizarNomeNoCrm(u: Usuario, waId: string, nome: string) {
+  if (!pode(u, 'crm.editar')) return;
+  try {
+    const tel = normalizarTelefone(waId);
+    const r = await db(u).query(
+      `select id from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`,
+      chaveTelefone(tel));
+    if (r.rowCount) await api.atualizar(atorDe(u), 'contatos', String(r.rows[0].id), { nome });
+  } catch (e) {
+    // Empresa sem o CRM no banco (42P01) ou telefone fora do padrão: a troca na Inbox já valeu.
+    if ((e as { code?: string }).code !== '42P01' && !(e instanceof ErroApi)) registrarErro('renomear contato no CRM', e);
+  }
 }

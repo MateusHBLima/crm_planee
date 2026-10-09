@@ -5,6 +5,7 @@ import { central, ErroApi, transacao } from '@/lib/db';
 import { cifrar, cifraConfigurada } from '@/lib/cifra';
 import { limparPermissoes, type Nivel, type Permissao } from '@/lib/permissoes';
 import type { Usuario } from '@/lib/sessao';
+import { listarNumeros, type NumeroWhats } from './numeros';
 
 // Cadastros do banco central (decisão 26): empresas, domínios, pessoas e permissões.
 // Master: tudo. Admin: só a equipe da própria empresa, e só com permissões que a empresa tem.
@@ -62,7 +63,7 @@ async function gerarConvite(c: PoolClient, usuarioId: string): Promise<string> {
 
 export type LinhaEmpresa = {
   id: string; nome: string; ativo: boolean; modulos: Permissao[]; banco_proprio: boolean;
-  dominios: string[]; pessoas: number; admins: string[];
+  dominios: string[]; pessoas: number; admins: string[]; numeros: NumeroWhats[];
 };
 
 export async function listarEmpresas(u: Usuario): Promise<LinhaEmpresa[]> {
@@ -75,7 +76,8 @@ export async function listarEmpresas(u: Usuario): Promise<LinhaEmpresa[]> {
            coalesce((select array_agg(p.email order by p.email) from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
              where v.empresa_id = e.id and v.ativo and p.ativo and v.nivel = 'admin'), '{}') as admins
       from empresas e order by e.ativo desc, e.nome`);
-  return r.rows.map((x) => ({ ...x, modulos: limparPermissoes(x.modulos) }));
+  const numeros = await listarNumeros(u);
+  return r.rows.map((x) => ({ ...x, modulos: limparPermissoes(x.modulos), numeros: numeros.filter((n) => n.empresa_id === x.id) }));
 }
 
 export async function criarEmpresa(u: Usuario, dados: { id: unknown; nome: unknown; modulos: unknown }) {

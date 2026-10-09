@@ -42,6 +42,7 @@ Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovant
 
 - **Agendamento:** `POST /api/v1/servicos/registrar` com `{telefone, nome?, tipo, descricao?, inicio, profissional?, local?, valor?, situacao?, sistema, codigo_externo, detalhes?, atendimento_id?}`.
   - Cria o agendamento ou, se o mesmo `sistema` + `codigo_externo` já existir, atualiza. O contato é achado pelo telefone (com e sem o 9) ou criado.
+  - Ao atualizar, `detalhes` se soma ao que já existe (não apaga as chaves anteriores). Se o registro veio do espelho da agenda da Feegow, passa a ser de quem registrou (a Sara).
   - `situacao`: `agendado | confirmado | realizado | cancelado | faltou`.
   - Resposta: `{id, criado, contato_id}`. Escopo `crm`.
 - **Comprovante:** `POST /api/v1/pagamentos` com `{telefone | contato_id, servico: {sistema, codigo_externo} | servico_id, valor, pago_em, forma, descricao, wamid?, arquivo: {nome, mime, base64}, analise?, comprovante?}`.
@@ -50,6 +51,7 @@ Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovant
   - Resposta: `{id, contato_id, servico_id, alerta_atendimento_id}`. Escopo `crm`.
   - `comprovante` (migração 014): `{pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em}`, o que está escrito no comprovante. Todos opcionais. `id_pix` é o ID E2E, só letras e números; `recebedor_documento` é CNPJ ou CPF.
   - **Repetido:** o mesmo `wamid`, ou o mesmo `id_pix` para o mesmo contato e agendamento, não cria outro pagamento. A resposta traz o que já existe, com `repetido: true`. Se o primeiro veio sem arquivo e este traz, o arquivo é anexado.
+  - **Sem `arquivo` (09/10):** o painel procura a foto ou o PDF que o paciente mandou pelo WhatsApp e copia para o pagamento. Pelo `wamid`, se veio; senão, a última foto ou PDF recebido do mesmo telefone entre 2 h antes e 5 min depois do registro. Precisa do espelho do WhatsApp (receptor) e da migração 011 na central. A resposta traz `arquivo_do_whatsapp`: `anexado`, `baixando` (o painel tenta de novo sozinho em 20 s, 1 min e 3 min), `nao_achado`, `indisponivel` ou `sem_espelho`.
   - **ID Pix reaproveitado:** o mesmo `id_pix` já usado por outro contato ou em outro agendamento marca o pagamento novo como `suspeito`, com o motivo, e abre o alerta. Esse motivo continua mesmo que a análise da IA venha depois dizendo `ok`.
 - **Análise:** `PATCH /api/v1/pagamentos/{id}` com `{analise: {resultado: "ok" | "suspeito", motivos: [...]}}`.
   - `suspeito` abre um cartão no quadro, no assunto de valores, em "aguardando", com `alerta = true`. Ele fica vermelho desde que abre.
