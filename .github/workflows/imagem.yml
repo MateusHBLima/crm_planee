@@ -49,7 +49,7 @@ jobs:
       - name: Dependências
         run: npm ci
 
-      - name: Testes do painel (8 etapas)
+      - name: Testes do painel (14 etapas)
         run: bash testes/painel/rodar.sh
 
       - name: Capturas dos testes
