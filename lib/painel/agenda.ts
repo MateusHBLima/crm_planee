@@ -57,7 +57,8 @@ export async function lerAgenda(u: Usuario, diaPedido?: string | null): Promise<
       situacao: String(x.situacao), status: (fg.status as string) ?? null,
       origem: x.pela_ia ? 'sara' : x.criado_por === 'Feegow (espelho)' ? 'feegow' : 'equipe',
       teleconsulta: Boolean(fg.telemedicina) || /online|tele/i.test(String(x.local ?? '')), encaixe: Boolean(fg.encaixe), primeira: Boolean(fg.primeiro),
-      contato: { id: String(x.contato_id), nome: (x.nome as string) ?? null, telefone: (x.telefone as string) ?? null },
+      // Nome do paciente da consulta como está na Feegow (mãe e filho com o mesmo telefone caem no mesmo contato).
+      contato: { id: String(x.contato_id), nome: (fg.paciente_nome as string) || ((x.nome as string) ?? null), telefone: (x.telefone as string) ?? null },
     };
   });
   return { dia, fuso: f, lidoEm: new Date().toISOString(), itens, espelho };

@@ -432,10 +432,13 @@ export async function registrarServico(chave: Chave, corpo: unknown) {
       if (atual.rowCount) {
         const id = atual.rows[0].id as string;
         const cols = Object.keys(campos);
-        if (cols.length) {
-          await c.query(`update servicos set ${cols.map((k, i) => `${k} = $${i + 2}${k === 'detalhes' ? '::jsonb' : ''}`).join(', ')}, arquivado = false, atualizado_em = now() where id = $1`,
-            [id, ...Object.values(campos)]);
-        }
+        // Registro que o espelho da agenda criou antes (lib/agenda/espelho.ts): passa a ser de quem registrou agora
+        // (a Sara), e os detalhes se somam (os da Feegow ficam).
+        const quem = texto(d.criado_por, 80) ?? (chave.usuario_id ? chave.nome : 'IA');
+        await c.query(
+          `update servicos set ${cols.map((k, i) => `${k} = ${k === 'detalhes' ? `coalesce(detalhes, '{}'::jsonb) || $${i + 3}::jsonb` : `$${i + 3}`}`).concat('').join(', ')}
+             criado_por = case when criado_por = 'Feegow (espelho)' then $2 else criado_por end, arquivado = false, atualizado_em = now() where id = $1`,
+          [id, quem, ...Object.values(campos)]);
         await auditar(c, chave, 'atualizar', 'servicos', id, { ...campos, detalhes: undefined, sistema, codigo_externo: codigo });
         return { id, criado: false, contato_id: atual.rows[0].contato_id };
       }

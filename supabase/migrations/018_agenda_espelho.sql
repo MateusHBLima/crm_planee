@@ -14,7 +14,10 @@ create table if not exists agenda_espelho (
   vazios_seguidos  int not null default 0,                 -- janelas antigas seguidas sem nenhum agendamento
   cadastros        jsonb not null default '{}'::jsonb,     -- {profissionais, locais, status, procedimentos}: id → nome
   cadastros_em     timestamptz,
+  carga_feitos     text[] not null default '{}',           -- profissionais já lidos na janela da carga em andamento
+  carga_achados    int not null default 0,                 -- agendamentos achados nessa janela até agora
   rodando_ate      timestamptz,
+  rodando_por      uuid,                                   -- qual rodada está com a vez
   ultima_rodada    timestamptz,
   ultima_ok        timestamptz,
   ultimo_erro      text,
@@ -24,7 +27,8 @@ create table if not exists agenda_espelho (
 alter table agenda_espelho enable row level security;
 
 -- Pacientes do sistema já ligados a um contato do CRM (o mesmo paciente não vira dois contatos). Só o necessário
--- para a ligação: nome e telefone, como vieram do sistema. Sem CPF.
+-- para a ligação: nome e telefone, como vieram do sistema. Sem CPF. contato_id nulo = paciente que o sistema não
+-- devolveu (lido de novo depois de 7 dias).
 create table if not exists agenda_pacientes (
   sistema        text not null,
   paciente_id    text not null,

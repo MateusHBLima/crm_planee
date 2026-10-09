@@ -140,14 +140,17 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
         pessoas: (x.pessoas as Record<string, unknown>[]).slice(0, 20).map((p) => ({ nome: String(p.nome), assumidos: n(p.assumidos), finalizados: n(p.finalizados) })),
       };
     }),
-    // Agendamentos registrados no CRM. "Pela IA": registrados por uma chave da API (a Sara), não por pessoa no painel.
+    // Agendamentos marcados no período. "Pela IA": registrados por uma chave da API (a Sara), não por pessoa no
+    // painel. Os que vieram do espelho da Feegow contam pela data em que foram marcados lá (marcado_em), não pela
+    // data em que o espelho os copiou (a carga do histórico copia anos de uma vez).
     bloco('agenda', async () => {
       const r = await banco.query(
-        `with s as (select * from servicos where not arquivado and criado_em >= $1)
+        `with s as (select * from servicos where not arquivado
+                      and case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $2 else criado_em end >= $1)
          select (select count(*) from s) as total,
-                (select count(*) from s where criado_por in (select nome from api_chaves)) as ia,
+                (select count(*) from s where criado_por = 'IA' or criado_por in (select nome from api_chaves)) as ia,
                 (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select situacao, count(*) as qtde from s group by 1) x) as situacao,
-                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo`, [de]);
+                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo`, [de, f]);
       const x = r.rows[0];
       return {
         total: n(x.total), pelaIa: n(x.ia),

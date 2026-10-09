@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { DiaAgenda, ItemAgenda } from '@/lib/painel/agenda';
 import { carregarAgenda } from '@/lib/painel/leitura-cliente';
 import { sincronizarAgendaAgora } from '@/lib/painel/acoes-planee';
@@ -24,16 +24,26 @@ export function Agenda({ empresaId, master }: { empresaId: string; master: boole
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [lendo, iniciar] = useTransition();
 
+  // Dia que a tela quer agora: resposta de um dia anterior (troca rápida de dia) é descartada.
+  const pedido = useRef<string | null>(null);
+  const lidoEm = useRef<{ dia: string; em: number } | null>(null);
   const ler = useCallback(async (d: string | null) => {
     const r = await carregarAgenda(d ?? '');
-    if (r.ok) { setDados(r.dados); setErro(null); lembrar(`${empresaId}:agenda:${r.dados.dia}`, r.dados); if (!d) setDia(r.dados.dia); }
+    if (pedido.current !== d) return;
+    if (r.ok) {
+      setDados(r.dados); setErro(null); lembrar(`${empresaId}:agenda:${r.dados.dia}`, r.dados);
+      lidoEm.current = { dia: r.dados.dia, em: Date.now() };
+      if (!d) { pedido.current = r.dados.dia; setDia(r.dados.dia); }
+    }
     else if (r.sair) window.location.href = `/entrar?motivo=sessao&volta=${encodeURIComponent(window.location.pathname)}`;
     else setErro(r.erro);
   }, [empresaId]);
 
   useEffect(() => {
+    pedido.current = dia;
     if (dia) { const g = lembrado<DiaAgenda>(`${empresaId}:agenda:${dia}`); if (g) setDados(g); }
-    void ler(dia);
+    // Ao abrir, o dia passa de "hoje" (vazio) para a data: não lê duas vezes o mesmo dia.
+    if (!(dia && lidoEm.current?.dia === dia && Date.now() - lidoEm.current.em < 5000)) void ler(dia);
     const t = window.setInterval(() => { if (!document.hidden) void ler(dia); }, ATUALIZA_MS);
     return () => window.clearInterval(t);
   }, [dia, ler, empresaId]);
@@ -61,7 +71,7 @@ export function Agenda({ empresaId, master }: { empresaId: string; master: boole
     const r = await sincronizarAgendaAgora();
     if (!r.ok) { setAviso({ ok: false, texto: r.erro }); return; }
     const x = r.dados;
-    setAviso({ ok: x.situacao !== 'erro', texto: x.situacao === 'sem_token' ? 'Falta o token da Feegow na stack do painel.' : x.situacao === 'ocupado' ? 'O espelho já está lendo a agenda agora.'
+    setAviso({ ok: x.situacao !== 'erro', texto: x.situacao === 'sem_token' ? 'Falta o token da Feegow na stack do painel (FEEGOW_TOKENS).' : x.situacao === 'ocupado' ? 'O espelho já está lendo a agenda agora.'
       : `${x.gravados} agendamentos gravados, ${x.novos_contatos} contatos novos, ${x.chamadas} chamadas à Feegow${x.situacao === 'parcial' ? ' (continua na próxima rodada)' : ''}${x.erro ? ` · ${x.erro}` : ''}.` });
     await ler(dia);
   });

@@ -35,7 +35,9 @@ export async function anexarDoWhatsApp(chave: Chave, pagamentoId: string): Promi
        from p join wa_mensagens m on m.direcao = 'entrada' and m.tipo in ('image', 'document') and m.midia is not null
         and ((p.wamid is not null and m.wamid = p.wamid)
           or (p.wamid is null and length(p.tel) >= 10 and substr(m.wa_id, 3, 2) = substr(p.tel, 3, 2) and right(m.wa_id, 8) = right(p.tel, 8)
-              and m.enviada_em between p.criado_em - interval '2 hours' and p.criado_em + interval '5 minutes'))
+              and m.enviada_em between p.criado_em - interval '2 hours' and p.criado_em + interval '5 minutes'
+              -- a mesma foto não vira comprovante de dois pagamentos (o wamid repetido juntaria pagamentos diferentes)
+              and not exists (select 1 from pagamentos q where q.wamid = m.wamid and q.id <> p.id and not q.arquivado)))
       order by m.enviada_em desc limit 1`, [pagamentoId]);
   const m = r.rows[0];
   if (!m) return 'nao_achado';
@@ -48,7 +50,7 @@ export async function anexarDoWhatsApp(chave: Chave, pagamentoId: string): Promi
   await central().query(
     `insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, $2, $3, $4, now() + interval '5 minutes')`,
     [token, empresa, m.caminho, m.mime]);
-  const resp = await fetch(`${baseReceptor()}/whatsapp/midia/${token}`, { signal: AbortSignal.timeout(20_000) });
+  const resp = await fetch(`${baseReceptor()}/whatsapp/midia/${token}`, { signal: AbortSignal.timeout(8_000) });   // curto: a Sara espera a resposta
   if (!resp.ok) throw new Error(`receptor respondeu ${resp.status}`);
   const dados = Buffer.from(await resp.arrayBuffer());
   if (!dados.length || dados.length > MAX || !ASSINATURAS[m.mime](dados)) return 'indisponivel';

@@ -23,17 +23,21 @@ const deFg = (s) => `${s.slice(6, 10)}-${s.slice(3, 5)}-${s.slice(0, 2)}`;
 const HOJE = diaSp(0), AMANHA = diaSp(1), ANTIGO = diaSp(-40);
 
 const AGENDA = [
-  { agendamento_id: 9101, data: fg(AMANHA), horario: '10:00:00', paciente_id: 501, procedimento_id: 10, status_id: 1, local_id: 1, profissional_id: 1, agendado_por: 'Recepção', encaixe: false, telemedicina: false, primeiro_agendamento: 1, valor_total_agendamento: 'R$ 300,00' },
+  { agendamento_id: 9101, data: fg(AMANHA), horario: '10:00:00', paciente_id: 501, procedimento_id: 10, status_id: 1, local_id: 1, profissional_id: 1, agendado_por: 'Recepção', agendado_em: '2026-10-01 11:20:00', encaixe: false, telemedicina: false, primeiro_agendamento: 1, valor_total_agendamento: 'R$ 300,00' },
   { agendamento_id: 9102, data: fg(HOJE), horario: '14:30:00', paciente_id: 502, procedimento_id: 10, status_id: 7, local_id: 0, profissional_id: 1, telemedicina: true, valor_total_agendamento: 'R$ 250,00' },
   { agendamento_id: 9103, data: fg(ANTIGO), horario: '09:00:00', paciente_id: 501, procedimento_id: 10, status_id: 3, local_id: 1, profissional_id: 2 },
   { agendamento_id: 9104, data: fg(HOJE), horario: '16:00:00', paciente_id: 503, procedimento_id: 10, status_id: 1, local_id: 1, profissional_id: 1 },
+  // Paciente que a Feegow não devolve (409): o agendamento fica de fora e o paciente não é lido de novo a cada rodada.
+  { agendamento_id: 9105, data: fg(AMANHA), horario: '11:00:00', paciente_id: 599, procedimento_id: 10, status_id: 1, local_id: 1, profissional_id: 1 },
+  // Status criado pela clínica (id acima de 100): a situação vem do nome. Valor com ponto decimal.
+  { agendamento_id: 9106, data: fg(AMANHA), horario: '15:00:00', paciente_id: 501, procedimento_id: 10, status_id: 105, local_id: 1, profissional_id: 1, valor_total_agendamento: '350.00' },
 ];
 const PACIENTES = {
   501: { nome: 'Agenda Ficticia Um', celulares: ['00990000091', null], telefones: [null, null] },
   502: { nome: 'Agenda Ficticia Dois', celulares: [null, null], telefones: [null, null] },
   503: { nome: 'Agenda Ficticia Tres', celulares: ['00990000093', null], telefones: [null, null] },
 };
-const feegow = { chamadas: 0, semToken: 0 };
+const feegow = { chamadas: 0, semToken: 0, pacientes: {} };
 const servidor = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const responder = (content, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ success: status === 200, content })); };
@@ -42,10 +46,10 @@ const servidor = http.createServer((req, res) => {
   const q = u.searchParams; const rota = u.pathname.replace(/^\/+/, '');
   if (rota === 'professional/list') return responder(q.get('ativo') === '1' ? [{ profissional_id: 1, nome: 'Ficticia Neuro', tratamento: 'Dra.' }] : [{ profissional_id: 2, nome: 'Antigo Ficticio', tratamento: 'Dr.' }]);
   if (rota === 'company/list-local') return responder([{ id: 1, local: 'Sala 1' }]);
-  if (rota === 'appoints/status') return responder([{ id: 1, status: 'Marcado - não confirmado' }, { id: 3, status: 'Atendido' }, { id: 7, status: 'Marcado - confirmado' }]);
+  if (rota === 'appoints/status') return responder([{ id: 1, status: 'Marcado - não confirmado' }, { id: 3, status: 'Atendido' }, { id: 7, status: 'Marcado - confirmado' }, { id: 105, status: 'Desmarcado pela clínica (WhatsApp)' }]);
   if (rota === 'procedures/types') return responder([{ id: 2, tipo: 'Consulta' }]);
   if (rota === 'procedures/list') return responder([{ procedimento_id: 10, nome: 'Consulta neurológica' }]);
-  if (rota === 'patient/search') { const p = PACIENTES[q.get('paciente_id')]; return p ? responder(p) : responder('Paciente não existe', 409); }
+  if (rota === 'patient/search') { feegow.pacientes[q.get('paciente_id')] = (feegow.pacientes[q.get('paciente_id')] || 0) + 1; const p = PACIENTES[q.get('paciente_id')]; return p ? responder(p) : responder('Paciente não existe', 409); }
   if (rota === 'appoints/search') {
     const de = deFg(q.get('data_start')), ate = deFg(q.get('data_end'));
     return responder(AGENDA.filter((a) => String(a.profissional_id) === q.get('profissional_id') && deFg(a.data) >= de && deFg(a.data) <= ate));
@@ -77,7 +81,7 @@ const servidor = http.createServer((req, res) => {
   await p.getByRole('button', { name: 'Ler a agenda agora' }).click();
   await p.locator('[role=status]', { hasText: 'agendamentos gravados' }).waitFor({ timeout: 30000 }).catch(() => undefined);
   const st = (await p.textContent('[role=status]').catch(() => '')) || '';
-  ok('espelho lê a agenda na hora', /4 agendamentos gravados, 2 contatos novos/.test(st), st);
+  ok('espelho lê a agenda na hora', /5 agendamentos gravados, 2 contatos novos/.test(st), st);
   ok('token só pela variável da stack (todas as chamadas com o token)', feegow.semToken === 0 && feegow.chamadas > 10, `${feegow.chamadas} chamadas, ${feegow.semToken} sem token`);
 
   const linhas = sql(`select codigo_externo || '|' || situacao || '|' || tipo || '|' || coalesce(profissional, '') || '|' || coalesce(local, '') || '|' || coalesce(valor::text, '')
@@ -91,13 +95,24 @@ const servidor = http.createServer((req, res) => {
   ok('paciente com telefone vira um contato só (o da Sara foi reaproveitado)', sql(`select count(*) from contatos where right(telefone, 8) = '90000093'`) === '1'
     && sql(`select count(*) from contatos where nome = 'Agenda Ficticia Um' and telefone = '5500990000091'`) === '1');
   ok('paciente sem telefone vira contato só com o nome', sql(`select count(*) from contatos where nome = 'Agenda Ficticia Dois' and telefone is null`) === '1');
+  ok('status da clínica (id 105) pelo nome e valor "350.00"', sql(`select situacao || '|' || valor from servicos where codigo_externo = '9106'`) === 'cancelado|350.00');
+  ok('paciente que a Feegow não devolve fica anotado, sem contato', sql(`select count(*) from agenda_pacientes where paciente_id = '599' and contato_id is null`) === '1'
+    && sql(`select count(*) from servicos where codigo_externo = '9105'`) === '0');
+  ok('data em que foi marcado e nome do paciente guardados', sql(`select (detalhes->'feegow'->>'marcado_em') || '|' || (detalhes->'feegow'->>'paciente_nome') from servicos where codigo_externo = '9101'`) === '2026-10-01T11:20:00|Agenda Ficticia Um');
+  ok('vez da rodada liberada e carga sem janela pela metade', sql(`select (rodando_por is null and rodando_ate is null)::int || '|' || cardinality(carga_feitos) || '|' || carga_achados from agenda_espelho where sistema = 'feegow'`) === '1|0|0');
   ok('carga do histórico termina num ano vazio', sql(`select carga_completa::int || '|' || (ultimo_erro is null)::int from agenda_espelho where sistema = 'feegow'`) === '1|1');
 
   // Rodar de novo: nada duplica (contatos, serviços), status novo na Feegow muda a situação.
   AGENDA[0].status_id = 7;
   await p.getByRole('button', { name: 'Ler a agenda agora' }).click(); await p.waitForTimeout(4000);
   ok('rodar de novo não duplica e atualiza a situação', sql(`select count(*) from servicos where sistema = 'feegow' and codigo_externo in ('9101','9102','9103','9104')`) === '4'
-    && sql(`select count(*) from agenda_pacientes`) === '3' && sql(`select situacao from servicos where codigo_externo = '9101'`) === 'confirmado');
+    && sql(`select count(*) from agenda_pacientes`) === '4' && feegow.pacientes['599'] === 1 && sql(`select situacao from servicos where codigo_externo = '9101'`) === 'confirmado');
+
+  // Espelho gravou antes; a Sara registra depois o mesmo agendamento: passa a ser dela e os dados da Feegow ficam.
+  const reg2 = await fetch(B + '/api/v1/servicos/registrar', { method: 'POST', headers: { authorization: 'Bearer ' + chave, 'content-type': 'application/json' },
+    body: JSON.stringify({ telefone: '5500990000091', tipo: 'Consulta', sistema: 'feegow', codigo_externo: '9106', detalhes: { sinal: 'pago' } }) });
+  ok('Sara registra depois do espelho: o registro passa a ser dela, sem perder os dados da Feegow', reg2.status < 300
+    && sql(`select criado_por || '|' || (detalhes ? 'feegow') || '|' || (detalhes->>'sinal') from servicos where codigo_externo = '9106'`) === 'IA|true|pago', String(reg2.status));
 
   // Tela do dia
   await p.goto(B + '/agenda'); await p.locator('[data-agendamento]').first().waitFor({ timeout: 10000 }).catch(() => undefined);
