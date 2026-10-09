@@ -38,3 +38,15 @@ export async function verificarAgora() {
     return rodarVigia();
   }, 'vigia');
 }
+
+// Espelho da agenda (Feegow): roda na hora para a empresa escolhida (o automático roda de 10 em 10 minutos).
+export async function sincronizarAgendaAgora() {
+  return comUsuario(async (u) => {
+    if (!u.master) throw new ErroApi(403, 'Só a Planee (master).');
+    if (!u.empresa) throw new ErroApi(400, 'Escolha uma empresa.');
+    const { rodarEspelho } = await import('@/lib/agenda/espelho');
+    const r = await rodarEspelho(u.empresa.id);
+    if (!r.length) throw new ErroApi(400, 'Esta empresa não tem a integração "feegow" ativa (Interno → Integrações).');
+    return r[0];
+  }, 'agenda');
+}

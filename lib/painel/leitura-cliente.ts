@@ -7,6 +7,7 @@ import type * as inbox from './inbox';
 import type * as av from './avisos';
 import type * as pl from './planee';
 import type * as rs from './resultados';
+import type * as ag from './agenda';
 
 type R<F extends (...a: never[]) => Promise<unknown>> = Promise<Resposta<Awaited<ReturnType<F>>>>;
 
@@ -47,3 +48,4 @@ export const carregarSaudeEmpresa = (id: string): R<typeof pl.saudeEmpresa> => l
 export const carregarNovidades = (): R<typeof pl.listarNovidades> => ler('novidades');
 export const carregarIntegracoes = (): R<typeof pl.listarIntegracoes> => ler('integracoes');
 export const carregarResultados = (periodo: string): R<typeof rs.lerResultados> => ler('resultados', { periodo });
+export const carregarAgenda = (dia: string): R<typeof ag.lerAgenda> => ler('agenda', { dia });

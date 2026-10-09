@@ -4,6 +4,7 @@ import { Shell } from '@/components/Shell';
 import { CrmTela } from '@/components/crm/CrmTela';
 import { InboxTela } from '@/components/inbox/InboxTela';
 import { Resultados } from '@/components/resultados/Resultados';
+import { Agenda } from '@/components/agenda/Agenda';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
 import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
@@ -58,6 +59,15 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <Shell atual={atual.id} usuario={usuario} largo>
         <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
           podeConfig={pode(usuario, 'crm.config')} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+      </Shell>
+    );
+  }
+
+  // Agenda do dia (09/10): espelho da Feegow e agendamentos da Sara, pela leitura GET (lib/painel/agenda.ts).
+  if (atual.id === 'agenda' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Agenda key={usuario.empresa.id} empresaId={usuario.empresa.id} master={usuario.master} />
       </Shell>
     );
   }

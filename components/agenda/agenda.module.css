@@ -1,0 +1,52 @@
+/* Tela Agenda (09/10). */
+.tela { display: flex; flex-direction: column; gap: 16px; max-width: 1180px; }
+.tela * { box-sizing: border-box; }
+.tela button, .tela input, .tela select { font-family: inherit; color: inherit; }
+.tela button { cursor: pointer; }
+.tela button:disabled { cursor: not-allowed; opacity: .5; }
+.tela :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.topo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.titulos { flex-grow: 1; min-width: 0; }
+.titulo { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.sub { margin: 2px 0 0; font-size: 13px; color: var(--ink-3); }
+.subErro { color: var(--rs-ink); }
+
+.navDia { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.botaoSec { height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 13px; font-weight: 600; }
+.botaoSec:hover:not(:disabled) { background: var(--hover); }
+.data { height: 34px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--field); font-size: 13px; }
+.filtro { height: 34px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--field); font-size: 13px; max-width: 240px; }
+
+.resumo { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: var(--surface-3); font-size: 12.5px; color: var(--ink-2); }
+.chip strong { color: var(--ink); }
+
+.grupo { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.grupoTitulo { margin: 0; padding: 12px 16px; font-size: 14px; font-weight: 650; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+.grupoTitulo span { font-weight: 500; color: var(--ink-3); font-size: 12.5px; }
+.lista { list-style: none; margin: 0; padding: 0; }
+.item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.item[data-situacao='cancelado'] { opacity: .55; }
+.item[data-situacao='cancelado'] .nome { text-decoration: line-through; }
+.hora { font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.corpo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nome { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etiquetas { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.etiqueta { height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; background: var(--surface-3); color: var(--ink-2); white-space: nowrap; }
+.etiqueta[data-situacao='confirmado'] { background: var(--ia-bg); color: var(--ia-ink); }
+.etiqueta[data-situacao='agendado'] { background: var(--eq-bg); color: var(--eq-ink); }
+.etiqueta[data-situacao='realizado'] { background: var(--fn-bg); color: var(--fn-ink); }
+.etiqueta[data-situacao='faltou'], .etiqueta[data-situacao='cancelado'] { background: var(--rs-bg); color: var(--rs-ink); }
+.etiqueta[data-origem='sara'] { background: var(--pd-bg); color: var(--pd-ink); }
+
+.vazio { padding: 22px 18px; border: 1px dashed var(--line-strong); border-radius: 12px; text-align: center; color: var(--ink-3); font-size: 13.5px; line-height: 1.5; }
+.aviso { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--ia-bg); color: var(--ia-ink); }
+.avisoErro { background: var(--rs-bg); color: var(--rs-ink); }
+
+@media (max-width: 640px) {
+  .item { grid-template-columns: 52px minmax(0, 1fr); }
+  .etiquetas { grid-column: 2; justify-content: flex-start; }
+}

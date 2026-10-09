@@ -7,6 +7,7 @@ import * as inbox from './inbox';
 import * as av from './avisos';
 import * as pl from './planee';
 import * as rs from './resultados';
+import * as ag from './agenda';
 
 // Leituras das telas, servidas por GET /api/painel/ler/<recurso> (rota em app/api/painel/ler).
 // Por que rota e não "ação do servidor": o Next.js roda as ações uma por vez em cada navegador. Com as
@@ -47,4 +48,6 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   integracoes: (u) => pl.listarIntegracoes(u),
   // Resultados da empresa (fase 1.3, 09/10): ?periodo=7|30|90|mes
   resultados: (u, q) => rs.lerResultados(u, q.get('periodo')),
+  // Agenda do dia (09/10): ?dia=YYYY-MM-DD
+  agenda: (u, q) => ag.lerAgenda(u, q.get('dia')),
 };

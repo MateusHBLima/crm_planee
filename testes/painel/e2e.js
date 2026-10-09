@@ -96,7 +96,7 @@ async function entrar(p, email, senha='senha123') {
   await p.goto(B + '/crm'); await p.waitForTimeout(800);
   const txtJ = await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent();
   ok('Planee vê CPF mascarado (campo e texto)', !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
-  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 7 telas', navP.join(',') === 'Inbox,CRM,Resultados,Configurações,Equipe,Empresas,Interno Planee', navP.join(','));
+  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 8 telas', navP.join(',') === 'Inbox,CRM,Agenda,Resultados,Configurações,Equipe,Empresas,Interno Planee', navP.join(','));
   await p.goto(B + '/configuracoes'); ok('Configurações abre a do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
   await p.goto(B + '/resultados'); await p.locator('[data-kpi="quadro"]').waitFor({ timeout: 8000 }).catch(() => undefined);
   ok('Resultados abre com os números do quadro', ((await p.textContent('[data-kpi="quadro"]').catch(() => '')) || '').trim() !== '');

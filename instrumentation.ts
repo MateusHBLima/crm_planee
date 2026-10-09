@@ -6,5 +6,10 @@ export async function register() {
     if (process.env.PAINEL_VIGIA === '0' || !(process.env.CENTRAL_DATABASE_URL || process.env.DATABASE_URL)) return;
     const { iniciarVigia } = await import('./lib/painel/vigia');
     iniciarVigia();
+    // Espelho da agenda da Feegow (lib/agenda/espelho.ts). PAINEL_AGENDA=0 desliga; sem token na stack, não faz nada.
+    if (process.env.PAINEL_AGENDA !== '0') {
+      const { iniciarEspelho } = await import('./lib/agenda/espelho');
+      iniciarEspelho();
+    }
   }
 }
