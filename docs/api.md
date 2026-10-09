@@ -42,6 +42,7 @@ Módulo por empresa: permissões `pagamentos.ver` (ver agendamentos e comprovant
 
 - **Agendamento:** `POST /api/v1/servicos/registrar` com `{telefone, nome?, tipo, descricao?, inicio, profissional?, local?, valor?, situacao?, sistema, codigo_externo, detalhes?, atendimento_id?}`.
   - Cria o agendamento ou, se o mesmo `sistema` + `codigo_externo` já existir, atualiza. O contato é achado pelo telefone (com e sem o 9) ou criado.
+  - Ao atualizar, `detalhes` se soma ao que já existe (não apaga as chaves anteriores). Se o registro veio do espelho da agenda da Feegow, passa a ser de quem registrou (a Sara).
   - `situacao`: `agendado | confirmado | realizado | cancelado | faltou`.
   - Resposta: `{id, criado, contato_id}`. Escopo `crm`.
 - **Comprovante:** `POST /api/v1/pagamentos` com `{telefone | contato_id, servico: {sistema, codigo_externo} | servico_id, valor, pago_em, forma, descricao, wamid?, arquivo: {nome, mime, base64}, analise?, comprovante?}`.

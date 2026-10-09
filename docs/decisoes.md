@@ -105,6 +105,26 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Cada envio é registrado** (enviado, falhou ou cancelado) com uma chave única. Aparece no histórico do contato.
     - **O follow-up aparece como selo calculado** na conversa e no histórico, mais o filtro "Em follow-up" na Inbox. Não vira etapa do funil nem cartão do quadro.
 
+31. **CRM rápido e fluido (09/10).**
+    - **Tela sem esperar o banco.** A página abre na hora com um esqueleto e busca os dados depois. O banco da clínica está em São Paulo e o painel na Alemanha (~225 ms por ida); cada ida evitada conta.
+    - **Clique na hora.** Assumir, mover, mudar assunto, anotar e arquivar mudam a tela antes da resposta e cada um é **uma ida só ao banco** (uma instrução com a conferência, a mudança e a auditoria). Se outra pessoa mexeu antes, a tela avisa e volta.
+    - **Leituras comprimidas, guardadas e antecipadas.** As leituras vão com gzip, a última de cada tela fica na memória do navegador e a conversa é lida ao passar o mouse (prévia, sem zerar não lidas).
+    - **O maior ganho que falta não é código:** hospedar o painel em São Paulo, perto do banco da clínica e das pessoas. Decisão do Mateus.
+
+32. **Resultados, fila parada e comprovante pelo WhatsApp (09/10).**
+    - **Resultados (fase 1.3)** para quem tem `crm.ver`: conversas por dia, espera pela equipe, quadro, agendamentos, funil, automáticas e comprovantes, em 7, 30 ou 90 dias ou no mês.
+    - **Fila parada** vira aviso automático no Interno: 5 ou mais pedidos aguardando além do prazo vermelho, em horário comercial. Some sozinho quando a fila anda.
+    - **Comprovante sem arquivo:** quando a Sara registra o pagamento sem o arquivo, o painel copia a foto ou o PDF que o paciente mandou (pelo `wamid`, ou do mesmo telefone entre 2 h antes e 5 min depois). A mesma foto não vira comprovante de dois pagamentos.
+
+33. **Espelho da agenda da Feegow (09/10).**
+    - **Só leitura, pela API da Feegow.** O painel não marca nem desmarca nada na Feegow.
+    - **Os agendamentos vão para `servicos`**, o mesmo lugar dos que a Sara registra, com `sistema = 'feegow'` e o id do agendamento. Sara e espelho caem no mesmo registro; quem registrou primeiro pela Sara continua dela, e se o espelho gravou antes a Sara assume quando registrar.
+    - **Token só na stack** (`FEEGOW_TOKENS`, "empresa=token"), nunca no banco nem no repositório.
+    - **A cada 10 minutos** relê de 3 dias atrás a 60 dias à frente. O histórico entra aos poucos (até 80 chamadas por rodada), do mais novo ao mais antigo, até um ano inteiro vazio.
+    - **Paciente vira contato pelo telefone.** Sem telefone, vira contato só com o nome. Sem CPF.
+    - **Status da clínica** (ids acima de 100) vai pelo nome que a clínica deu; os padrão da Feegow, pelo id.
+    - **Tela Agenda** (módulo `pagamentos.ver`): o dia por profissional, com etiqueta de quem marcou pela Sara, 1ª consulta, encaixe e situação.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

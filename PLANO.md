@@ -59,7 +59,11 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
   *Feito em 29/09:* quadro, comercial e contatos lidos pela mesma camada da API (PR #5), com teste de ponta a ponta.
 - [x] **1.2b CRM completo pela tela.** Criar atendimento, contato e oportunidade; editar contato; notas do contato; mover, editar e arquivar oportunidade; tela Configurações do CRM (assuntos, etapas do funil, nomes das etapas); avisos de cartão novo (som, notificação e título da aba); telas respeitam `crm.ver`, `crm.editar`, `crm.arquivar` e `crm.config`. Ferramentas da IA: `ficha_do_contato` e `mover_no_funil` (API e MCP).
   *Feito em 30/09:* `testes/painel/crm-completo.js` (40 testes: telas, permissões, avisos com aba escondida, ficha, funil e MCP).
-- [ ] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
+- [x] **1.3 Resultados da clínica.** Consultas marcadas pela IA, conversas por dia, espera pela equipe. Consultas prontas em `docs/relatorio.md`, seção 9.
+  *Feito em 09/10:* tela Resultados (conversas por dia, espera pela equipe, quadro, agendamentos, funil, automáticas, comprovantes; 7, 30, 90 dias ou mês), `testes/painel/resultados.js` (12). Aviso automático de fila parada no Interno (`testes/painel/avisos.js`).
+- [x] **1.5 Agenda da Feegow no CRM (decisão 33).** Espelho só de leitura da agenda (próximos 60 dias a cada 10 min + histórico aos poucos) gravando em `servicos`, e tela Agenda do dia.
+  *Feito em 09/10:* `lib/agenda/`, migração 018, `testes/painel/agenda.js` (21, contra uma Feegow falsa). Para ligar: `docs/producao.md`, seção do espelho.
+- [x] **1.6 CRM rápido (decisão 31).** Telas sem esperar o banco, clique na hora, ações em uma ida ao banco, leituras comprimidas e antecipadas. `testes/painel/velocidade.js` (12).
 - [ ] ~~**1.4 Central Planee (decisão 24).**~~ *Substituída pela 0.8 (decisão 26); custo, falhas e alertas de todos entram na tela do master.*
   *Pronto quando (fase):* o Dr. Amilton abre os resultados sozinho e a Planee acompanha conversas sem abrir o Supabase.
 
