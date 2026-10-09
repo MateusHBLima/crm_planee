@@ -7,7 +7,6 @@ import { atraso, casaBusca, cpfBonito, duracao, ha, telefoneBonito, type Atraso,
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
-const ORDEM: Record<Etapa, number> = { aguardando: 0, em_atendimento: 1, pendente: 2, finalizado: 3 };
 
 export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFinal: boolean) {
   return cartoes.filter((k) =>
@@ -16,10 +15,12 @@ export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFin
     && casaBusca(busca, [k.nome, k.telefone, k.documento, k.resumo, k.responsavel]));
 }
 
-// Em cada coluna: aguardando, em atendimento, pendente e finalizado, nessa ordem. Nas etapas abertas, o mais
-// antigo fica em cima (é o próximo a ser atendido); nos finalizados de hoje, o mais recente.
+// Em cada coluna: aguardando e em atendimento juntos, por ordem de chegada (o mais antigo em cima), para que
+// assumir não tire o cartão do lugar (09/10: o cartão "pulava" para baixo ao assumir). Depois os pendentes (parados
+// de propósito, esperando algo interno) e, por último, os finalizados de hoje, o mais recente primeiro.
+const GRUPO: Record<Etapa, number> = { aguardando: 0, em_atendimento: 0, pendente: 1, finalizado: 2 };
 export function ordenar(a: Cartao, b: Cartao) {
-  return ORDEM[a.etapa] - ORDEM[b.etapa]
+  return GRUPO[a.etapa] - GRUPO[b.etapa]
     || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
 }
 

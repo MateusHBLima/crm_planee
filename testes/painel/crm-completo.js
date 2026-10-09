@@ -193,7 +193,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
   const col = p.locator('section[aria-label="Exames"] article');
   const textos = (await col.allTextContents()).map((t) => (t.match(/PRAZO-([A-F])/) || ['', ''])[1]).filter(Boolean);
-  ok('mais antigo em cima: aguardando C, B, A; em atendimento E antes de F', textos.join('') === 'CBAEFD', textos.join(''));
+  ok('mais antigo em cima: aguardando e em atendimento por chegada (E, F, C, B, A), pendente depois (D)', textos.join('') === 'EFCBAD', textos.join(''));
   const nivel = (k) => p.locator('section[aria-label="Exames"] article', { hasText: k }).getAttribute('data-atraso');
   ok('aguardando há 40 min fica vermelho', (await nivel('PRAZO-C')) === 'vermelho');
   ok('aguardando há 20 min fica amarelo', (await nivel('PRAZO-B')) === 'amarelo');
