@@ -6,6 +6,7 @@ import { avisoDoSistema } from '@/lib/avisos-sistema';
 import { resumoParaFicha } from '@/lib/automaticas';
 import { recurso as acharRecurso, type Recurso } from './recursos';
 import { bancoDe, type Chave } from './auth';
+import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
@@ -344,7 +345,7 @@ const SITUACOES = ['agendado', 'confirmado', 'realizado', 'cancelado', 'faltou']
 const FORMAS = ['pix', 'cartao', 'boleto', 'dinheiro', 'outro'];
 const MAX_ARQUIVO = 10 * 1024 * 1024;
 // O tipo declarado tem que bater com o começo do arquivo (um PDF começa com %PDF etc.).
-const ASSINATURAS: Record<string, (b: Buffer) => boolean> = {
+export const ASSINATURAS: Record<string, (b: Buffer) => boolean> = {
   'application/pdf': (b) => b.subarray(0, 4).toString('latin1') === '%PDF',
   'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8,
   'image/png': (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
@@ -643,6 +644,8 @@ export async function criarPagamento(chave: Chave, corpo: unknown) {
       return { id, contato_id: contatoId, servico_id: servicoId, alerta_atendimento_id: alerta, novoAlerta: Boolean(alerta) };
     }, bancoDe(chave)).then(async ({ novoAlerta, ...r }) => {
       if (novoAlerta && r.alerta_atendimento_id) await avisarPlanee(chave, r.id, r.alerta_atendimento_id);
+      // Sem arquivo: tenta copiar a foto ou o PDF que o paciente mandou pelo WhatsApp (lib/api/comprovante-whatsapp.ts).
+      if (!arq) return { ...r, arquivo_do_whatsapp: await tentarArquivoDoWhatsApp(chave, r.id) };
       return r;
     });
   } catch (e) {
