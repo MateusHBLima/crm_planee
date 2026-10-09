@@ -80,7 +80,10 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   await p.fill('#aviso-comentario', 'Seria bom ver o resumo do dia (teste)');
   await p.locator('[role=dialog]').getByRole('button', { name: 'Enviar para a Planee' }).click();
   await p.getByText('Seria bom ver o resumo do dia').waitFor({ timeout: 8000 }).catch(() => {});
-  ok('aviso sem mensagem (Novo aviso) também funciona', sql(`select count(*) from avisos where origem = 'equipe' and tipo = 'sugestao' and ref->>'wa_final' is null`) === '1');
+  // No CI a gravação pode chegar depois do texto na tela: espera a linha no banco (até 10 s) antes de conferir.
+  const qSugestao = `select count(*) from avisos where origem = 'equipe' and tipo = 'sugestao' and ref->>'wa_final' is null`;
+  for (let i = 0; i < 20 && sql(qSugestao) !== '1'; i++) await p.waitForTimeout(500);
+  ok('aviso sem mensagem (Novo aviso) também funciona', sql(qSugestao) === '1', sql(qSugestao));
   await ctx.close();
 
   // ---- Outra empresa não vê os avisos da empresa de teste ----
