@@ -69,11 +69,11 @@ export function Interno({ empresas, nome }: { empresas: EmpresaOpcao[]; nome: st
   const verificar = () => iniciar(async () => {
     const r = tratar(await verificarAgora());
     if (!r) return;
-    const novos = r.tokens + r.silencio + r.falhas;
+    const novos = r.tokens + r.silencio + r.falhas + (r.fila ?? 0);
     setToast({
       tipo: r.sem_banco.length ? 'erro' : 'ok',
       texto: `Verificação feita em ${r.empresas} ${r.empresas === 1 ? 'banco' : 'bancos'}: ${novos} ${novos === 1 ? 'aviso novo' : 'avisos novos'}`
-        + ` (tokens ${r.tokens}, números sem mensagens ${r.silencio}, envios falhando ${r.falhas}), ${r.resolvidos} ${r.resolvidos === 1 ? 'resolvido' : 'resolvidos'} sozinhos.`
+        + ` (tokens ${r.tokens}, números sem mensagens ${r.silencio}, envios falhando ${r.falhas}, fila parada ${r.fila ?? 0}), ${r.resolvidos} ${r.resolvidos === 1 ? 'resolvido' : 'resolvidos'} sozinhos.`
         + (r.sem_banco.length ? ` Sem resposta do banco: ${r.sem_banco.join(', ')}.` : ''),
     });
     setVersao((v) => v + 1);

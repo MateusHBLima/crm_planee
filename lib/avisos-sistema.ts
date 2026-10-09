@@ -6,7 +6,7 @@ import { central, registrarErro } from '@/lib/db';
 // Só o índice vai para o banco central: nada de nome, telefone inteiro ou texto de paciente no título.
 // Nenhuma destas funções derruba quem chamou: erro vai para o log e a função devolve false.
 
-export type TipoSistema = 'comprovante_suspeito' | 'numero_silencioso' | 'envios_falhando' | 'token_vencendo';
+export type TipoSistema = 'comprovante_suspeito' | 'numero_silencioso' | 'envios_falhando' | 'token_vencendo' | 'fila_parada';
 
 const semTabela = (e: unknown) => ['42P01', '42703'].includes((e as { code?: string }).code ?? '');
 const falhou = (onde: string, e: unknown) => { if (!semTabela(e)) registrarErro(onde, e); return false; };
