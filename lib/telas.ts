@@ -44,7 +44,7 @@ export const ICONES: Record<string, string> = {
 const TELAS: Tela[] = [
   { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
-  { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Consultas marcadas pela IA, conversas por dia, espera pela equipe. Fase 1.3.', exige: (u) => pode(u, 'resultados.ver') },
+  { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },
   { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', exige: (u) => pode(u, 'crm.config') || pode(u, 'agente.config') },
   { id: 'planee', nome: 'Planee', icone: 'conversa', descricao: 'Avisos para a Planee, respostas, novidades e manutenções.', exige: (u) => Boolean(u.empresa) && u.nivel !== 'master' },
   { id: 'equipe', nome: 'Equipe', icone: 'pessoa', descricao: 'Pessoas da empresa, níveis e permissões.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },

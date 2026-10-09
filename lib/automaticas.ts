@@ -4,18 +4,9 @@ import type { Pool, PoolClient } from 'pg';
 // Leitura das mensagens automáticas da IA (migração 017): recusa no contato, últimos envios e o selo do follow-up.
 // Usado pela ficha da API, pela Inbox e pelo histórico do contato. Banco sem a 017: tudo vazio, nada quebra.
 
-export const TIPOS_AUTOMATICA: Record<string, string> = {
-  aniversario: 'Aniversário',
-  lembrete_2d: 'Lembrete 2 dias antes',
-  lembrete_dia: 'Lembrete no dia',
-  followup_1h: 'Follow-up 1h',
-  followup_3h: 'Follow-up 3h',
-  followup_3d: 'Follow-up 3 dias',
-  followup_7d: 'Follow-up 7 dias',
-  followup_14d: 'Follow-up 14 dias',
-  followup_30d: 'Follow-up 30 dias',
-  outro: 'Mensagem automática',
-};
+// Nomes dos tipos ficam num arquivo sem 'server-only' (a tela de Resultados também usa).
+export { TIPOS_AUTOMATICA } from './automaticas-nomes';
+import { TIPOS_AUTOMATICA } from './automaticas-nomes';
 export const nomeDoTipo = (t: string) => TIPOS_AUTOMATICA[t] ?? `Automática (${t})`;
 
 export type Recusa = { desde: string; motivo: string | null; por: string | null };

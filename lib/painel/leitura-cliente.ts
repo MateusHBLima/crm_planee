@@ -6,6 +6,7 @@ import type * as sv from './servicos';
 import type * as inbox from './inbox';
 import type * as av from './avisos';
 import type * as pl from './planee';
+import type * as rs from './resultados';
 
 type R<F extends (...a: never[]) => Promise<unknown>> = Promise<Resposta<Awaited<ReturnType<F>>>>;
 
@@ -45,3 +46,4 @@ export const carregarSaude = (): R<typeof pl.saudeClientes> => ler('saude');
 export const carregarSaudeEmpresa = (id: string): R<typeof pl.saudeEmpresa> => ler('saude_empresa', { id });
 export const carregarNovidades = (): R<typeof pl.listarNovidades> => ler('novidades');
 export const carregarIntegracoes = (): R<typeof pl.listarIntegracoes> => ler('integracoes');
+export const carregarResultados = (periodo: string): R<typeof rs.lerResultados> => ler('resultados', { periodo });

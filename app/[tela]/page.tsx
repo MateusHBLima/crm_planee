@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { Shell } from '@/components/Shell';
 import { CrmTela } from '@/components/crm/CrmTela';
 import { InboxTela } from '@/components/inbox/InboxTela';
+import { Resultados } from '@/components/resultados/Resultados';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
 import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
@@ -57,6 +58,15 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <Shell atual={atual.id} usuario={usuario} largo>
         <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
           podeConfig={pode(usuario, 'crm.config')} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+      </Shell>
+    );
+  }
+
+  // Resultados da empresa (fase 1.3): os números chegam pela leitura GET (lib/painel/resultados.ts).
+  if (atual.id === 'resultados' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Resultados key={usuario.empresa.id} empresaId={usuario.empresa.id} empresaNome={usuario.empresa.nome} />
       </Shell>
     );
   }
