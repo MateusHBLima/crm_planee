@@ -10,7 +10,8 @@ import {
 } from '@/lib/auth/gotrue';
 import { destinoSeguro } from '@/lib/destino';
 import { bloqueado, ipDe, LIMITES, limparFalhas, MSG_LIMITE, registrarFalha } from '@/lib/limite';
-import { hashCodigo, normalizarCodigo } from '@/lib/painel/gestao';
+import { hashCodigo, lerLinkConvite, normalizarCodigo, situacaoNoLink, tokenLinkValido, usarLinkConvite } from '@/lib/painel/gestao';
+import { empresaDoDominio, hostDeCabecalhos } from '@/lib/empresa';
 
 // O destino volta para o navegador, que navega sozinho. Um redirect() aqui seria renderizado pelo Next num
 // pedido interno para localhost, sem o endereço da empresa (decisão 26).
@@ -115,4 +116,61 @@ export async function verificarCodigo(_: EstadoVerificacao, form: FormData): Pro
   limparFalhas([chaves[0]]);
   await gravarSessao(t);
   return { erro: null, destino: destinoSeguro(form.get('volta')) };
+}
+
+export type EstadoConvite = { erro: string | null; nome: string; email: string; enviado: boolean; destino?: string };
+
+const LINK_INVALIDO = 'Este link de convite já foi usado, venceu ou foi cancelado. Peça um link novo a quem convidou você.';
+
+// Link de convite de uso único (09/10): a pessoa põe nome, e-mail e senha e entra na empresa do link como membro,
+// com o acesso que o admin escolheu (padrão: nenhum, liberado depois). Quem já tem senha no painel usa a mesma.
+export async function entrarPorConvite(_: EstadoConvite, form: FormData): Promise<EstadoConvite> {
+  const token = String(form.get('token') ?? '');
+  const nome = String(form.get('nome') ?? '').trim().replace(/\s+/g, ' ');
+  const email = String(form.get('email') ?? '').trim().toLowerCase();
+  const senha = String(form.get('senha') ?? '');
+  const repete = String(form.get('repete') ?? '');
+  const volta = (erro: string) => ({ erro, nome, email, enviado: false });
+  if (!tokenLinkValido(token)) return volta(LINK_INVALIDO);
+  if (nome.length < 2 || nome.length > 80) return volta('Escreva o seu nome (de 2 a 80 letras).');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) return volta('Confira o e-mail.');
+  if (senha.length < 8) return volta('A senha precisa ter pelo menos 8 caracteres.');
+  if (senha !== repete) return volta('As duas senhas não são iguais.');
+  if (!authConfigurado() || !bancoConfigurado()) return volta('O login ainda não foi configurado neste endereço. Avise a Planee.');
+  const h = await headers();
+  const ip = ipDe(h);
+  const chaves = [`link:${email}`, `ip:${ip}`];
+  if (bloqueado([[chaves[0], LIMITES.email], [chaves[1], LIMITES.ip]])) return volta(MSG_LIMITE);
+
+  const link = await lerLinkConvite(token);
+  if (!link) { registrarFalha([chaves[1]]); return volta(LINK_INVALIDO); }
+  // Link de uma empresa aberto no domínio de outra: a sessão não valeria aqui.
+  const dono = await empresaDoDominio(hostDeCabecalhos(h)).catch(() => null);
+  if (dono && dono.id !== link.empresa_id) return volta('Abra o link exatamente como você recebeu.');
+
+  const situacao = await situacaoNoLink(link.empresa_id, email);
+  if (situacao === 'bloqueado') return volta('Este e-mail não pode entrar por convite. Fale com quem convidou você.');
+  if (situacao === 'ja_esta') return volta('Este e-mail já está na equipe. Entre com a sua senha em "Já tenho senha".');
+
+  // Quem já tem senha no painel (outra empresa): a senha precisa ser a mesma. Quem não tem: cria agora.
+  let tokens: Tokens | null = null;
+  try { tokens = await entrarComSenha(email, senha); } catch { tokens = null; }
+  if (!tokens && situacao === 'tem_senha') {
+    registrarFalha(chaves);
+    return volta('Este e-mail já tem senha no painel. Use a mesma senha (ou peça ajuda a quem convidou você).');
+  }
+  if (!tokens) {
+    let r: Awaited<ReturnType<typeof criarConta>>;
+    try { r = await criarConta(email, senha); } catch { return volta('Não foi possível criar a conta agora. Tente de novo.'); }
+    if (r.erro) return volta(r.erro);
+    tokens = r.tokens;
+  }
+  if (!(await usarLinkConvite(token, { nome, email }))) {
+    if (tokens) await encerrarSessao(tokens.access_token).catch(() => {});
+    return volta(LINK_INVALIDO);
+  }
+  limparFalhas([chaves[0]]);
+  if (!tokens) return { erro: null, nome, email, enviado: true };
+  await gravarSessao(tokens);
+  return { erro: null, nome, email, enviado: false, destino: '/' };
 }

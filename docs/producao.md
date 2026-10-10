@@ -38,6 +38,10 @@ O painel lê a agenda da Feegow (só leitura) e grava os agendamentos no CRM da 
 
 Variáveis opcionais: `PAINEL_AGENDA=0` desliga o espelho; `AGENDA_MINUTOS` (padrão 10) é o intervalo; `AGENDA_CHAMADAS` (padrão 80) é o limite de chamadas à Feegow por rodada; `FEEGOW_API_URL` troca o endereço da API (só testes).
 
+## Link de convite (09/10)
+
+A tela Equipe gera links de convite de uso único (decisão 34). Antes de usar, rode no **banco do painel** (central) a migração `019_convite_link.sql` (idempotente). Sem ela, a tela Equipe abre normalmente, só o botão "Gerar link" dá erro.
+
 ## Voltar versão
 
 No Portainer, stack `painel` → variável `VERSAO` com a versão curta anterior (lista em GitHub → Packages → crm_planee) → **Update the stack**. Para voltar ao normal, apague `VERSAO` (volta a `latest`).
