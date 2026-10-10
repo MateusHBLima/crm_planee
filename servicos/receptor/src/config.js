@@ -26,6 +26,9 @@ export const config = {
   encaminharPadrao: env.ENCAMINHAR_PADRAO || '',
   // Só estes campos vão para a Sara: o que ela já recebe hoje (mensagens, status e ecos da equipe).
   // Histórico da conexão e agenda do celular ficam só no painel (milhares de mensagens antigas não podem virar atendimento).
+  // Evento com mais de N minutos (a Meta reenviando depois de uma falha) é guardado e aparece na Inbox, mas não vai
+  // para a Sara: ela não responde mensagem velha que a equipe pode já ter atendido pelo celular. 0 desliga.
+  repassarMaxIdadeMin: num(env.REPASSAR_MAX_IDADE_MIN, 120),
   repassarCampos: (env.REPASSAR_CAMPOS ?? 'messages,smb_message_echoes').split(',').map((s) => s.trim()).filter(Boolean),
   supabaseUrl: (env.SUPABASE_URL || '').replace(/\/+$/, ''),
   supabaseChave: env.SUPABASE_SERVICE_KEY || '',

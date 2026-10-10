@@ -265,6 +265,7 @@ O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depoi
 |---|---|
 | A Meta não aceita o override | `META_VERIFY_TOKEN` diferente do enviado, ou `/whatsapp/vivo` fora |
 | "assinatura inválida" nos logs do receptor | falta em `META_APP_SECRET` o segredo do app que entrega o número. O app que entrega é o do token usado no override |
+| Mensagens velhas não chegam à Sara | de propósito: evento com mais de `REPASSAR_MAX_IDADE_MIN` minutos (padrão 120; 0 desliga) é guardado e aparece na Inbox, mas não é repassado. Acontece quando a Meta reenvia depois de uma falha (ex.: 09/10, `META_APP_SECRET` perdeu um dos segredos numa atualização da stack). Ao subir, o log "segredos de app carregados" mostra quantos segredos valem e a impressão curta de cada um |
 | `pendentes` subindo com erro "não cadastrado" | número sem linha em `whatsapp_numeros`. O evento espera o cadastro e entra sozinho |
 | A Sara parou de responder | `encaminhar_url` do número. Volte o override (passo 5) e confira `repasse_erro` em `wa_eventos` |
 | Mídia sem `caminho` | token do número (ou `META_TOKEN`), `SUPABASE_SERVICE_KEY` ou o bucket |

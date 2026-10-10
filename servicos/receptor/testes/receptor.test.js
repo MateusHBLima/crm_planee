@@ -333,6 +333,18 @@ test('aceita a assinatura de qualquer um dos apps cadastrados', async () => {
   assert.equal((await q("select count(*)::int n from wa_eventos where corpo like '%veio pelo outro app%'"))[0].n, 1);
 });
 
+test('evento antigo (reenvio da Meta): guarda e espelha, mas não vai para a Sara', async () => {
+  const velho = String(Math.floor(Date.now() / 1000) - 3 * 3600);
+  const r = await enviar(msgEntrada('wamid.VELHO', { timestamp: velho, type: 'text', text: { body: 'mensagem de 3 horas atras' } }));
+  assert.equal(r.status, 200);
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.VELHO'")).length === 1), 'aparece na Inbox');
+  assert.equal((await q("select repassar from wa_eventos where corpo like '%wamid.VELHO%'"))[0].repassar, false);
+  const novo = await enviar(msgEntrada('wamid.NOVO2', { type: 'text', text: { body: 'mensagem de agora' } }));
+  assert.equal(novo.status, 200);
+  assert.ok(await ate(() => n8n.recebidos.some((x) => x.corpo.includes('wamid.NOVO2'))), 'a de agora vai para a Sara');
+  assert.ok(!n8n.recebidos.some((x) => x.corpo.includes('wamid.VELHO')), 'a antiga não vai para a Sara');
+});
+
 test('o painel registra o que a equipe mandou: origem painel e quem mandou (por)', async () => {
   const reg = (corpo) => fetch(`${B}/whatsapp/envio`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' }, body: JSON.stringify(corpo) });
   const r = await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL1', tipo: 'text', texto: 'Resposta da equipe pelo painel', timestamp: ts(), origem: 'painel', por: 'Amanda Teste' });
