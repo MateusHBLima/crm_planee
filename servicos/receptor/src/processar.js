@@ -274,6 +274,23 @@ export function resumoDoEvento(corpo) {
   return { numero: ch?.value?.metadata?.phone_number_id ? String(ch.value.metadata.phone_number_id) : null, campo: ch?.field ?? null };
 }
 
+// Idade do evento em minutos: pela mensagem (ou eco, ou status) mais recente dele. null quando não há hora.
+export function idadeDoEventoMin(corpo, agora = Date.now()) {
+  let maior = 0;
+  for (const e of corpo?.entry ?? []) {
+    for (const ch of e?.changes ?? []) {
+      const v = ch?.value ?? {};
+      for (const lista of [v.messages, v.message_echoes, v.statuses]) {
+        for (const m of Array.isArray(lista) ? lista : []) {
+          const t = Number(m?.timestamp);
+          if (Number.isFinite(t) && t > maior) maior = t;
+        }
+      }
+    }
+  }
+  return maior ? (agora / 1000 - maior) / 60 : null;
+}
+
 // A Sara (n8n) avisa o que mandou pela API: a Meta só devolve o status, sem o conteúdo.
 // O mesmo caminho registra o que a equipe mandou pelo painel: origem 'painel' e quem mandou em "por" (fica no bruto).
 export async function registrarEnvio(d) {

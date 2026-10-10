@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { central } from './banco.js';
 import { assinaturaValida } from './meta.js';
-import { NumeroSemDono, registrarEnvio, resumoDoEvento } from './processar.js';
+import { idadeDoEventoMin, NumeroSemDono, registrarEnvio, resumoDoEvento } from './processar.js';
 import { estadoDoAtendimento } from './atendimento.js';
 import { timingSafeEqual } from 'node:crypto';
 import { destinoDoRepasse } from './rotas.js';
@@ -56,7 +56,13 @@ async function receberEvento(req, res) {
   const texto = corpo.toString('utf8');
   const hash = createHash('sha256').update(corpo).digest('hex');
   const { numero, campo } = resumoDoEvento(json);
-  const destino = config.repassarCampos.includes(campo) ? destinoDoRepasse(numero) : '';
+  let destino = config.repassarCampos.includes(campo) ? destinoDoRepasse(numero) : '';
+  // Evento antigo (reenvio da Meta depois de uma falha): guarda e espelha, mas não manda para a Sara.
+  const idade = idadeDoEventoMin(json);
+  if (destino && config.repassarMaxIdadeMin > 0 && idade !== null && idade > config.repassarMaxIdadeMin) {
+    log('aviso', 'evento antigo: guardado sem repasse para a Sara', { numero, campo, idade_min: Math.round(idade) });
+    destino = '';
+  }
   const reg = { hash, numero, campo, corpo: texto, assinatura, repassar: Boolean(destino) };
 
   // 1) Guarda. Se o banco central não responder em 2,5 s, guarda no arquivo local e segue.
