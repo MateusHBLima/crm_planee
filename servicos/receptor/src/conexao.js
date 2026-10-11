@@ -4,9 +4,9 @@
 //   histórico → pede à Meta a agenda e as conversas da coexistência (vale nas 24 h depois da conexão no celular).
 // O resultado volta para whatsapp_numeros, e a tela do painel mostra. Nada aqui depende de Portainer.
 import { config } from './config.js';
-import { central, decifrar } from './banco.js';
+import { bancoDaEmpresa, central, decifrar } from './banco.js';
 import { graphApi } from './meta.js';
-import { recarregarRotas } from './rotas.js';
+import { recarregarRotas, todasAsRotas } from './rotas.js';
 import { erroCurto, log } from './log.js';
 
 // Central ainda sem a migração 011: nada a fazer (sem log a cada volta).
@@ -80,7 +80,16 @@ export async function pedirHistoricoPendente() {
 }
 
 export async function limparLinksVencidos() {
-  await central().query(`delete from wa_midia_links where expira_em < now() - interval '1 hour'`).catch((e) => {
+  const limpar = (banco) => banco.query(`delete from wa_midia_links where expira_em < now() - interval '1 hour'`).catch((e) => {
     if (e.code !== '42P01') log('erro', 'limpeza dos links de mídia', { erro: erroCurto(e) });
   });
+  await limpar(central());
+  // Links no banco de cada empresa (migração 020): um banco por empresa, mesmo com vários números.
+  const feitas = new Set();
+  for (const r of todasAsRotas()) {
+    if (feitas.has(r.empresa_id)) continue;
+    feitas.add(r.empresa_id);
+    let banco; try { banco = bancoDaEmpresa(r); } catch { continue; }
+    if (banco !== central()) await limpar(banco);
+  }
 }

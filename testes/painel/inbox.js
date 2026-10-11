@@ -67,7 +67,7 @@ const servidorN8n = http.createServer((req, res) => {
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const receptor = { pedidos: [] };
 const servidorReceptor = http.createServer((req, res) => {
-  const tok = (req.url.match(/^\/whatsapp\/midia\/([A-Za-z0-9_-]{24,128})$/) || [])[1];
+  const tok = (req.url.match(/^\/whatsapp\/midia\/(?:[a-z0-9-]+\/)?([A-Za-z0-9_-]{24,128})$/) || [])[1];
   const achou = tok ? sql(`select caminho || '|' || coalesce(mime, '') from wa_midia_links where token = '${tok}' and expira_em > now()`) : '';
   receptor.pedidos.push({ tok, achou });
   if (!achou) { res.writeHead(404); return res.end(); }

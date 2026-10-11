@@ -474,4 +474,13 @@ test('link curto de mídia: entrega o arquivo enquanto vale', async () => {
   assert.equal((await fetch(`${B}/whatsapp/midia/${tok}vencido`)).status, 404);
   assert.equal((await fetch(`${B}/whatsapp/midia/curto`)).status, 404);
   assert.equal((await fetch(`${B}/whatsapp/midia/${'b'.repeat(40)}`)).status, 404);
+  // Endereço novo: link no banco da empresa (migração 020), com a empresa no caminho.
+  const tok2 = 'tokendeempresa_' + 'c'.repeat(30);
+  await q(`insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, 'teste', $2, 'image/jpeg', now() + interval '5 minutes')`, [tok2, caminho.replace(/^whatsapp\//, '')]);
+  const ok2 = await fetch(`${B}/whatsapp/midia/teste/${tok2}`);
+  assert.equal(ok2.status, 200); assert.equal(await ok2.text(), 'JPEGFALSO');
+  assert.equal((await fetch(`${B}/whatsapp/midia/outra-empresa/${tok2}`)).status, 404, 'empresa sem número cadastrado');
+  const tok3 = 'tokendeoutrapasta_' + 'd'.repeat(30);
+  await q(`insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, 'teste', 'outra-empresa/arquivo.jpg', 'image/jpeg', now() + interval '5 minutes')`, [tok3]);
+  assert.equal((await fetch(`${B}/whatsapp/midia/teste/${tok3}`)).status, 404, 'arquivo fora da pasta da empresa');
 });

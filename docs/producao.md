@@ -46,6 +46,10 @@ A tela Equipe gera links de convite de uso único (decisão 34). Antes de usar, 
 
 O pooler do Supabase em modo sessão aceita um número limitado de conexões por usuário (era 15; subimos para 30 em 11/10). Em 11/10, às 00:19, o deploy do painel (réplicas novas sobem antes de as velhas saírem) esgotou o limite. O receptor ficou 25 min sem banco: a Sara continuou recebendo, mas a Inbox parou. Desde então, cada réplica usa no máximo 3 conexões por banco (`PAINEL_POOL_MAX` e `RECEPTOR_POOL_MAX`, padrão 3). Se aparecer "max clients reached" nos logs, confira o Pool Size em Database → Settings → Connection pooling.
 
+## Mídias da Inbox (11/10)
+
+O link curto que abre áudio, foto e documento fica no **banco da empresa** (migração `020_midia_links_empresa.sql`), o mesmo em que o receptor grava as mensagens. O endereço é `/whatsapp/midia/<empresa>/<token>`. Antes ficava só no banco central, mas o receptor da clínica usa o banco da clínica como central: o painel gravava num banco e o receptor procurava em outro ("indisponível"). Banco de empresa sem a 020 continua no jeito antigo.
+
 ## Voltar versão
 
 No Portainer, stack `painel` → variável `VERSAO` com a versão curta anterior (lista em GitHub → Packages → crm_planee) → **Update the stack**. Para voltar ao normal, apague `VERSAO` (volta a `latest`).
