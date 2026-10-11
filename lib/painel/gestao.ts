@@ -1,5 +1,5 @@
 import 'server-only';
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { central, ErroApi, transacao } from '@/lib/db';
 import { cifrar, cifraConfigurada } from '@/lib/cifra';
@@ -244,5 +244,110 @@ export async function novoConvite(u: Usuario, usuarioId: string): Promise<string
     const codigo = await gerarConvite(c, usuarioId);
     await auditar(c, u, empresa, 'novo_convite', r.rows[0].email, null);
     return codigo;
+  }, central());
+}
+
+// ---- Link de convite de uso único (09/10) ----
+// O admin gera o link e manda para a pessoa; ela mesma põe nome, e-mail e senha e entra como membro, com o
+// acesso escolhido no link (padrão: nenhum, o admin libera depois). Só o hash do link fica no banco.
+export const DIAS_LINK = 7;
+const TOKEN_LINK = /^[A-Za-z0-9_-]{32}$/;
+export const tokenLinkValido = (t: unknown): t is string => typeof t === 'string' && TOKEN_LINK.test(t);
+const hashLink = (t: string) => createHash('sha256').update('link:' + t).digest('hex');
+const HOST_CRU = /^[a-z0-9.-]{1,253}(:\d{1,5})?$/;
+const local = (h: string) => /^(localhost|127\.0\.0\.1)(:|$)|\.localhost(:|$)/.test(h);
+
+export type LinkConvite = { id: string; criado_em: string; expira_em: string; permissoes: Permissao[]; criado_por: string | null };
+
+export async function listarLinksConvite(u: Usuario): Promise<LinkConvite[]> {
+  const empresa = exigirGestorDaEmpresa(u);
+  const r = await central().query(`
+    select l.id, l.criado_em, l.expira_em, l.permissoes, p.nome as criado_por
+      from convites_link l left join painel_usuarios p on p.id = l.criado_por
+     where l.empresa_id = $1 and l.usado_em is null and not l.cancelado and l.expira_em > now()
+     order by l.criado_em desc limit 50`, [empresa]);
+  return r.rows.map((x) => ({ ...x, permissoes: limparPermissoes(x.permissoes) }));
+}
+
+// hostAtual: o endereço que o admin está usando (com porta, como veio no cabeçalho). O link vai para o domínio
+// da empresa quando ela tem um; senão, para o endereço atual.
+export async function gerarLinkConvite(u: Usuario, dados: { permissoes: unknown }, hostAtual: string | null): Promise<{ url: string; links: LinkConvite[] }> {
+  const empresa = exigirGestorDaEmpresa(u);
+  const permissoes = permissoesPermitidas(u, dados.permissoes);
+  const token = randomBytes(24).toString('base64url');
+  const host = await transacao(async (c) => {
+    await c.query(
+      `insert into convites_link (token_hash, empresa_id, permissoes, criado_por, expira_em)
+       values ($1,$2,$3,$4, now() + make_interval(days => $5))`,
+      [hashLink(token), empresa, permissoes, u.id, DIAS_LINK]);
+    await auditar(c, u, empresa, 'gerar_link_convite', null, { permissoes });
+    const d = await c.query('select dominio from empresa_dominios where empresa_id = $1 order by dominio', [empresa]);
+    const atual = (hostAtual ?? '').toLowerCase();
+    const dominios = d.rows.map((x) => x.dominio as string);
+    if (HOST_CRU.test(atual) && (!dominios.length || dominios.includes(atual.replace(/:\d+$/, '')))) return atual;
+    return dominios[0] ?? (HOST_CRU.test(atual) ? atual : hostAdm());
+  }, central());
+  return { url: `${local(host) ? 'http' : 'https'}://${host}/entrar/convite/${token}`, links: await listarLinksConvite(u) };
+}
+
+export async function cancelarLinkConvite(u: Usuario, id: string): Promise<LinkConvite[]> {
+  const empresa = exigirGestorDaEmpresa(u);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ErroApi(400, 'Link inválido.');
+  await transacao(async (c) => {
+    const r = await c.query(
+      'update convites_link set cancelado = true where id = $1 and empresa_id = $2 and usado_em is null and not cancelado', [id, empresa]);
+    if (!r.rowCount) throw new ErroApi(404, 'Esse link não está mais ativo.');
+    await auditar(c, u, empresa, 'cancelar_link_convite', id, null);
+  }, central());
+  return listarLinksConvite(u);
+}
+
+// Página pública do link: a empresa e se o link ainda vale. Nada além do nome da empresa sai daqui.
+export async function lerLinkConvite(token: unknown): Promise<{ empresa_id: string; empresa: string } | null> {
+  if (!tokenLinkValido(token)) return null;
+  const r = await central().query(
+    `select e.id as empresa_id, e.nome as empresa from convites_link l join empresas e on e.id = l.empresa_id
+      where l.token_hash = $1 and l.usado_em is null and not l.cancelado and l.expira_em > now() and e.ativo`, [hashLink(token)]);
+  return r.rowCount ? r.rows[0] : null;
+}
+
+// Situação de um e-mail diante do link, antes de criar a conta (não gasta o link).
+export async function situacaoNoLink(empresa: string, email: string): Promise<'novo' | 'tem_senha' | 'ja_esta' | 'bloqueado'> {
+  const r = await central().query(
+    `select p.master, p.ativo, p.auth_id is not null as tem_senha,
+            exists (select 1 from painel_vinculos v where v.usuario_id = p.id and v.empresa_id = $2) as ja_esta
+       from painel_usuarios p where lower(p.email) = $1`, [email, empresa]);
+  if (!r.rowCount) return 'novo';
+  const x = r.rows[0];
+  if (x.master || !x.ativo) return 'bloqueado';
+  if (x.ja_esta) return 'ja_esta';
+  return x.tem_senha ? 'tem_senha' : 'novo';
+}
+
+// Gasta o link e coloca a pessoa na equipe (membro, com as permissões do link). Tudo numa transação:
+// dois cadastros ao mesmo tempo com o mesmo link, só um entra.
+export async function usarLinkConvite(token: string, dados: { nome: string; email: string }): Promise<boolean> {
+  return transacao(async (c) => {
+    const l = await c.query(
+      `select l.id, l.empresa_id, l.permissoes from convites_link l join empresas e on e.id = l.empresa_id
+        where l.token_hash = $1 and l.usado_em is null and not l.cancelado and l.expira_em > now() and e.ativo
+        for update of l`, [hashLink(token)]);
+    if (!l.rowCount) return false;
+    const { id: linkId, empresa_id: empresa, permissoes } = l.rows[0];
+    const p = await c.query(
+      `insert into painel_usuarios (email, nome) values ($1, $2)
+       on conflict (email) do update set nome = painel_usuarios.nome
+       returning id, master, ativo`, [dados.email, dados.nome]);
+    const { id, master, ativo } = p.rows[0];
+    if (master || !ativo) return false;
+    const v = await c.query(
+      `insert into painel_vinculos (usuario_id, empresa_id, nivel, permissoes) values ($1,$2,'membro',$3)
+       on conflict (usuario_id, empresa_id) do nothing`, [id, empresa, limparPermissoes(permissoes)]);
+    if (!v.rowCount) return false;
+    await c.query('update convites_link set usado_em = now(), usado_por = $2 where id = $1', [linkId, id]);
+    await c.query(
+      'insert into central_auditoria (usuario_id, empresa_id, acao, alvo, detalhe) values ($1,$2,$3,$4,$5)',
+      [id, empresa, 'entrar_por_link', dados.email, JSON.stringify({ link: linkId, permissoes })]);
+    return true;
   }, central());
 }

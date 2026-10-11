@@ -11,7 +11,7 @@ const ESTADO: Record<string, string> = { aberto: 'Aberto', em_analise: 'Em anál
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 // Tela "Planee" da empresa: os avisos que a equipe mandou (com a resposta da Planee), novidades e manutenções.
-export function PlaneeEmpresa({ empresa }: { empresa: string }) {
+export function PlaneeEmpresa({ empresa, semAcesso = false }: { empresa: string; semAcesso?: boolean }) {
   const [dados, setDados] = useState<{ avisos: MeuAviso[]; novidades: Novidade[] } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [novo, setNovo] = useState(false);
@@ -39,6 +39,13 @@ export function PlaneeEmpresa({ empresa }: { empresa: string }) {
         </div>
         <button type="button" className={s.botao} onClick={() => setNovo(true)}>Novo aviso</button>
       </header>
+
+      {semAcesso && (
+        <div className={s.vazio} role="status" data-sem-acesso>
+          Seu acesso ao painel da {empresa} foi criado. O admin vai liberar as telas que você vai usar; quando ele liberar,
+          elas aparecem no menu (se não aparecerem, recarregue a página).
+        </div>
+      )}
 
       {erro && <div className={s.vazio} role="alert">{erro}</div>}
       {!dados && !erro && <div className={s.vazio}>Carregando…</div>}

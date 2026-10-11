@@ -13,7 +13,7 @@ import { lerConfigCrm } from '@/lib/painel/crm';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
-import { listarEmpresas, listarEquipe } from '@/lib/painel/gestao';
+import { listarEmpresas, listarEquipe, listarLinksConvite } from '@/lib/painel/gestao';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
 import { ErroApi } from '@/lib/db';
 import p from '../pagina.module.css';
@@ -82,11 +82,11 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   }
 
   if (atual.id === 'equipe' && usuario.empresa) {
-    const pessoas = await listarEquipe(usuario);
+    const [pessoas, links] = await Promise.all([listarEquipe(usuario), listarLinksConvite(usuario).catch(() => [])]);
     const endereco = hostDeCabecalhos(await headers()) ?? 'o endereço do painel';
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <Equipe key={usuario.empresa.id} inicial={pessoas} souMaster={usuario.nivel === 'master'} meuId={usuario.id} endereco={endereco}
+        <Equipe key={usuario.empresa.id} inicial={pessoas} souMaster={usuario.nivel === 'master'} meuId={usuario.id} endereco={endereco} links={links}
           empresa={{ id: usuario.empresa.id, nome: usuario.empresa.nome, modulos: usuario.empresa.modulos }} />
       </Shell>
     );
@@ -115,7 +115,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'planee' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <PlaneeEmpresa key={usuario.empresa.id} empresa={usuario.empresa.nome} />
+        <PlaneeEmpresa key={usuario.empresa.id} empresa={usuario.empresa.nome} semAcesso={usuario.nivel === 'membro' && !usuario.permissoes.length} />
       </Shell>
     );
   }

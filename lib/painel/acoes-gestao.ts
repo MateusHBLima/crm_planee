@@ -1,6 +1,6 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { ErroApi, registrarErro } from '@/lib/db';
 import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
 import { esquecerSessoes, usuarioAtual, type Usuario } from '@/lib/sessao';
@@ -85,4 +85,16 @@ export async function novoConvite(id: string) {
 }
 export async function atualizarPessoa(id: string, dados: { nivel?: string; permissoes?: string[]; ativo?: boolean }) {
   return comUsuario(async (u) => { await g.atualizarPessoa(u, id, dados); return g.listarEquipe(u); });
+}
+
+// Link de convite de uso único (09/10). O link aparece só na resposta de gerarLink: no banco fica o hash.
+export async function gerarLinkConvite(permissoes: string[]) {
+  return comUsuario(async (u) => {
+    const h = await headers();
+    const host = (h.get('x-forwarded-host') || h.get('host') || '').split(',')[0].trim() || null;
+    return g.gerarLinkConvite(u, { permissoes }, host);
+  });
+}
+export async function cancelarLinkConvite(id: string) {
+  return comUsuario((u) => g.cancelarLinkConvite(u, id));
 }

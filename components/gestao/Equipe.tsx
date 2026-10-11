@@ -2,16 +2,95 @@
 
 import { useState, useTransition } from 'react';
 import { MODELOS, NOME_NIVEL, PERMISSOES } from '@/lib/permissoes';
-import { adicionarPessoa, atualizarPessoa, novoConvite } from '@/lib/painel/acoes-gestao';
-import type { Pessoa } from '@/lib/painel/gestao';
+import { adicionarPessoa, atualizarPessoa, cancelarLinkConvite, gerarLinkConvite, novoConvite } from '@/lib/painel/acoes-gestao';
+import type { LinkConvite, Pessoa } from '@/lib/painel/gestao';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import g from './gestao.module.css';
 
 type Props = {
   inicial: Pessoa[]; empresa: { id: string; nome: string; modulos: string[] };
-  souMaster: boolean; meuId: string; endereco: string;
+  souMaster: boolean; meuId: string; endereco: string; links: LinkConvite[];
 };
+
+const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+// Nome do acesso de um link: "Nenhum", o nome do modelo, ou a quantidade de permissões.
+function nomeAcesso(perms: string[], modulos: string[]) {
+  if (!perms.length) return 'Nenhum (você libera depois)';
+  for (const m of Object.values(MODELOS)) {
+    const doModelo = m.permissoes.filter((x) => modulos.includes(x));
+    if (doModelo.length === perms.length && doModelo.every((x) => perms.includes(x))) return m.nome;
+  }
+  return `${perms.length} permissões`;
+}
+
+// Link de convite de uso único: a pessoa cria o próprio acesso e entra como membro com o acesso escolhido aqui.
+function ConvidarPorLink({ modulos, inicial, aoErro }: { modulos: string[]; inicial: LinkConvite[]; aoErro: (t: string, sair?: boolean) => void }) {
+  const [links, setLinks] = useState(inicial);
+  const [modelo, setModelo] = useState<'' | keyof typeof MODELOS>('');
+  const [gerado, setGerado] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  const [ocupado, iniciar] = useTransition();
+  const modelos = (Object.keys(MODELOS) as (keyof typeof MODELOS)[]).filter((m) => MODELOS[m].permissoes.some((p) => modulos.includes(p)));
+
+  const gerar = () => iniciar(async () => {
+    const perms = modelo ? MODELOS[modelo].permissoes.filter((p) => modulos.includes(p)) : [];
+    const r = await gerarLinkConvite(perms);
+    if (!r.ok) { aoErro(r.erro, r.sair); return; }
+    setGerado(r.dados.url); setLinks(r.dados.links); setCopiado(false);
+  });
+  const cancelar = (id: string) => iniciar(async () => {
+    const r = await cancelarLinkConvite(id);
+    if (!r.ok) { aoErro(r.erro, r.sair); return; }
+    setLinks(r.dados);
+  });
+  const copiar = async () => {
+    if (!gerado) return;
+    try { await navigator.clipboard.writeText(gerado); setCopiado(true); } catch { setCopiado(false); }
+  };
+
+  return (
+    <section className={g.cartao} aria-labelledby="titulo-link">
+      <h2 id="titulo-link" className={g.blocoTitulo}>Convidar por link</h2>
+      <p className={g.dica}>
+        Gere um link e mande para a pessoa (WhatsApp ou e-mail). Ela mesma cria o acesso com nome, e-mail e senha.
+        Cada link vale para uma pessoa só, por 7 dias. Depois que ela entrar, aumente o acesso em &quot;Permissões&quot;, aqui embaixo.
+      </p>
+      <div className={g.linha}>
+        <label className={g.campo}>Acesso ao entrar
+          <select id="link-acesso" value={modelo} onChange={(e) => setModelo(e.target.value as '' | keyof typeof MODELOS)}>
+            <option value="">Nenhum (eu libero depois)</option>
+            {modelos.map((m) => <option key={m} value={m}>{MODELOS[m].nome}</option>)}
+          </select>
+        </label>
+        <button type="button" className={g.botao} disabled={ocupado} onClick={gerar}>Gerar link</button>
+      </div>
+      {gerado && (
+        <div className={g.bloco}>
+          <div className={g.linha}>
+            <input className={g.entrada} id="link-gerado" readOnly value={gerado} onFocus={(e) => e.currentTarget.select()} aria-label="Link de convite" data-link />
+            <button type="button" className={g.botaoSec} onClick={copiar}>{copiado ? 'Copiado' : 'Copiar'}</button>
+          </div>
+          <p className={g.dica}>Este link aparece só agora. Se perder, gere outro.</p>
+        </div>
+      )}
+      {links.length > 0 && (
+        <div className={g.bloco} aria-label="Links ativos">
+          <span className={g.dica}>Links ainda não usados:</span>
+          {links.map((l) => (
+            <div key={l.id} className={g.linha} data-link-ativo={l.id}>
+              <span className={g.dica}>
+                Criado em {dia(l.criado_em)}{l.criado_por ? ` por ${l.criado_por}` : ''} · vale até {dia(l.expira_em)} · acesso: {nomeAcesso(l.permissoes, modulos)}
+              </span>
+              <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} disabled={ocupado} onClick={() => cancelar(l.id)}>Cancelar link</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 // Permissões que a empresa tem, com modelos prontos. O servidor confere tudo de novo.
 function Permissoes({ modulos, valor, onChange, prefixo }: { modulos: string[]; valor: string[]; onChange: (v: string[]) => void; prefixo: string }) {
@@ -39,7 +118,7 @@ function Permissoes({ modulos, valor, onChange, prefixo }: { modulos: string[]; 
   );
 }
 
-export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) {
+export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links }: Props) {
   const [pessoas, setPessoas] = useState(inicial);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
@@ -95,6 +174,11 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
         </div>
       )}
 
+      <ConvidarPorLink modulos={empresa.modulos} inicial={links} aoErro={(texto, sair) => {
+        if (sair) window.location.href = '/entrar?motivo=sessao';
+        setAviso({ tipo: 'erro', texto });
+      }} />
+
       <form className={g.cartao} aria-labelledby="titulo-novo" onSubmit={(e) => {
         e.preventDefault();
         const nome = novo.nome.trim();
@@ -105,7 +189,7 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
           return { ok: true as const, dados: r.dados.pessoas };
         }, r0(nome), () => setNovo({ ...novo, nome: '', email: '' }));
       }}>
-        <h2 id="titulo-novo" className={g.blocoTitulo}>Adicionar pessoa</h2>
+        <h2 id="titulo-novo" className={g.blocoTitulo}>Adicionar pessoa pelo e-mail</h2>
         <div className={g.linha}>
           <label className={g.campo}>Nome<input id="novo-nome" value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} required maxLength={80} /></label>
           <label className={g.campo}>E-mail<input id="novo-email" type="email" value={novo.email} onChange={(e) => setNovo({ ...novo, email: e.target.value })} required maxLength={200} /></label>
@@ -146,7 +230,7 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco }: Props) 
                     ? <span className={`${g.chip} ${g.chipSo}`}>Tudo o que a empresa tem</span>
                     : p.permissoes.length
                       ? p.permissoes.map((x) => <span key={x} className={`${g.chip} ${g.chipSo}`}>{nomeDe(x)}</span>)
-                      : <span className={g.dica}>Sem permissões</span>}
+                      : <span className={`${g.chip} ${g.chipSemAcesso}`} data-sem-acesso>Sem acesso ainda: clique em Permissões</span>}
                 </div>
                 <div className={g.pessoaAcoes}>
                   {podeMexer && p.nivel === 'membro' && p.ativo && (
