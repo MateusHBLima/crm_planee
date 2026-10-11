@@ -11,8 +11,10 @@ function poolPara(url) {
   let p = pools.get(k);
   if (!p) {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+    // Poucas conexões por réplica (RECEPTOR_POOL_MAX, padrão 3): o pooler da clínica aceita 15 sessões por usuário,
+    // divididas com o painel (11/10).
     p = new pg.Pool({
-      connectionString: url, max: 5, ssl: local ? undefined : { rejectUnauthorized: false },
+      connectionString: url, max: Number(process.env.RECEPTOR_POOL_MAX) || 3, ssl: local ? undefined : { rejectUnauthorized: false },
       connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, statement_timeout: 60000, query_timeout: 65000,
     });
     p.on('error', (e) => log('erro', 'conexão do banco caiu', { erro: erroCurto(e) }));

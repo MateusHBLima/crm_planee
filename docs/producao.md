@@ -42,6 +42,10 @@ Variáveis opcionais: `PAINEL_AGENDA=0` desliga o espelho; `AGENDA_MINUTOS` (pad
 
 A tela Equipe gera links de convite de uso único (decisão 34). Antes de usar, rode no **banco do painel** (central) a migração `019_convite_link.sql` (idempotente). Sem ela, a tela Equipe abre normalmente, só o botão "Gerar link" dá erro.
 
+## Conexões com o banco da clínica (11/10)
+
+O pooler do Supabase em modo sessão aceita um número limitado de conexões por usuário (era 15; subimos para 30 em 11/10). Em 11/10, às 00:19, o deploy do painel (réplicas novas sobem antes de as velhas saírem) esgotou o limite. O receptor ficou 25 min sem banco: a Sara continuou recebendo, mas a Inbox parou. Desde então, cada réplica usa no máximo 3 conexões por banco (`PAINEL_POOL_MAX` e `RECEPTOR_POOL_MAX`, padrão 3). Se aparecer "max clients reached" nos logs, confira o Pool Size em Database → Settings → Connection pooling.
+
 ## Voltar versão
 
 No Portainer, stack `painel` → variável `VERSAO` com a versão curta anterior (lista em GitHub → Packages → crm_planee) → **Update the stack**. Para voltar ao normal, apague `VERSAO` (volta a `latest`).

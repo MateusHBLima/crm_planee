@@ -164,13 +164,17 @@ export async function entrarPorConvite(_: EstadoConvite, form: FormData): Promis
     try { r = await criarConta(email, senha); } catch { return volta('Não foi possível criar a conta agora. Tente de novo.'); }
     if (r.erro) return volta(r.erro);
     tokens = r.tokens;
+    // Sem sessão na volta do cadastro (Supabase com confirmação de e-mail): tenta entrar com a senha recém-criada.
+    if (!tokens) { try { tokens = await entrarComSenha(email, senha); } catch { tokens = null; } }
   }
   if (!(await usarLinkConvite(token, { nome, email }))) {
     if (tokens) await encerrarSessao(tokens.access_token).catch(() => {});
     return volta(LINK_INVALIDO);
   }
   limparFalhas([chaves[0]]);
-  if (!tokens) return { erro: null, nome, email, enviado: true };
+  // Conta criada: entra direto no painel (CRM; sem acesso ao CRM, o painel leva à primeira tela liberada).
+  // Se o Supabase ainda não deixou entrar, vai para o login com o aviso de conta criada (nunca "veja seu e-mail").
+  if (!tokens) return { erro: null, nome, email, enviado: false, destino: '/entrar?motivo=criada' };
   await gravarSessao(tokens);
-  return { erro: null, nome, email, enviado: false, destino: '/' };
+  return { erro: null, nome, email, enviado: false, destino: '/crm' };
 }

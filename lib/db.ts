@@ -21,8 +21,11 @@ function poolPara(url: string): Pool {
     // Limites de espera: com o banco lento, a tela mostra erro em vez de travar (auditoria 01/10, I3).
     // Conexões ficam abertas por 10 min: o banco está em outra região, e abrir uma conexão nova (TCP + TLS +
     // pooler) custa várias idas e voltas. Com 30 s, quase todo clique abria conexão nova (08/10: ~1,3 s por tela).
+    // No máximo PAINEL_POOL_MAX conexões por banco e por réplica (padrão 3): o pooler do Supabase em modo sessão
+    // aceita 15 por usuário, e o receptor usa o mesmo banco. Com 5, um deploy (réplicas novas antes de as velhas
+    // saírem) esgotou o limite e travou o receptor (11/10).
     p = new Pool({
-      connectionString: url, max: 5, ssl: local ? undefined : { rejectUnauthorized: false }, keepAlive: true,
+      connectionString: url, max: Number(process.env.PAINEL_POOL_MAX) || 3, ssl: local ? undefined : { rejectUnauthorized: false }, keepAlive: true,
       connectionTimeoutMillis: 8000, idleTimeoutMillis: 600000, statement_timeout: 15000, query_timeout: 20000,
     });
     // Conexão parada que cai (reinício do pooler) emite 'error'; sem este ouvinte, o Node derruba o processo (I2).
