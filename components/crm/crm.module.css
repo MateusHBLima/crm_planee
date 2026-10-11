@@ -54,9 +54,16 @@
 .pill { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 22px; padding: 0 8px 0 7px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--e-bg); color: var(--e-ink); }
 
 /* Quadro */
+.quadroCaixa { position: relative; flex-grow: 1; min-height: 0; display: flex; flex-direction: column; }
+.rolarQuadro { position: absolute; top: 50%; z-index: 5; width: 36px; height: 56px; margin-top: -28px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 24px; line-height: 1; box-shadow: var(--shadow-2); }
+.rolarQuadro:hover { background: var(--hover); }
+.rolarQuadro[data-lado='esq'] { left: 8px; }
+.rolarQuadro[data-lado='dir'] { right: 8px; }
+@media (hover: none) { .rolarQuadro { display: none; } }
 .quadro { flex-grow: 1; min-height: 0; overflow: auto; padding: 4px 28px 24px; display: flex; gap: 14px; align-items: flex-start; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .coluna, .colunaVazia, .colunaCom { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .coluna { flex: 1 0 260px; max-width: 330px; }
+@media (max-width: 1500px) { .coluna { flex-basis: 240px; } .colunaVazia { flex-basis: 170px; } }
 .colunaVazia { flex: 0 0 190px; }
 .colunaCom { flex: 1 0 200px; max-width: 280px; }
 /* Cor de fundo do assunto (migração 021, 11/10): um tom leve da cor escolhida em Configurações, mais forte no escuro.

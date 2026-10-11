@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import type { Cartao, Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import type { Origem } from './Crm';
@@ -43,7 +44,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, p
   }
 
   return (
-    <div className={c.quadro}>
+    <RolagemQuadro chave={colunas.length}>
       {colunas.map((col) => {
         const cs = vis.filter((k) => (col.id === '__sem' ? !k.topico_id || !ids.has(k.topico_id) : k.topico_id === col.id));
         return (
@@ -58,6 +59,31 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, p
           </section>
         );
       })}
+    </RolagemQuadro>
+  );
+}
+
+// Setas para as colunas que não cabem na tela (11/10): no notebook nem todo mundo rola de lado com o mouse.
+// Aparecem só quando há colunas escondidas daquele lado; cada clique anda mais ou menos uma coluna.
+function RolagemQuadro({ chave, children }: { chave: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lados, setLados] = useState({ esq: false, dir: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => setLados({ esq: el.scrollLeft > 4, dir: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+    medir();
+    el.addEventListener('scroll', medir, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+    ro?.observe(el);
+    return () => { el.removeEventListener('scroll', medir); ro?.disconnect(); };
+  }, [chave]);
+  const andar = (lado: 1 | -1) => ref.current?.scrollBy({ left: lado * Math.max(280, ref.current.clientWidth * 0.6), behavior: 'smooth' });
+  return (
+    <div className={c.quadroCaixa}>
+      <div className={c.quadro} ref={ref} data-quadro>{children}</div>
+      {lados.esq && <button type="button" className={c.rolarQuadro} data-lado="esq" aria-label="Ver colunas à esquerda" onClick={() => andar(-1)}>‹</button>}
+      {lados.dir && <button type="button" className={c.rolarQuadro} data-lado="dir" aria-label="Ver mais colunas à direita" onClick={() => andar(1)}>›</button>}
     </div>
   );
 }
