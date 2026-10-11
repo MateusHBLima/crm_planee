@@ -3,18 +3,18 @@
 //   POST /whatsapp/webhook   eventos da Meta: confere a assinatura, guarda, repassa para a Sara, responde 200
 //   POST /whatsapp/envio     a Sara (n8n) registra o que mandou pela API (cabeçalho x-receptor-chave)
 //   GET  /whatsapp/atendimento?numero=&wa_id=   a Sara pergunta se pode responder (equipe assumiu? cabeçalho x-receptor-chave)
-//   GET  /whatsapp/midia/<token>   arquivo de mídia por link curto criado pelo painel (Inbox: ouvir, ver, baixar)
+//   GET  /whatsapp/midia/<empresa>/<token>   arquivo de mídia por link curto criado pelo painel (Inbox: ouvir, ver, baixar)
 //   GET  /whatsapp/saude     fila, atraso e banco (para monitor externo)
 //   GET  /whatsapp/vivo      o processo está de pé (healthcheck do Docker; não depende do banco)
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { config } from './config.js';
-import { central } from './banco.js';
+import { bancoDaEmpresa, central } from './banco.js';
 import { assinaturaValida } from './meta.js';
 import { idadeDoEventoMin, NumeroSemDono, registrarEnvio, resumoDoEvento } from './processar.js';
 import { estadoDoAtendimento } from './atendimento.js';
 import { timingSafeEqual } from 'node:crypto';
-import { destinoDoRepasse } from './rotas.js';
+import { destinoDoRepasse, todasAsRotas } from './rotas.js';
 import { marcarRepasse, repassar } from './repasse.js';
 import { guardarNoSpool, tamanhoSpool } from './spool.js';
 import { gravarEvento } from './trabalhador.js';
@@ -119,13 +119,30 @@ async function atendimento(req, res, q) {
 
 // Link curto da Inbox: o painel confere quem pode ver e grava o token na central; aqui só se entrega o arquivo
 // enquanto o link vale. Sem cache público e sem o caminho do arquivo na resposta.
-async function midia(req, res, token) {
-  if (!/^[A-Za-z0-9_-]{24,128}$/.test(token)) return responder(res, 404, { erro: 'não encontrado' });
+// Endereço novo (11/10): /whatsapp/midia/<empresa>/<token>, com o link no banco da empresa (migração 020).
+// O antigo, /whatsapp/midia/<token>, procura na central.
+async function midia(req, res, resto) {
+  const partes = resto.split('/');
+  const token = partes.length === 2 ? partes[1] : partes[0];
+  const empresa = partes.length === 2 ? decodeURIComponent(partes[0]) : null;
+  if (partes.length > 2 || !/^[A-Za-z0-9_-]{24,128}$/.test(token) || (empresa !== null && !/^[a-z0-9][a-z0-9-]{1,39}$/.test(empresa))) {
+    return responder(res, 404, { erro: 'não encontrado' });
+  }
+  let banco;
+  if (empresa) {
+    const rota = todasAsRotas().find((r) => r.empresa_id === empresa);
+    if (!rota) return responder(res, 404, { erro: 'não encontrado' });
+    try { banco = bancoDaEmpresa(rota); } catch { return responder(res, 503, { erro: 'indisponível' }); }
+  } else {
+    banco = central();
+  }
   let link;
   try {
-    const r = await comLimite(central().query(`select caminho, mime from wa_midia_links where token = $1 and expira_em > now()`, [token]), 3000);
+    const r = await comLimite(banco.query(`select caminho, mime from wa_midia_links where token = $1 and expira_em > now()`, [token]), 3000);
     link = r.rows[0];
-  } catch (e) { return responder(res, 503, { erro: 'indisponível' }); }
+  } catch (e) { log('erro', 'não consegui ler o link da mídia', { erro: erroCurto(e) }); return responder(res, 503, { erro: 'indisponível' }); }
+  // O arquivo tem de ser da pasta da empresa do link (o painel já confere; aqui é a segunda trava).
+  if (link && empresa && !String(link.caminho).startsWith(`${empresa}/`)) link = null;
   if (!link) return responder(res, 404, { erro: 'link vencido' });
   try {
     const range = /^bytes=\d*-\d*$/.test(req.headers.range || '') ? req.headers.range : null;

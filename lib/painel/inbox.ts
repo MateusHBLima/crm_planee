@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomBytes } from 'node:crypto';
+import { criarLinkMidia } from '@/lib/midia-link';
 import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
 import { atorDe, pode, type Usuario } from '@/lib/sessao';
 import * as api from '@/lib/api/servico';
@@ -254,10 +254,9 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
 
 // ---- Ouvir, ver e baixar as mídias (áudio, foto, vídeo, documento) ----
 // O arquivo fica no Storage (o receptor baixa da Meta). A tela pede um link curto: aqui se confere a sessão, a empresa
-// e a conversa, e grava-se na central um token aleatório que vale 10 min; o receptor entrega o arquivo por ele.
+// e a conversa, e grava-se no banco da empresa um token aleatório que vale 10 min; o receptor entrega o arquivo por ele.
 // O caminho do arquivo nunca vai para o navegador.
 const LINK_MIDIA_MIN = 10;
-const baseReceptor = () => (process.env.RECEPTOR_URL || `https://${process.env.PAINEL_HOST_ADM || 'adm.planeelabia.com'}`).replace(/\/+$/, '');
 
 export async function linkDaMidia(u: Usuario, numeroId: string, waId: string, mensagemId: string): Promise<{ url: string; mime: string | null }> {
   validar(numeroId, waId);
@@ -270,18 +269,16 @@ export async function linkDaMidia(u: Usuario, numeroId: string, waId: string, me
   if (!x.caminho) throw new ErroApi(409, x.erro ? 'A Meta não entregou este arquivo.' : 'O arquivo ainda está sendo baixado. Tente em alguns segundos.');
   // O receptor grava cada arquivo na pasta da empresa dona do número: arquivo de outra empresa não sai daqui.
   if (!String(x.caminho).startsWith(`${u.empresa!.id}/`)) throw new ErroApi(404, 'Mídia não encontrada.');
-  const token = randomBytes(24).toString('base64url');
   const mime = x.mime ? String(x.mime).split(';')[0].trim().slice(0, 100) || null : null;
+  let url: string;
   try {
-    await central().query(
-      `insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
-      [token, u.empresa!.id, x.caminho, mime, LINK_MIDIA_MIN]);
+    url = await criarLinkMidia(db(u), u.empresa!.id, x.caminho, mime, LINK_MIDIA_MIN);
   } catch (e) {
-    if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Falta a migração 011 no banco central para abrir as mídias.');
+    if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Falta a migração 020 no banco da empresa para abrir as mídias.');
     throw e;
   }
   if (u.master) await auditar(central(), u, u.empresa!.id, 'abrir_midia', `${numeroId}:${waId.slice(-4)}`, undefined);
-  return { url: `${baseReceptor()}/whatsapp/midia/${token}`, mime };
+  return { url, mime };
 }
 
 // A equipe da empresa abriu a conversa: zera as não lidas. O master (Planee) só olha: não muda o estado da clínica.

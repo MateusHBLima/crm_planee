@@ -1,6 +1,7 @@
 import 'server-only';
-import { createHash, randomBytes } from 'node:crypto';
-import { central, empresaDoBancoPadrao, registrarErro, transacao } from '@/lib/db';
+import { createHash } from 'node:crypto';
+import { empresaDoBancoPadrao, registrarErro, transacao } from '@/lib/db';
+import { criarLinkMidia } from '@/lib/midia-link';
 import { bancoDe, type Chave } from './auth';
 import { ASSINATURAS, auditar } from './servico';
 
@@ -18,7 +19,6 @@ export type ResultadoArquivo = 'anexado' | 'baixando' | 'nao_achado' | 'indispon
 const MAX = 10 * 1024 * 1024;
 const TENTATIVAS = [20_000, 60_000, 180_000];
 const EXT: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-const baseReceptor = () => (process.env.RECEPTOR_URL || `https://${process.env.PAINEL_HOST_ADM || 'adm.planeelabia.com'}`).replace(/\/+$/, '');
 
 export async function anexarDoWhatsApp(chave: Chave, pagamentoId: string): Promise<ResultadoArquivo> {
   const db = bancoDe(chave);
@@ -46,11 +46,8 @@ export async function anexarDoWhatsApp(chave: Chave, pagamentoId: string): Promi
   // O receptor grava cada arquivo na pasta da empresa dona do número: arquivo de outra empresa não sai daqui.
   if (!String(m.caminho).startsWith(`${empresa}/`)) return 'nao_achado';
 
-  const token = randomBytes(24).toString('base64url');
-  await central().query(
-    `insert into wa_midia_links (token, empresa_id, caminho, mime, expira_em) values ($1, $2, $3, $4, now() + interval '5 minutes')`,
-    [token, empresa, m.caminho, m.mime]);
-  const resp = await fetch(`${baseReceptor()}/whatsapp/midia/${token}`, { signal: AbortSignal.timeout(8_000) });   // curto: a Sara espera a resposta
+  const link = await criarLinkMidia(db, empresa, m.caminho, m.mime, 5);
+  const resp = await fetch(link, { signal: AbortSignal.timeout(8_000) });   // curto: a Sara espera a resposta
   if (!resp.ok) throw new Error(`receptor respondeu ${resp.status}`);
   const dados = Buffer.from(await resp.arrayBuffer());
   if (!dados.length || dados.length > MAX || !ASSINATURAS[m.mime](dados)) return 'indisponivel';

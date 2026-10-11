@@ -9,7 +9,7 @@ const B = process.env.BASE_URL || 'http://localhost:3100';
 const res = []; const ok = (n, c, extra = '') => res.push((c ? 'OK   ' : 'FALHA') + ' ' + n + (extra ? ' — ' + extra : ''));
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const receptor = http.createServer((req, res) => {
-  const tok = (req.url.match(/^\/whatsapp\/midia\/([A-Za-z0-9_-]{24,128})$/) || [])[1];
+  const tok = (req.url.match(/^\/whatsapp\/midia\/(?:[a-z0-9-]+\/)?([A-Za-z0-9_-]{24,128})$/) || [])[1];
   const achou = tok ? sql(`select caminho from wa_midia_links where token = '${tok}' and expira_em > now()`) : '';
   if (!achou) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'content-type': 'image/png' }); res.end(PNG);
