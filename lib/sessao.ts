@@ -18,11 +18,12 @@ export type Usuario = {
   empresaFixa: boolean;             // true quando o endereço acessado é o domínio de uma empresa
   empresas: { id: string; nome: string }[]; // as que a pessoa pode escolher neste endereço
   permissoes: Permissao[];
+  assuntosAviso: string[] | null;   // assuntos do quadro de que a pessoa recebe aviso (migração 022); null = todos
 };
 
 export type Sessao = { usuario: Usuario } | { usuario: null; motivo: 'sessao' | 'empresa' | 'mfa' };
 
-type Vinculo = Empresa & { nivel: 'admin' | 'membro'; permissoes_vinculo: string[] };
+type Vinculo = Empresa & { nivel: 'admin' | 'membro'; permissoes_vinculo: string[]; assuntos_aviso: string[] | null };
 
 // Telas e ações conferem tudo no banco central a cada pedido (desativar alguém vale na hora).
 export const sessaoAtual = cache(async (): Promise<Sessao> => {
@@ -71,7 +72,8 @@ async function montarSessao(acesso: string): Promise<Sessao> {
         where lower(email) = lower($1) and ativo and (auth_id is null or auth_id = $2)
         returning id, nome, email, master),
      v as (
-       select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado, v.nivel, v.permissoes as permissoes_vinculo
+       select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado, v.nivel, v.permissoes as permissoes_vinculo,
+              to_jsonb(v) -> 'assuntos_aviso' as assuntos_aviso
          from painel_vinculos v join empresas e on e.id = v.empresa_id join p on p.id = v.usuario_id
         where v.ativo and e.ativo),
      t as (
@@ -119,6 +121,8 @@ async function montarSessao(acesso: string): Promise<Sessao> {
   return {
     usuario: {
       ...pessoa, nivel, permissoes, empresaFixa: Boolean(fixa), empresas: lista,
+      // to_jsonb: antes da migração 022 a coluna não existe e vale "todos os assuntos".
+      assuntosAviso: Array.isArray(vinculo?.assuntos_aviso) ? vinculo.assuntos_aviso.map(String) : null,
       empresa: empresa ? { id: empresa.id, nome: empresa.nome, ativo: empresa.ativo, modulos: empresa.modulos, banco_url_cifrado: empresa.banco_url_cifrado } : null,
     },
   };

@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import type { Cartao, Etapa, Evento, Quadro as TQuadro } from '@/lib/painel/crm';
 import { anotarAtendimento } from '@/lib/painel/acoes';
-import { carregarDetalhe } from '@/lib/painel/leitura-cliente';
+import { carregarDetalhe, carregarPessoasDoCrm } from '@/lib/painel/leitura-cliente';
+import type { PessoaCrm } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import { Acoes, EtapaPill, Relativo } from './Quadro';
 import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
@@ -12,11 +13,15 @@ import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro }: {
+export type DadosPassar = { topico: string; pessoa: { id: string; nome: string } | null; recado: string };
+
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro, passarAberto = false, onPassar }: {
   cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
+  passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void;
 }) {
+  const [passando, setPassando] = useState(passarAberto);
   const [eventos, setEventos] = useState<Evento[] | null>(null);
   // O quadro traz o resumo cortado; o texto inteiro chega com o detalhe.
   const [resumo, setResumo] = useState<string | null>(null);
@@ -115,6 +120,11 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
                 </select>
               </label>
             </div>
+            {podeEditar && onPassar && !k.sombra && (passando
+              ? <Passar k={k} quadro={quadro} ocupado={ocupado} onErro={onErro} onCancelar={() => setPassando(false)} onPassar={(d) => onPassar(k.id, d)} />
+              : <button type="button" id="det-passar" className={c.acaoSec} data-passar disabled={ocupado} onClick={() => setPassando(true)}>
+                  <Icone nome="passar" tamanho={13} /> Passar para…
+                </button>)}
           </section>
 
           <section className={c.detBloco}>
@@ -163,5 +173,63 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
         </div>
       </aside>
     </div>
+  );
+}
+
+// "Passar para…" (11/10): o paciente falou com a pessoa errada (ex.: a Amanda recebeu um assunto da Dra. Ariane).
+// Escolhe o assunto (coluna) e, se quiser, a pessoa: o cartão volta para "aguardando" e o aviso vai para quem recebe.
+function Passar({ k, quadro, ocupado, onErro, onCancelar, onPassar }: {
+  k: Cartao; quadro: TQuadro; ocupado: boolean; onErro: (t: string) => void; onCancelar: () => void; onPassar: (d: DadosPassar) => void;
+}) {
+  const [pessoas, setPessoas] = useState<PessoaCrm[] | null>(null);
+  const outro = quadro.topicos.find((t) => t.id !== k.topico_id)?.id ?? '';
+  const [topico, setTopico] = useState(outro);
+  const [mexeuNoAssunto, setMexeuNoAssunto] = useState(false);
+  const [pessoa, setPessoa] = useState('');
+  const [recado, setRecado] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    carregarPessoasDoCrm().then((r) => { if (!vivo) return; if (r.ok) setPessoas(r.dados); else { setPessoas([]); onErro(r.erro); } });
+    return () => { vivo = false; };
+  }, [onErro]);
+  // Escolheu a pessoa e ela cuida de um assunto só: o assunto vem junto (dá para trocar).
+  const escolherPessoa = (id: string) => {
+    setPessoa(id);
+    const p = pessoas?.find((x) => x.id === id);
+    if (p && !mexeuNoAssunto && p.assuntos?.length === 1 && quadro.topicos.some((t) => t.id === p.assuntos![0])) setTopico(p.assuntos[0]);
+  };
+  const escolhida = pessoas?.find((x) => x.id === pessoa) ?? null;
+  const mesmoLugar = topico === k.topico_id && !escolhida;
+  return (
+    <form className={c.passar} aria-label="Passar para" onSubmit={(e) => {
+      e.preventDefault();
+      if (!topico || mesmoLugar) return;
+      onPassar({ topico, pessoa: escolhida ? { id: escolhida.id, nome: escolhida.nome } : null, recado: recado.trim() });
+    }}>
+      <div className={c.detCampos}>
+        <label className={c.campo}>
+          <span>Passar para o assunto</span>
+          <select id="passar-assunto" value={topico} onChange={(e) => { setTopico(e.target.value); setMexeuNoAssunto(true); }} required>
+            {quadro.topicos.map((t) => <option key={t.id} value={t.id}>{t.nome}{t.id === k.topico_id ? ' (atual)' : ''}</option>)}
+          </select>
+        </label>
+        <label className={c.campo}>
+          <span>Pessoa (opcional)</span>
+          <select id="passar-pessoa" value={pessoa} onChange={(e) => escolherPessoa(e.target.value)} disabled={pessoas === null}>
+            <option value="">{pessoas === null ? 'Carregando…' : 'Quem cuida do assunto'}</option>
+            {(pessoas ?? []).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className={c.campo}>
+        <span>Recado (opcional, fica nas notas)</span>
+        <textarea id="passar-recado" rows={2} maxLength={1000} value={recado} onChange={(e) => setRecado(e.target.value)} placeholder="Ex.: paciente pediu para falar com a doutora sobre o retorno" />
+      </label>
+      <p className={c.passarDica}>O cartão volta para &quot;aguardando&quot; e quem recebe é avisado. Fica registrado que foi você quem passou.</p>
+      <div className={c.acoes}>
+        <button type="button" className={c.acaoSec} onClick={onCancelar}>Cancelar</button>
+        <button type="submit" className={c.acaoPri} disabled={ocupado || !topico || mesmoLugar}>Passar</button>
+      </div>
+    </form>
   );
 }

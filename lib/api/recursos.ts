@@ -30,12 +30,13 @@ export const RECURSOS: Record<string, Recurso> = {
   },
   topicos: {
     nome: 'topicos', tabela: 'crm_topicos', chave: 'id', idTipo: 'texto', idObrigatorioNaCriacao: true, escrita: 'config',
-    descricao: 'Assuntos do quadro de atendimento (colunas). Sem cor: ícone e nome.',
+    descricao: 'Assuntos do quadro de atendimento (colunas): ícone, nome e, se quiser, uma cor de fundo leve da coluna.',
     campos: {
       ordem: 'número da posição',
       nome: 'nome exibido',
       icone: 'receita | doc | exame | valor | agenda | os | garantia | caixa | recibo | pessoa | predio | outros',
       palavras: 'palavras que a IA usa para classificar, separadas por vírgula',
+      cor: 'fundo da coluna: cinza | azul | ciano | verde | amarelo | laranja | vermelho | rosa | roxo (vazio = sem cor)',
     },
     filtros: ['arquivado'], ordem: 'ordem, nome',
   },

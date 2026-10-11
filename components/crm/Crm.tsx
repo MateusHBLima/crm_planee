@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import { arquivarAtendimento, assumirAtendimento, moverAtendimento, mudarAssunto, type Resposta } from '@/lib/painel/acoes';
+import { arquivarAtendimento, assumirAtendimento, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
+import type { Intervalo } from '@/lib/periodo';
+import { FiltroData } from '@/components/FiltroData';
 import { carregarQuadro } from '@/lib/painel/leitura-cliente';
 import { lembrar } from '@/lib/painel/memoria-cliente';
 import { Icone } from '@/components/Icone';
@@ -28,9 +30,22 @@ export type PropsCrm = {
 // o quadro volta a ser o do banco e o aviso explica.
 const agoraIso = () => new Date().toISOString();
 
+const chavePeriodo = (p: Intervalo | null | undefined) => (p ? `${p.de}|${p.ate}` : '');
+
 export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome, memoria }: PropsCrm) {
-  const [quadro, setQuadro] = useState(inicial);
-  useEffect(() => { if (memoria) lembrar(memoria, quadro); }, [memoria, quadro]);
+  const [quadro, setQuadroBruto] = useState(inicial);
+  // Filtro de data (11/10): null = quadro de agora. Com um período, o quadro mostra os cartões abertos nele (todas as
+  // etapas). Resposta do servidor de outro período (ex.: uma ação devolve o quadro de agora) é trocada pela certa.
+  const [periodo, setPeriodo] = useState<Intervalo | null>(null);
+  const periodoRef = useRef<Intervalo | null>(null);
+  periodoRef.current = periodo;
+  const setQuadro = useCallback((d: TQuadro | ((q: TQuadro) => TQuadro)) => {
+    if (typeof d === 'function') { setQuadroBruto(d); return; }
+    if (chavePeriodo(d.periodo) === chavePeriodo(periodoRef.current)) { setQuadroBruto(d); return; }
+    const pedido = periodoRef.current;
+    void carregarQuadro(pedido).then((r) => { if (r.ok && chavePeriodo(pedido) === chavePeriodo(periodoRef.current)) setQuadroBruto(r.dados); });
+  }, []);
+  useEffect(() => { if (memoria && !quadro.periodo) lembrar(memoria, quadro); }, [memoria, quadro]);
   // Ações em andamento: cartões com clique pendente (só eles ficam travados) e a versão local do quadro.
   // Uma atualização automática que saiu antes de um clique não sobrescreve o clique quando volta.
   const [pendentes, setPendentes] = useState<ReadonlySet<string>>(() => new Set());
@@ -41,6 +56,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [origem, setOrigem] = useState<Origem>('todos');
   const [verFinal, setVerFinal] = useState(false);
   const [aberto, setAberto] = useState<string | null>(null);
+  const [passarAberto, setPassarAberto] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
   const [novo, setNovo] = useState(false);
@@ -63,12 +79,12 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       if (r.sair) { window.location.href = `/entrar?motivo=sessao&volta=${encodeURIComponent(window.location.pathname)}`; return null; }
       setAviso({ tipo: 'erro', texto: r.erro });
       // O erro costuma ser "outra pessoa já mexeu": traz o quadro atual em vez de esperar a próxima atualização (U4).
-      carregarQuadro().then((q) => { if (q.ok) setQuadro(q.dados); }).catch(() => undefined);
+      carregarQuadro(periodoRef.current).then((q) => { if (q.ok) setQuadro(q.dados); }).catch(() => undefined);
       return null;
     }
     if (sucesso) setAviso({ tipo: 'ok', texto: sucesso });
     return r.dados;
-  }, []);
+  }, [setQuadro]);
 
   // Atualiza sozinho enquanto a aba do navegador está visível; com os avisos ligados, também escondida
   // (o navegador espaça os pedidos da aba escondida, mas o aviso de cartão novo chega).
@@ -79,7 +95,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
     const tick = async () => {
       if (parado || ocupadoRef.current || emVoo.current > 0 || (document.hidden && !avisosRef.current)) return;
       const v = versao.current;
-      const r = await carregarQuadro();
+      const r = await carregarQuadro(periodoRef.current);
       if (parado) return;
       if (r.ok) { if (v === versao.current && emVoo.current === 0) setQuadro(r.dados); setFalhouAtualizar(false); }
       else if (r.sair) window.location.href = '/entrar?motivo=sessao';
@@ -141,13 +157,27 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       }, () => moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`);
     },
     assunto: (id: string, topico: string) => executar(id, mudarCartao(id, (k) => ({ ...k, topico_id: topico })), () => mudarAssunto(id, topico), 'Assunto alterado.'),
+    // "Passar para…" (11/10): outro assunto e, se escolhida, outra pessoa; o cartão volta para "aguardando".
+    passar: (id: string, dados: { topico: string; pessoa: { id: string; nome: string } | null; recado: string }) => {
+      const t = quadro.topicos.find((x) => x.id === dados.topico)?.nome ?? 'outro assunto';
+      setAberto(null); setPassarAberto(false);
+      executar(id, mudarCartao(id, (k) => ({ ...k, topico_id: dados.topico, etapa: 'aguardando', responsavel: dados.pessoa?.nome ?? null, assumido_em: null, finalizado_em: null })),
+        async () => { const r = await passarAtendimento(id, { topico: dados.topico, pessoa: dados.pessoa?.id ?? null, recado: dados.recado }); return r.ok ? { ok: true as const, dados: r.dados.quadro } : r; },
+        `Passado para ${t}${dados.pessoa ? ` · ${dados.pessoa.nome}` : ''}.`);
+    },
     arquivar: (id: string) => {
       setAberto(null);
       executar(id, (q) => ({ ...q, cartoes: q.cartoes.filter((k) => k.id !== id) }), () => arquivarAtendimento(id), 'Atendimento arquivado.');
     },
-    recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro()); if (d) { versao.current++; setQuadro(d); setFalhouAtualizar(false); } }),
+    recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro(periodoRef.current)); if (d) { versao.current++; setQuadro(d); setFalhouAtualizar(false); } }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [quadro.etapas, quadro.cartoes, tratar, executar, nome]);
+  }), [quadro.etapas, quadro.cartoes, quadro.topicos, tratar, executar, nome]);
+
+  // Trocar o período: busca na hora (o quadro fica com o anterior até chegar).
+  const mudarPeriodo = useCallback((p: Intervalo | null) => {
+    setPeriodo(p); periodoRef.current = p; versao.current++;
+    iniciar(async () => { const d = tratar(await carregarQuadro(p)); if (d && chavePeriodo(d.periodo) === chavePeriodo(periodoRef.current)) { versao.current++; setQuadroBruto(d); } });
+  }, [tratar]);
 
   const temSombra = quadro.cartoes.some((k) => k.sombra);
   // Topo do quadro: quem espera há mais tempo e quantos passaram do prazo (sem os cartões sombra, que ninguém atende).
@@ -156,9 +186,10 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const niveis = reais.map((k) => atraso(k, quadro.prazos, agora));
   const vermelhos = niveis.filter((n) => n === 'vermelho').length;
   const amarelos = niveis.filter((n) => n === 'amarelo').length;
+  const verFinalEfetivo = verFinal || Boolean(quadro.periodo);
   const contagem = (e: Etapa) => quadro.cartoes.filter((k) => k.etapa === e && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
-  const fechar = useCallback(() => setAberto(null), []);
+  const fechar = useCallback(() => { setAberto(null); setPassarAberto(false); }, []);
   const avisarErro = useCallback((t: string) => setAviso({ tipo: 'erro', texto: t }), []);
   const avisarOk = useCallback((t: string) => setAviso({ tipo: 'ok', texto: t }), []);
 
@@ -226,21 +257,29 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 ))}
               </div>
             )}
-            <button type="button" className={c.botaoSec} aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
-              {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
-            </button>
+            <FiltroData id="periodo-crm" valor={periodo} onMudar={mudarPeriodo} hoje={quadro.hoje ?? new Date().toISOString().slice(0, 10)} vazio="Abertos agora" rotulo="Período do quadro" />
+            {!quadro.periodo && (
+              <button type="button" className={c.botaoSec} aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
+                {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
+              </button>
+            )}
             {avisos.suportado && (
               <button type="button" id="avisos-crm" className={c.botaoSec} aria-pressed={avisos.ligado} onClick={avisos.alternar}
                 title="Som e notificação quando chega atendimento novo em aguardando">
                 {avisos.ligado ? 'Avisos ligados' : 'Ligar avisos'}
               </button>
             )}
+            {quadro.eu?.escolhe && (
+              <MeusAssuntos quadro={quadro} onSalvo={(assuntos) => { setQuadroBruto((q) => ({ ...q, eu: { ...q.eu, assuntos } })); avisarOk('Avisos salvos.'); }} onErro={avisarErro} />
+            )}
             {podeEditar && (
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
           </div>
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinal} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
-            onAbrir={setAberto} onAssumir={acoes.assumir} onMover={acoes.mover} />
+          {quadro.periodo && <p className={c.nota} data-nota-periodo>Atendimentos abertos neste período, em todas as etapas{quadro.cartoes.length >= 1000 ? ' (os 1.000 primeiros)' : ''}.</p>}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
+            onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onAssumir={acoes.assumir} onMover={acoes.mover}
+            onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
         </>
       )}
       {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} podeArquivar={podeArquivar} onAviso={avisarOk} />}
@@ -256,7 +295,64 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       {cartaoAberto && (
         <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
           onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
-          onArquivar={acoes.arquivar} onErro={avisarErro} />
+          onArquivar={acoes.arquivar} onErro={avisarErro} passarAberto={passarAberto} onPassar={acoes.passar} />
+      )}
+    </div>
+  );
+}
+
+// De quais assuntos a pessoa recebe aviso (11/10). Fica no banco central (vale em qualquer computador); o admin também
+// muda em Equipe. Nenhum marcado = nenhum aviso de cartão novo (cartão passado para a pessoa avisa sempre).
+function MeusAssuntos({ quadro, onSalvo, onErro }: { quadro: TQuadro; onSalvo: (a: string[] | null) => void; onErro: (t: string) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [marcados, setMarcados] = useState<string[] | null>(quadro.eu.assuntos);
+  const [salvando, iniciar] = useTransition();
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberto(false); };
+    document.addEventListener('mousedown', fora); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+  }, [aberto]);
+  const atuais = quadro.eu.assuntos;
+  const nomeAtual = !atuais ? 'todos os assuntos' : !atuais.length ? 'nenhum assunto'
+    : atuais.length === 1 ? (quadro.topicos.find((t) => t.id === atuais[0])?.nome ?? '1 assunto') : `${atuais.length} assuntos`;
+  const todos = marcados === null;
+  const marcar = (id: string, sim: boolean) => {
+    const base = marcados ?? quadro.topicos.map((t) => t.id);
+    setMarcados(sim ? [...new Set([...base, id])] : base.filter((x) => x !== id));
+  };
+  const salvar = () => iniciar(async () => {
+    // Todos marcados = "todos" (assunto novo também avisa).
+    const lista = marcados && quadro.topicos.every((t) => marcados.includes(t.id)) ? null : marcados;
+    const r = await salvarMeusAvisos(lista);
+    if (!r.ok) { onErro(r.erro); return; }
+    setAberto(false); onSalvo(r.dados);
+  });
+  return (
+    <div className={c.meusAvisos} ref={caixa}>
+      <button type="button" id="meus-assuntos" className={c.botaoSec} aria-expanded={aberto} onClick={() => { setMarcados(quadro.eu.assuntos); setAberto((a) => !a); }}
+        title="De quais assuntos você recebe aviso de cartão novo">
+        <Icone nome="sino" tamanho={13} /> Avisar: {nomeAtual}
+      </button>
+      {aberto && (
+        <div className={c.meusAvisosPainel} role="dialog" aria-label="Avisos por assunto">
+          <p className={c.meusAvisosTitulo}>Me avisar de cartão novo em:</p>
+          <label className={c.meusAvisosLinha}>
+            <input type="checkbox" checked={todos} onChange={(e) => setMarcados(e.target.checked ? null : [])} /> <strong>Todos os assuntos</strong>
+          </label>
+          {quadro.topicos.map((t) => (
+            <label key={t.id} className={c.meusAvisosLinha}>
+              <input type="checkbox" data-assunto={t.id} checked={todos || marcados!.includes(t.id)} onChange={(e) => marcar(t.id, e.target.checked)} /> {t.nome}
+            </label>
+          ))}
+          <p className={c.meusAvisosDica}>Cartão passado para você avisa sempre.</p>
+          <div className={c.acoes}>
+            <button type="button" className={c.acaoSec} onClick={() => setAberto(false)}>Cancelar</button>
+            <button type="button" className={c.acaoPri} disabled={salvando} onClick={salvar}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+          </div>
+        </div>
       )}
     </div>
   );

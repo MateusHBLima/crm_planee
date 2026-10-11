@@ -1,5 +1,8 @@
 import 'server-only';
-import { bancoDaEmpresa, ErroApi } from '@/lib/db';
+import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
+import { limparCor, type Cor } from '@/lib/cores';
+import { efetivas } from '@/lib/permissoes';
+import { lerIntervalo, type Intervalo } from '@/lib/periodo';
 import * as api from '@/lib/api/servico';
 import { atorDe, pode, podeArquivar, type Usuario } from '@/lib/sessao';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
@@ -20,7 +23,7 @@ const NOMES_PADRAO: Record<Etapa, string> = {
   aguardando: 'Aguardando equipe', em_atendimento: 'Em atendimento', pendente: 'Pendente interno', finalizado: 'Finalizado',
 };
 
-export type Topico = { id: string; nome: string; icone: string; ordem: number };
+export type Topico = { id: string; nome: string; icone: string; ordem: number; cor: Cor | null };
 export type Cartao = {
   id: string; topico_id: string | null; etapa: Etapa; resumo: string; sombra: boolean;
   aberto_por: string | null; aberto_em: string; atualizado_em: string; responsavel: string | null; assumido_em: string | null; finalizado_em: string | null;
@@ -36,6 +39,11 @@ export const PRAZOS_PADRAO: Prazos = { aguardando: { amarelo: 15, vermelho: 30 }
 export type Quadro = {
   topicos: Topico[]; etapas: Record<Etapa, string>; cartoes: Cartao[]; finalizadosHoje: number; fuso: string; lidoEm: string;
   prazos: Prazos;
+  // Período escolhido no filtro de data (11/10): null = o quadro de agora (abertos e finalizados de hoje).
+  periodo: Intervalo | null;
+  hoje: string; // YYYY-MM-DD no fuso do painel (o filtro de data começa daqui)
+  // Quem está olhando: nome (cartão passado para a pessoa avisa sempre) e de quais assuntos ela recebe aviso.
+  eu: { nome: string; assuntos: string[] | null; escolhe: boolean };
 };
 
 export const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
@@ -104,8 +112,9 @@ const SELECT_CARTAO = `
 export const RESUMO_NO_QUADRO = 600;
 const SELECT_CARTAO_QUADRO = SELECT_CARTAO.replace('a.etapa, a.resumo,', `a.etapa, left(a.resumo, ${RESUMO_NO_QUADRO}) as resumo,`);
 
-export async function lerQuadro(u: Usuario): Promise<Quadro> {
+export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): Promise<Quadro> {
   const f = fuso();
+  const periodo = periodoPedido ? lerIntervalo(periodoPedido.de, periodoPedido.ate) : null;
   // Uma consulta só (uma ida ao banco, uma conexão): assuntos, nomes das etapas, prazos, cartões e a contagem de
   // finalizados de hoje. O banco fica em outra região; cinco consultas em paralelo abriam cinco conexões.
   // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
@@ -115,19 +124,23 @@ export async function lerQuadro(u: Usuario): Promise<Quadro> {
      cartoes as (
        ${SELECT_CARTAO_QUADRO}
         where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
-          and (a.etapa <> 'finalizado' or a.finalizado_em >= (select ini from hoje))
+          and (case when $3::date is null then (a.etapa <> 'finalizado' or a.finalizado_em >= (select ini from hoje))
+                    else a.aberto_em >= ($3::date::timestamp at time zone $1) and a.aberto_em < (($4::date + 1)::timestamp at time zone $1) end)
         order by (a.etapa = 'finalizado'), a.aberto_em limit 1000)
      select
        (select coalesce(json_agg(t order by t.ordem, t.nome), '[]'::json)
-          from (select id, nome, icone, ordem from crm_topicos where not arquivado) t) as topicos,
+          from (select id, nome, icone, ordem, to_jsonb(x) ->> 'cor' as cor from crm_topicos x where not arquivado) t) as topicos,
        (select valor from crm_config where chave = 'etapas_atendimento') as etapas,
        (select valor from crm_config where chave = 'prazos_atendimento') as prazos,
        (select count(*)::int from atendimentos a where not a.arquivado and a.etapa = 'finalizado'
            and ($2::boolean or ${SQL_SEM_SOMBRA}) and a.finalizado_em >= (select ini from hoje)) as fin,
-       (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes`, [f, u.master]);
+       (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes,
+       to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null]);
   const x = r.rows[0];
   return {
-    topicos: x.topicos as Topico[], etapas: { ...NOMES_PADRAO, ...((x.etapas ?? {}) as Partial<Record<Etapa, string>>) },
+    periodo, hoje: String(x.dia),
+    eu: { nome: u.nome, assuntos: u.assuntosAviso, escolhe: !u.master },
+    topicos: (x.topicos as Topico[]).map((t) => ({ ...t, cor: limparCor(t.cor) })), etapas: { ...NOMES_PADRAO, ...((x.etapas ?? {}) as Partial<Record<Etapa, string>>) },
     fuso: f, lidoEm: new Date().toISOString(), prazos: limparPrazos(x.prazos),
     cartoes: (x.cartoes as Record<string, unknown>[]).map((c) => limparCartao(u, c)), finalizadosHoje: x.fin,
   };
@@ -145,7 +158,7 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
             (select coalesce(json_agg(n order by n.criado_em), '[]'::json)
                from (select texto, autor, criado_em from notas where alvo_tipo = 'atendimentos' and alvo_id = $1::uuid and not arquivado) n) as notas,
             (select coalesce(json_agg(x order by x.quando), '[]'::json)
-               from (select p.quando, p.acao, p.detalhe, coalesce(u.nome, k.nome) as quem
+               from (select p.quando, p.acao, p.detalhe, p.usuario_id, coalesce(u.nome, k.nome) as quem
                        from painel_auditoria p left join painel_usuarios u on u.id = p.usuario_id left join api_chaves k on k.id = p.chave_id
                       where p.recurso = 'atendimentos' and p.alvo_id::text = $1::text) x) as aud`, [id]);
   const linha = r.rows[0];
@@ -154,7 +167,13 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
   const cartao = limparCartao(u, linha.cartao);
   if (cartao.sombra && !u.master) throw new ErroApi(404, 'Atendimento não encontrado. Ele pode ter sido arquivado.');
   const notas = { rows: linha.notas as { texto: string; autor: string; criado_em: string }[] };
-  const aud = { rows: linha.aud as { quando: string; acao: string; detalhe: unknown; quem: string | null }[] };
+  const aud = { rows: linha.aud as { quando: string; acao: string; detalhe: unknown; usuario_id: string | null; quem: string | null }[] };
+  // As pessoas ficam no banco central (decisão 26): o nome de quem fez sai de lá.
+  const semNome = [...new Set(aud.rows.filter((r) => !r.quem && r.usuario_id).map((r) => String(r.usuario_id)))];
+  if (semNome.length) {
+    const nomes = await nomesDasPessoas(semNome);
+    for (const r of aud.rows) if (!r.quem && r.usuario_id) r.quem = nomes.get(String(r.usuario_id))?.nome ?? null;
+  }
   const eventos: Evento[] = [
     { quando: cartao.aberto_em, texto: `Aberto${cartao.aberto_por ? ' por ' + cartao.aberto_por : ''}`, quem: null, tipo: 'acao' },
   ];
@@ -162,7 +181,8 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
     if (r.acao === 'criar') continue;
     const d = (r.detalhe ?? {}) as Record<string, string>;
     let t = r.acao === 'arquivar' ? 'Arquivou' : 'Editou';
-    if (d.etapa === 'em_atendimento' && d.responsavel) t = 'Assumiu';
+    if (d.passou_para) t = `Passou para ${d.passou_para}${d.responsavel ? ` · ${d.responsavel}` : ''}`;
+    else if (d.etapa === 'em_atendimento' && d.responsavel) t = 'Assumiu';
     else if (d.etapa) t = `Moveu para ${etapas[d.etapa as Etapa] ?? d.etapa}`;
     else if (d.topico_id) t = 'Mudou o assunto';
     else if (d.responsavel) t = `Responsável: ${d.responsavel}`;
@@ -266,6 +286,74 @@ export async function mudarAssunto(u: Usuario, id: string, topico: string) {
              select $3::uuid, 'atualizar', 'atendimentos', $1::text, jsonb_build_object('topico_id', $2::text) from upd)
      select exists (select 1 from upd) as feito`, [id, t, u.id]).catch(traduzir);
   if (!r.rows[0]?.feito) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
+}
+
+// Nome e e-mail das pessoas, pelo id (banco central). Usado no histórico do cartão e na tela Registro.
+export async function nomesDasPessoas(ids: string[]): Promise<Map<string, { nome: string; email: string }>> {
+  const validos = ids.filter((x) => UUID.test(x));
+  if (!validos.length) return new Map();
+  const r = await central().query(`select id, nome, email from painel_usuarios where id = any($1::uuid[])`, [validos]);
+  return new Map(r.rows.map((x) => [String(x.id), { nome: String(x.nome), email: String(x.email) }]));
+}
+
+// Assuntos do quadro (só id e nome) para a tela Equipe escolher os avisos de cada pessoa. Só quem cuida da equipe.
+export async function assuntosParaAvisos(u: Usuario): Promise<{ id: string; nome: string }[]> {
+  if (!u.empresa || (u.nivel !== 'admin' && u.nivel !== 'master')) return [];
+  const r = await bancoDaEmpresa(u.empresa).query(`select id, nome from crm_topicos where not arquivado order by ordem, nome`);
+  return r.rows.map((t) => ({ id: String(t.id), nome: String(t.nome) }));
+}
+
+// Pessoas da equipe que podem atender no CRM desta empresa (para "Passar para…"). Só nome e assuntos: nada de e-mail.
+export type PessoaCrm = { id: string; nome: string; assuntos: string[] | null };
+export async function pessoasDoCrm(u: Usuario): Promise<PessoaCrm[]> {
+  exigirEditar(u);
+  const r = await central().query(
+    `select p.id, p.nome, v.nivel, v.permissoes, e.modulos, to_jsonb(v) -> 'assuntos_aviso' as assuntos
+       from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id join empresas e on e.id = v.empresa_id
+      where v.empresa_id = $1 and v.ativo and p.ativo and not p.master
+      order by p.nome`, [u.empresa!.id]);
+  return r.rows
+    .filter((x) => efetivas(x.nivel, x.modulos ?? [], x.permissoes ?? []).includes('crm.ver'))
+    .map((x) => ({ id: String(x.id), nome: String(x.nome), assuntos: Array.isArray(x.assuntos) ? x.assuntos.map(String) : null }));
+}
+
+// "Passar para…" (11/10): o cartão chegou para a pessoa errada (ex.: o paciente falou com a Amanda sobre um assunto
+// da Dra. Ariane). Muda o assunto, volta para "aguardando" (quem recebe assume) e, se escolhida, já põe a pessoa
+// como responsável: o aviso chega para ela. Grava uma nota com o recado e a auditoria com quem passou.
+export async function passar(u: Usuario, id: string, dados: { topico: unknown; pessoa?: unknown; recado?: unknown }) {
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, NAO_ACHADO);
+  const topico = String(dados.topico ?? '').trim();
+  if (!topico || topico.length > 60) throw new ErroApi(400, 'Escolha para qual assunto passar.');
+  const recado = String(dados.recado ?? '').trim();
+  if (recado.length > 1000) throw new ErroApi(400, 'O recado passou de 1.000 caracteres.');
+  let pessoa: string | null = null;
+  const pessoaId = String(dados.pessoa ?? '').trim();
+  if (pessoaId) {
+    const achada = (await pessoasDoCrm(u)).find((p) => p.id === pessoaId);
+    if (!achada) throw new ErroApi(400, 'Essa pessoa não atende no CRM desta empresa.');
+    pessoa = achada.nome;
+  }
+  const r = await banco.query(
+    `with alvo as (select a.id, a.topico_id, a.etapa, a.responsavel, ${SQL_E_SOMBRA.replace(/resumo/g, 'a.resumo')} as sombra from atendimentos a where a.id = $1 and not a.arquivado for update),
+     t as (select id, nome from crm_topicos where id = $2 and not arquivado),
+     upd as (update atendimentos a set topico_id = t.id, etapa = 'aguardando', responsavel = $3::text, assumido_em = null, finalizado_em = null, atualizado_em = now()
+               from alvo, t where a.id = alvo.id and not alvo.sombra returning a.id),
+     nota as (insert into notas (alvo_tipo, alvo_id, texto, autor)
+              select 'atendimentos', upd.id, 'Passou para ' || t.nome || coalesce(' · ' || $3::text, '') || coalesce('. Recado: ' || nullif($4::text, ''), '.'), $5
+                from upd, t returning id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $6::uuid, 'atualizar', 'atendimentos', $1::text,
+                    jsonb_build_object('passou_para', t.nome, 'topico_id', t.id, 'etapa', 'aguardando', 'responsavel', $3::text,
+                                       'de_topico', alvo.topico_id, 'de_etapa', alvo.etapa, 'de_responsavel', alvo.responsavel)
+               from upd, alvo, t)
+     select alvo.sombra, (select nome from t) as topico_nome, exists (select 1 from upd) as feito from alvo`,
+    [id, topico, pessoa, recado, u.nome, u.id]).catch(traduzir);
+  const x = r.rows[0];
+  if (!x || (x.sombra && !u.master)) throw new ErroApi(404, NAO_ACHADO);
+  if (x.sombra) throw new ErroApi(409, ERRO_SOMBRA);
+  if (!x.topico_nome) throw new ErroApi(400, 'Esse assunto não existe mais. Atualize a tela.');
+  return { assunto: String(x.topico_nome), pessoa };
 }
 
 export async function anotar(u: Usuario, id: string, texto: string) {
@@ -448,31 +536,33 @@ export async function arquivarOportunidade(u: Usuario, id: string) {
 export type ConfigCrm = {
   etapasAtendimento: Record<Etapa, string>;
   prazos: Prazos;
-  topicos: { id: string; nome: string; icone: string; ordem: number; palavras: string | null }[];
+  topicos: { id: string; nome: string; icone: string; ordem: number; palavras: string | null; cor: Cor | null }[];
   funil: { id: string; nome: string; tipo: string; ordem: number; gatilho: string | null }[];
 };
 
 export async function lerConfigCrm(u: Usuario): Promise<ConfigCrm> {
   const [et, tp, fn, prazos] = await Promise.all([
     nomesEtapas(u),
-    db(u).query(`select id, nome, icone, ordem, palavras from crm_topicos where not arquivado order by ordem, nome`),
+    db(u).query(`select id, nome, icone, ordem, palavras, to_jsonb(t) ->> 'cor' as cor from crm_topicos t where not arquivado order by ordem, nome`),
     db(u).query(`select id, nome, tipo, ordem, gatilho from crm_etapas where not arquivado order by ordem, nome`),
     lerPrazos(u),
   ]);
-  return { etapasAtendimento: et, prazos, topicos: tp.rows, funil: fn.rows };
+  return { etapasAtendimento: et, prazos, topicos: tp.rows.map((t) => ({ ...t, cor: limparCor(t.cor) })), funil: fn.rows };
 }
 
 const idDe = (nome: string) => nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'item';
 
-export async function salvarTopico(u: Usuario, id: string | null, dados: { nome: unknown; icone: unknown; ordem: unknown; palavras: unknown }) {
-  const campos = {
+export async function salvarTopico(u: Usuario, id: string | null, dados: { nome: unknown; icone: unknown; ordem: unknown; palavras: unknown; cor?: unknown }) {
+  const campos: Record<string, unknown> = {
     nome: textoObrigatorio(dados.nome, 'o nome do assunto', 60),
     icone: String(dados.icone || 'outros'),
     ordem: Number(dados.ordem) || 0,
     palavras: textoOpcional(dados.palavras, 1000),
   };
+  // Cor da coluna (migração 021). Só vai ao banco quando a tela manda: sem a migração, o resto continua salvando.
+  if (dados.cor !== undefined) campos.cor = limparCor(dados.cor);
   if (id) return api.atualizar(atorDe(u), 'topicos', id, campos);
-  return api.criar(atorDe(u), 'topicos', { id: idDe(campos.nome), ...campos });
+  return api.criar(atorDe(u), 'topicos', { id: idDe(String(campos.nome)), ...campos });
 }
 
 export async function salvarEtapaFunil(u: Usuario, id: string | null, dados: { nome: unknown; tipo: unknown; ordem: unknown; gatilho: unknown }) {

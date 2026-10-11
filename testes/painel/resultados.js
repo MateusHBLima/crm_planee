@@ -34,9 +34,9 @@ async function entrar(p, email, destino) {
   ok('nenhum telefone nem texto de paciente na resposta', !/\d{10,}/.test(txt.replace(/"\d{4}-\d{2}-\d{2}T[^"]*"/g, '')) && !txt.includes('Beatriz'), txt.match(/\d{10,}/)?.[0] ?? '');
   ok('tela mostra os números', ((await p.textContent('[data-kpi="contatos"]')) || '').trim() === d.conversas.contatos.toLocaleString('pt-BR'));
 
-  await p.click('button:has-text("7 dias")'); await p.waitForTimeout(1500);
+  await p.click('#periodo-resultados'); await p.click('[data-atalho="7d"]'); await p.waitForTimeout(1500);
   const d7 = await p.evaluate(async () => (await (await fetch('/api/painel/ler/resultados?periodo=7')).json()).dados);
-  ok('troca de período (7 dias)', d7.periodo === '7' && new Date(d7.de) > new Date(d.de));
+  ok('troca de período (7 dias)', d7.periodo === '7' && new Date(d7.de) > new Date(d.de) && ((await p.textContent('#periodo-resultados')) || '').includes('Últimos 7 dias'));
 
   // Sem a permissão resultados.ver: a leitura recusa
   const amanda = await (await b.newContext()).newPage();

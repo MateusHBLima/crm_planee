@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Periodo, Resultados as TResultados } from '@/lib/painel/resultados';
+import type { Resultados as TResultados } from '@/lib/painel/resultados';
+import { hojeNoFuso, intervaloDoAtalho, type Intervalo } from '@/lib/periodo';
+import { FiltroData } from '@/components/FiltroData';
 import { carregarResultados } from '@/lib/painel/leitura-cliente';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import { Esqueleto } from '@/components/Esqueleto';
@@ -11,7 +13,6 @@ import c from './resultados.module.css';
 // Resultados da empresa (fase 1.3, 09/10): conversas, espera pela equipe, quadro, agendamentos, funil, mensagens
 // automáticas e comprovantes no período escolhido. Só números agregados; atualiza a cada 5 minutos.
 
-const PERIODOS: [Periodo, string][] = [['7', '7 dias'], ['30', '30 dias'], ['90', '90 dias'], ['mes', 'Este mês']];
 const ATUALIZA_MS = 5 * 60_000;
 const SITUACAO: Record<string, string> = { agendado: 'Agendado', confirmado: 'Confirmado', realizado: 'Realizado', cancelado: 'Cancelado', faltou: 'Faltou' };
 
@@ -27,9 +28,11 @@ function minutos(m: number | null) {
 }
 
 export function Resultados({ empresaId, empresaNome }: { empresaId: string; empresaNome: string }) {
-  const [periodo, setPeriodo] = useState<Periodo>('30');
-  const chave = `${empresaId}:resultados:${periodo}`;
-  const [dados, setDados] = useState<TResultados | null>(() => lembrado<TResultados>(`${empresaId}:resultados:30`) ?? null);
+  // Filtro de data (11/10): atalhos e calendário em português. Começa nos últimos 30 dias.
+  const [hoje] = useState(() => hojeNoFuso('America/Sao_Paulo'));
+  const [periodo, setPeriodo] = useState<Intervalo>(() => intervaloDoAtalho('30d', hoje));
+  const chave = `${empresaId}:resultados:${periodo.de}:${periodo.ate}`;
+  const [dados, setDados] = useState<TResultados | null>(() => lembrado<TResultados>(chave) ?? null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,11 +76,8 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
           <h1 className={c.titulo}>Resultados · {empresaNome}</h1>
           <p className={c.sub}>{fmtData.format(new Date(d.de))} a {fmtData.format(new Date(d.ate))} · medido no banco{erro ? ' · ' : ''}{erro && <span className={c.erro}>{erro}</span>}</p>
         </div>
-        <div className={c.segmentado} role="group" aria-label="Período">
-          {PERIODOS.map(([v, t]) => (
-            <button key={v} type="button" className={c.segItem} aria-pressed={periodo === v} onClick={() => setPeriodo(v)}>{t}</button>
-          ))}
-        </div>
+        <FiltroData id="periodo-resultados" valor={periodo} onMudar={(v) => { if (v) setPeriodo(v); }} hoje={hoje}
+          atalhos={['hoje', 'ontem', '7d', '30d', 'mes', 'mes_passado', 'ano']} rotulo="Período dos resultados" />
       </header>
 
       <section className={c.kpis} aria-label="Números do período">

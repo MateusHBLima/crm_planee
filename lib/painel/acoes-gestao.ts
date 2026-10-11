@@ -87,6 +87,11 @@ export async function atualizarPessoa(id: string, dados: { nivel?: string; permi
   return comUsuario(async (u) => { await g.atualizarPessoa(u, id, dados); return g.listarEquipe(u); });
 }
 
+// Avisos do CRM de uma pessoa da equipe: só destes assuntos (null = todos). Mesmas regras de quem mexe em quem.
+export async function definirAvisosDaPessoa(id: string, assuntos: string[] | null) {
+  return comUsuario(async (u) => { await g.definirAssuntosAviso(u, id, assuntos); return g.listarEquipe(u); });
+}
+
 // Link de convite de uso único (09/10). O link aparece só na resposta de gerarLink: no banco fica o hash.
 export async function gerarLinkConvite(permissoes: string[]) {
   return comUsuario(async (u) => {

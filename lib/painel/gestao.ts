@@ -156,16 +156,45 @@ export async function removerDominio(u: Usuario, dominio: string) {
 export type Pessoa = {
   id: string; nome: string; email: string; nivel: 'admin' | 'membro'; permissoes: Permissao[];
   ativo: boolean; ja_entrou: boolean;
+  assuntos_aviso: string[] | null; // avisos do CRM só destes assuntos (migração 022); null = todos
 };
 
 export async function listarEquipe(u: Usuario): Promise<Pessoa[]> {
   const empresa = exigirGestorDaEmpresa(u);
   const r = await central().query(`
-    select p.id, p.nome, p.email, v.nivel, v.permissoes, (v.ativo and p.ativo) as ativo, p.auth_id is not null as ja_entrou
+    select p.id, p.nome, p.email, v.nivel, v.permissoes, (v.ativo and p.ativo) as ativo, p.auth_id is not null as ja_entrou,
+           to_jsonb(v) -> 'assuntos_aviso' as assuntos_aviso
       from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
      where v.empresa_id = $1
      order by (v.ativo and p.ativo) desc, v.nivel, p.nome`, [empresa]);
-  return r.rows.map((x) => ({ ...x, permissoes: limparPermissoes(x.permissoes) }));
+  return r.rows.map((x) => ({ ...x, permissoes: limparPermissoes(x.permissoes), assuntos_aviso: Array.isArray(x.assuntos_aviso) ? x.assuntos_aviso.map(String) : null }));
+}
+
+// De quais assuntos do quadro a pessoa recebe aviso (11/10). A própria pessoa escolhe os dela (no CRM); o admin
+// escolhe os da equipe (tela Equipe), com as mesmas regras de quem pode mexer em quem. null = todos os assuntos.
+const ID_ASSUNTO = /^[a-z0-9][a-z0-9_-]{0,59}$/;
+export function limparAssuntos(lista: unknown): string[] | null {
+  if (lista === null || lista === undefined) return null;
+  if (!Array.isArray(lista)) throw new ErroApi(400, 'Lista de assuntos inválida.');
+  const ok = [...new Set(lista.map(String))];
+  if (ok.length > 50 || ok.some((x) => !ID_ASSUNTO.test(x))) throw new ErroApi(400, 'Lista de assuntos inválida.');
+  return ok;
+}
+
+export async function definirAssuntosAviso(u: Usuario, usuarioId: string, lista: unknown) {
+  if (!u.empresa) throw new ErroApi(400, 'Escolha uma empresa primeiro.');
+  if (!/^[0-9a-f-]{36}$/i.test(usuarioId)) throw new ErroApi(400, 'Pessoa inválida.');
+  const assuntos = limparAssuntos(lista);
+  const eu = usuarioId === u.id;
+  if (!eu) exigirGestorDaEmpresa(u);
+  await transacao(async (c) => {
+    const atual = await c.query('select nivel from painel_vinculos where usuario_id = $1 and empresa_id = $2 for update', [usuarioId, u.empresa!.id]);
+    if (!atual.rowCount) throw new ErroApi(404, eu ? 'Você não está na equipe desta empresa (a Planee recebe todos os avisos).' : 'Essa pessoa não é da equipe desta empresa.');
+    if (!eu && atual.rows[0].nivel === 'admin' && u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee muda um admin.');
+    await c.query('update painel_vinculos set assuntos_aviso = $3, atualizado_em = now() where usuario_id = $1 and empresa_id = $2', [usuarioId, u.empresa!.id, assuntos]);
+    await auditar(c, u, u.empresa!.id, 'avisos_crm', usuarioId, { assuntos });
+  }, central());
+  return assuntos;
 }
 
 function nivelPermitido(u: Usuario, nivel: unknown): 'admin' | 'membro' {
