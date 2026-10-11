@@ -35,9 +35,7 @@ export function FormConvite({ token, empresa }: { token: string; empresa: string
       <>
         {marca}
         <h1 id="titulo" className={e.titulo}>Acesso criado</h1>
-        {estado.enviado
-          ? <p className={e.ok} role="status">Pronto! Enviamos um e-mail para {estado.email}. Confirme por lá e depois entre com a senha que você criou.</p>
-          : <p className={e.ok} role="status">Entrando no painel…</p>}
+        <p className={e.ok} role="status">Entrando no painel…</p>
       </>
     );
   }

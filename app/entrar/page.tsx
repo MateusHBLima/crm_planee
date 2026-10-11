@@ -14,6 +14,7 @@ const AVISOS: Record<string, string> = {
   sessao: 'Sua sessão terminou ou este usuário não tem mais acesso. Entre de novo.',
   empresa: 'Este usuário não tem acesso a esta empresa. Entre com outro e-mail ou peça acesso ao admin.',
   semtelas: 'Seu acesso ainda não tem nenhuma tela liberada. Peça ao admin da sua empresa.',
+  criada: 'Sua conta foi criada. Entre com o e-mail e a senha que você acabou de cadastrar.',
   mfa: 'Falta o código do aplicativo autenticador. Entre de novo para receber o pedido do código.',
 };
 
