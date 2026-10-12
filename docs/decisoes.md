@@ -143,6 +143,11 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 36. **Funil comercial só a Planee configura (11/10).** Pedido do Mateus: o funil é onde a IA move os cartões, então as etapas e os gatilhos são da Planee. Em Configurações, a seção "Etapas do funil comercial" só aparece para o master; o servidor recusa criar, editar ou arquivar etapa pela tela para admin e membro. A clínica continua com assuntos (nome, ícone, cor, palavras), nomes e prazos das etapas do atendimento. A API e o conector seguem como estão (escopo `config`).
 37. **Funil automático e follow-ups à vista (12/10).** Pedido do chat da Sara (`PARA_CHAT_PAINEL_funil_followup_11-10.md`). Follow-up ou retomada enviados pela IA (`/automaticas/envios`) levam a oportunidade para a etapa de follow-up; resposta do paciente volta para a etapa anterior; dias sem resposta levam a "perdido". As etapas vêm da configuração `funil_automatico` de cada empresa (regra 9: nada de etapa fixa no código); sem ela, nada se move. `/funil` ganhou `so_avancar` para a IA marcar "horários enviados" sem puxar ninguém para trás. O último follow-up aparece no cartão do quadro, no cartão do funil e na conversa da Inbox. Migração 023 (banco da empresa).
     - **Ajustes aprovados (12/10, `PARA_CHAT_PAINEL_funil_ajustes_12-10.md`):** retomada tem etapa própria (`retomada` na configuração), separada do follow-up quente das 24 h; perdido pelo funil volta se a pessoa responder em até 30 dias e é reaberto pelo `/funil` em vez de virar outra oportunidade; `de` da clínica inclui `contato`.
+38. **Várias pessoas no mesmo número (12/10).** Pedido do chat da Sara (`cruzamento_pessoas_crm_12-10.md`); contrato em `PARA_CHAT_SARA_cruzamento_12-10.md`.
+    - **Regras gerais:** uma pessoa é um contato, e `contatos.telefone` continua único: é o dono do número, onde ficam a conversa e o funil.
+    - **Dependentes e familiares:** são contatos sem telefone, ligados ao número em `contato_telefones` com o papel (migração 024).
+    - **Carga:** `POST /api/v1/pessoas/lote` recebe a carga do "Quem é quem" e separa o paciente que o espelho tinha juntado no dono do número, junto com os agendamentos dele.
+    - **CPF:** é gravado só em contato sem CPF e nunca é trocado.
 
 ## Em aberto
 

@@ -4,6 +4,7 @@ import type { Usuario } from '@/lib/sessao';
 import { PERMISSOES } from '@/lib/permissoes';
 import { diasEntre, hojeNoFuso, lerIntervalo, somaDias, type Intervalo } from '@/lib/periodo';
 import { fuso, mascararTexto, nomesDasPessoas } from './crm';
+import { NOME_PAPEL } from '@/lib/pessoas';
 
 // Tela Registro (11/10): tudo o que cada pessoa fez no painel desta empresa, com o login de quem fez. Só o admin da
 // empresa e a Planee (master) veem. Junta as duas auditorias que já existiam:
@@ -51,6 +52,12 @@ function textoCrm(acao: string, recurso: string, d: Record<string, unknown>, eta
   if (recurso === 'notas' && acao === 'criar') return `Anotou: ${corta(s('texto'))}`;
   if (recurso === 'topicos' && acao === 'atualizar' && 'cor' in d) return `Mudou a cor da coluna para ${s('cor') || 'sem cor'}`;
   if (recurso === 'pagamentos' && d.conferido !== undefined) return d.conferido ? 'Conferiu comprovante: confere' : 'Conferiu comprovante: não confere';
+  if (recurso === 'contatos' && acao === 'carregar') {
+    // Carga do "Quem é quem" (POST /api/v1/pessoas/lote, migração 024).
+    if (d.removido) return 'Desligou a pessoa de um número';
+    const papel = NOME_PAPEL[s('papel')] ?? s('papel');
+    return `${d.separado ? 'Separou do contato do número e ligou' : 'Ligou'} ao número como ${papel}${d.servicos_movidos ? ` (${s('servicos_movidos')} agendamentos)` : ''}`;
+  }
   if (recurso === 'contatos' && 'automaticas_paradas' in d) return d.automaticas_paradas ? 'Parou as mensagens automáticas' : 'Voltou as mensagens automáticas';
   return `${VERBO[acao] ?? acao} ${RECURSO[recurso] ?? recurso}`;
 }

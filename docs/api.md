@@ -95,6 +95,23 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
   - o cartão do quadro e o do funil comercial mostram o último follow-up ou retomada enviados nos últimos 31 dias.
 - **Texto na Inbox na hora:** depois de cada envio, chame também o `POST /whatsapp/envio` do receptor.
 
+## Várias pessoas no mesmo número (migração 024)
+
+Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com `contatos.telefone` igual (quem conversa; funil e Inbox ficam nele). As outras pessoas são contatos próprios, sem telefone, ligados ao número em `contato_telefones` com o papel.
+
+- **Recurso `contato_telefones`** (escopo `crm`): `contato_id`, `telefone` (normalizado), `papel` (`proprio`, `dependente`, `familiar`, `mesmo_numero`, `equipe_fornecedor`), `origem`. Um vínculo por contato e número (com ou sem o 9).
+- **Carga em lote:** `POST /api/v1/pessoas/lote` com `{"origem"?, "itens": [{telefone, papel, paciente: {sistema, codigo}, nome?, cpf?, remover?}]}`. Escopo `crm`.
+  - Até 500 itens. É idempotente, e cada item roda à parte (erro num item não derruba os outros). Os `proprio` vão primeiro.
+  - `proprio`: o dono do número. Se ninguém é dono, usa o contato do paciente (se ele não tem número) ou cria um. O nome passa a ser o do sistema, a não ser que o contato tenha outro CPF. Um dono por número: se o número já tem titular carregado e chega outro `proprio` com outro nome (e não o mesmo CPF), ele entra como `mesmo_numero` (`aviso: ja_tem_proprio`, `papel_gravado`) e o dono não muda. O telefone vale com ou sem o 9.
+  - `dependente` e `familiar` ligados ao dono **deste** número (o espelho juntou o filho na mãe): ganham contato próprio e levam os agendamentos do sistema que são deles (`servicos.detalhes.<sistema>.paciente_id`) e os comprovantes desses.
+  - `mesmo_numero` e `equipe_fornecedor`: como dependente, mas o dono do número com o mesmo nome continua sendo ele.
+  - O paciente passa a apontar para o contato certo em `agenda_pacientes`, e o espelho da agenda segue.
+  - `remover: true` arquiva o vínculo.
+  - **CPF:** só 11 dígitos válidos, e só em contato sem CPF. Não troca CPF diferente (`aviso: cpf_diferente`) nem grava CPF de outro contato (`cpf_em_outro_contato`, com `contato_cpf`). O mesmo CPF para dois pacientes no mesmo lote volta `erro: cpf_conflito_no_lote`.
+  - Devolve `{total, ok, erros, itens: [{indice, ok, contato_id, criado, separado?, servicos_movidos?, removido?, aviso?, erro?}]}`. O CPF nunca volta.
+- **Ficha:** `contatos` traz todas as pessoas do número, com `papel`, `dono_do_numero` e `cpf_final`; serviços e pagamentos de todas elas.
+- **No painel:** o histórico do contato (cartão e ficha) mostra "Também neste número" e, para quem não é dono, "Usa o número … como dependente".
+
 ## Painel → n8n
 
 Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
