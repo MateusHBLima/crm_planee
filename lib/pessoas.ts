@@ -37,7 +37,7 @@ export async function pessoasDoNumero(b: Banco, tel: string): Promise<PessoaDoNu
     vistos.add(id);
     saida.push({
       id, nome: (r.nome as string) ?? null, telefone: (r.telefone as string) ?? null, documento: (r.documento as string) ?? null,
-      criado_em: new Date(r.criado_em as string).toISOString(), papel: papelDe.get(id) ?? 'proprio', dono,
+      criado_em: new Date(r.criado_em as string).toISOString(), papel: papelDe.get(id) ?? 'responsavel', dono,
     });
   };
   for (const r of donos.rows) incluir(r, true);
@@ -55,7 +55,7 @@ export async function numerosDoContato(b: Banco, contatoId: string): Promise<{ t
     ligados = (await b.query(`select telefone, papel from contato_telefones where contato_id = $1 and not arquivado order by criado_em`, [contatoId])).rows;
   } catch (e) { if (!semTabela(e)) throw e; }
   const mesmo = (a: string, x: string) => a.slice(2, 4) === x.slice(2, 4) && a.slice(-8) === x.slice(-8);
-  if (tel) saida.push({ telefone: tel, papel: String(ligados.find((l) => mesmo(String(l.telefone), tel))?.papel ?? 'proprio') });
+  if (tel) saida.push({ telefone: tel, papel: String(ligados.find((l) => mesmo(String(l.telefone), tel))?.papel ?? 'responsavel') });
   for (const l of ligados) if (!tel || !mesmo(String(l.telefone), tel)) saida.push({ telefone: String(l.telefone), papel: String(l.papel) });
   return saida;
 }

@@ -140,6 +140,30 @@ const CPF_MAE = cpf(100200300), CPF_FILHO = cpf(100200301), CPF_OUTRO = cpf(1002
   r = await lote([{ telefone: '554700005001', papel: 'proprio', paciente: { sistema: 'feegow', codigo: 'PF1' }, nome: 'Maria Ficticia' }]);
   ok('telefone sem o 9 acha o mesmo dono', r.json?.itens?.[0]?.contato_id === MAE && !r.json.itens[0].aviso, JSON.stringify(r.json?.itens));
 
+  // ---- Dono do número que não é paciente (a esposa fala pelo marido): ganha o nome do WhatsApp ----
+  const F = '5547900005011', G = '5547900005012';
+  const DONOF = sql(`insert into contatos (nome, telefone) values ('Fabio Ficticio', '${F}') returning id`);
+  sql(`insert into agenda_pacientes (sistema, paciente_id, contato_id, nome) values ('feegow', 'PF60', '${DONOF}', 'Fabio Ficticio')`);
+  sql(`insert into wa_contatos (numero_id, wa_id, nome_perfil, nome_salvo) values ('teste-pessoas', '${F}', 'Esposa Ficticia', 'Fabio Ficticio')`);
+  r = await lote([{ telefone: F, papel: 'familiar', paciente: { sistema: 'feegow', codigo: 'PF60' }, nome: 'FABIO FICTICIO' }]);
+  const fam = r.json?.itens?.[0];
+  ok('familiar separado do dono com o mesmo nome: dono ganha o nome do perfil do WhatsApp', fam?.ok && fam.separado === true && fam.dono_renomeado === true
+    && sql(`select nome from contatos where id = '${DONOF}'`) === 'Esposa Ficticia', JSON.stringify(fam));
+  let fz = await api('/api/v1/ficha?telefone=' + F);
+  ok('ficha: dono sem titular aparece como responsável, o paciente como familiar', fz.json?.contatos?.length === 2 && fz.json.contatos[0].papel === 'responsavel'
+    && fz.json.contatos[0].nome === 'Esposa Ficticia' && fz.json.contatos[1].papel === 'familiar', JSON.stringify(fz.json?.contatos));
+  // Já carregado antes da correção (dono com o nome do paciente): reenviar corrige sem separar de novo.
+  sql(`update contatos set nome = 'Fabio Ficticio' where id = '${DONOF}'`);
+  r = await lote([{ telefone: F, papel: 'familiar', paciente: { sistema: 'feegow', codigo: 'PF60' }, nome: 'Fabio Ficticio' }]);
+  ok('reenviar corrige o nome do dono, sem separar de novo', r.json?.itens?.[0]?.dono_renomeado === true && !r.json.itens[0].separado && !r.json.itens[0].criado
+    && sql(`select nome from contatos where id = '${DONOF}'`) === 'Esposa Ficticia' && sql(`select count(*) from contatos where nome ilike 'fabio ficticio'`) === '1');
+  const DONOG = sql(`insert into contatos (nome, telefone) values ('Gabi Ficticia', '${G}') returning id`);
+  sql(`insert into agenda_pacientes (sistema, paciente_id, contato_id, nome) values ('feegow', 'PF61', '${DONOG}', 'Gabi Ficticia')`);
+  r = await lote([{ telefone: G, papel: 'dependente', paciente: { sistema: 'feegow', codigo: 'PF61' }, nome: 'Gabi Ficticia' }]);
+  ok('sem nome no WhatsApp: dono vira "Contato WhatsApp ••1234"', r.json?.itens?.[0]?.dono_renomeado === true
+    && sql(`select nome from contatos where id = '${DONOG}'`) === 'Contato WhatsApp ••5012');
+  sql(`delete from wa_contatos where numero_id = 'teste-pessoas'`);
+
   // ---- Remover ----
   r = await lote([{ telefone: A, papel: 'familiar', paciente: { sistema: 'feegow', codigo: 'PF3' }, remover: true }]);
   const f2 = await api('/api/v1/ficha?telefone=' + A);
