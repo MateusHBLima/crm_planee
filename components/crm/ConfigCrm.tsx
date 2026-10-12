@@ -13,7 +13,8 @@ const TIPOS = [['aberta', 'Em andamento'], ['ganho', 'Ganho'], ['perdido', 'Perd
 const ETAPAS: [Etapa, string][] = [['aguardando', 'Aguardando equipe'], ['em_atendimento', 'Em atendimento'], ['pendente', 'Pendente interno'], ['finalizado', 'Finalizado']];
 
 // Configuração do CRM pela tela (quem tem crm.config). Tudo passa pela mesma camada da API, com auditoria.
-export function ConfigCrm({ inicial }: { inicial: TConfig }) {
+// O funil comercial (onde a IA move os cartões) só aparece para a Planee (master).
+export function ConfigCrm({ inicial, funilLiberado }: { inicial: TConfig; funilLiberado: boolean }) {
   const [cfg, setCfg] = useState(inicial);
   const [aviso, setAviso] = useState<string | null>(null);
   const pronto = (msg: string) => (d: TConfig) => { setCfg(d); setAviso(msg); window.setTimeout(() => setAviso(null), 3500); };
@@ -23,7 +24,7 @@ export function ConfigCrm({ inicial }: { inicial: TConfig }) {
       <header className={c.topo}>
         <div className={c.titulos}>
           <h1 className={c.titulo}>Configurações do CRM</h1>
-          <p className={c.sub}>Assuntos do quadro, etapas do funil e nomes das etapas. Vale na hora para a equipe e para a IA.</p>
+          <p className={c.sub}>{funilLiberado ? 'Assuntos do quadro, etapas do funil e nomes das etapas.' : 'Assuntos do quadro, nomes e prazos das etapas.'} Vale na hora para a equipe e para a IA.</p>
         </div>
       </header>
       <div className={c.aviso} role="status" aria-live="polite">{aviso && <span className={c.avisoOk}>{aviso}</span>}</div>
@@ -40,14 +41,14 @@ export function ConfigCrm({ inicial }: { inicial: TConfig }) {
           <LinhaAssunto key={`novo-${cfg.topicos.length}`} item={null} onPronto={pronto} />
         </section>
 
-        <section className={c.blocoConfig} aria-labelledby="cfg-funil">
+        {funilLiberado && <section className={c.blocoConfig} aria-labelledby="cfg-funil">
           <h2 id="cfg-funil">Etapas do funil comercial</h2>
           <p>O funil precisa de pelo menos uma etapa de cada tipo. O gatilho descreve quando a IA move o cartão para cá.</p>
           {cfg.funil.map((e) => (
             <LinhaEtapa key={e.id} item={e} onPronto={pronto} />
           ))}
           <LinhaEtapa key={`nova-${cfg.funil.length}`} item={null} onPronto={pronto} />
-        </section>
+        </section>}
       </div>
     </div>
   );

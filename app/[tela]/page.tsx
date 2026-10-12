@@ -109,7 +109,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     if ('erro' in config) return aviso(config.erro);
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <ConfigCrm key={usuario.empresa.id} inicial={config} />
+        <ConfigCrm key={usuario.empresa.id} inicial={config} funilLiberado={usuario.nivel === 'master'} />
       </Shell>
     );
   }

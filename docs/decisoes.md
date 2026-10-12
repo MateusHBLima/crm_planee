@@ -140,6 +140,7 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Registro** (tela nova, só admin e Planee): tudo o que cada login fez no painel — respostas e conversas da Inbox, assumir, mover, passar, notas, assunto, arquivar, contatos, funil, configuração e equipe. Só leitura das duas auditorias (`painel_auditoria` no banco da empresa e `central_auditoria` no central). A Sara e as integrações aparecem só se pedido.
     - **Cor de fundo da coluna** (`crm_topicos.cor`, migração 021): uma chave da paleta (cinza, azul, ciano, verde, amarelo, laranja, vermelho, rosa, roxo), escolhida em Configurações ou pela API. Muda a decisão 11 só para a coluna: o estado do cartão continua com as cores das etapas.
     - **Filtro de data em português** no CRM, Registro, Resultados e Agenda: atalhos (Hoje, Ontem, Últimos 7 e 30 dias, Este mês, Mês passado, Este ano) e calendário para dia, mês, ano ou intervalo "de… até…", semana começando no domingo. No CRM, com um período escolhido, o quadro mostra os atendimentos abertos nele, em todas as etapas.
+36. **Funil comercial só a Planee configura (11/10).** Pedido do Mateus: o funil é onde a IA move os cartões, então as etapas e os gatilhos são da Planee. Em Configurações, a seção "Etapas do funil comercial" só aparece para o master; o servidor recusa criar, editar ou arquivar etapa pela tela para admin e membro. A clínica continua com assuntos (nome, ícone, cor, palavras), nomes e prazos das etapas do atendimento. A API e o conector seguem como estão (escopo `config`).
 
 ## Em aberto
 
