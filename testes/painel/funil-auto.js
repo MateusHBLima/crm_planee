@@ -15,7 +15,7 @@ async function entrar(p, email, destino) {
   if (p.url().includes('/entrar/verificacao')) { await p.fill('#codigo', '123456'); await Promise.all([p.waitForLoadState('networkidle'), p.click('button[type=submit]')]); await p.waitForTimeout(800); }
 }
 const NUM = '100000000000001';
-const ANA = '5547900004001', CAIO = '5547900004002', DORA = '5547900004003', EVA = '5547900004004', FABIO = '5547900004005', GUTO = '5547900004006';
+const ANA = '5547900004001', CAIO = '5547900004002', DORA = '5547900004003', EVA = '5547900004004', FABIO = '5547900004005', GUTO = '5547900004006', HUGO = '5547900004007';
 const etapaDe = (tel) => sql(`select o.etapa_id || '|' || coalesce(o.etapa_antes_followup, '-') from oportunidades o join contatos c on c.id = o.contato_id
                                where right(c.telefone, 8) = right('${tel}', 8) and not o.arquivado order by o.atualizado_em desc limit 1`);
 
@@ -67,6 +67,15 @@ const etapaDe = (tel) => sql(`select o.etapa_id || '|' || coalesce(o.etapa_antes
   r = await api(`/api/v1/ficha?telefone=${CAIO}`);
   const ret = (r.json?.automaticas?.ultimos_envios || []).find((x) => x.tipo === 'retomada');
   ok('ficha mostra a retomada com nome', ret?.tipo_nome === 'Retomada', JSON.stringify(ret));
+
+  // ---- so_avancar em Follow up: compara com a etapa de origem (Hugo saiu de interesse; oferecido avança) ----
+  await api('/api/v1/funil', { telefone: HUGO, etapa_id: 'interesse', nome: 'Hugo Funil Ficticio' });
+  await envio(HUGO, 'followup_1h', { texto: 'Hugo, ficou alguma dúvida?' });
+  r = await api('/api/v1/funil', { telefone: HUGO, etapa_id: 'oferecido', so_avancar: true });
+  ok('so_avancar em Follow up compara com a origem e avança (limpa a marca)', r.json?.movida === true && etapaDe(HUGO) === 'oferecido|-', `${JSON.stringify(r.json).slice(0, 120)} ${etapaDe(HUGO)}`);
+  await envio(HUGO, 'followup_3h', { texto: 'Hugo, posso reservar?' });
+  r = await api('/api/v1/funil', { telefone: HUGO, etapa_id: 'contato', so_avancar: true });
+  ok('so_avancar em Follow up não volta para antes da origem', r.json?.movida === false && etapaDe(HUGO) === 'followup|oferecido', etapaDe(HUGO));
 
   // ---- Consulta cancelada: Fábio (sem outra marcada) volta de Confirmado para Oferecido; Guto tem outra futura e fica ----
   await api('/api/v1/funil', { telefone: FABIO, etapa_id: 'confirmado', nome: 'Fabio Funil Ficticio' });
@@ -152,7 +161,7 @@ const etapaDe = (tel) => sql(`select o.etapa_id || '|' || coalesce(o.etapa_antes
   // Limpeza: tira os dados fictícios deste teste (o resto da suíte não depende deles).
   sql(`delete from crm_config where chave = 'funil_automatico';
        update atendimentos set arquivado = true where resumo like 'FUNIL-%';
-       update oportunidades set arquivado = true where contato_id in (select id from contatos where right(telefone, 8) in ('00004001', '00004002', '00004003', '00004004', '00004005', '00004006'));
+       update oportunidades set arquivado = true where contato_id in (select id from contatos where right(telefone, 8) in ('00004001', '00004002', '00004003', '00004004', '00004005', '00004006', '00004007'));
        update servicos set arquivado = true where codigo_externo like 'FUNIL-%';
        update crm_etapas set arquivado = true where id = 'retomada';
        delete from wa_mensagens where wa_id = '${ANA}'; delete from wa_conversas where wa_id in ('${ANA}', '${CAIO}'); delete from wa_contatos where wa_id = '${ANA}';`);

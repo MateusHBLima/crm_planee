@@ -321,10 +321,16 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
     }
     // A oportunidade "viva" é a mais recente que não está arquivada nem fechada (ganho/perdido).
     const viva = await c.query(
-      `select o.id, o.etapa_id, e.ordem from oportunidades o join crm_etapas e on e.id = o.etapa_id
+      `select o.id, o.etapa_id, e.ordem, to_jsonb(o) ->> 'etapa_antes_followup' as antes,
+              (select a.ordem from crm_etapas a where a.id = to_jsonb(o) ->> 'etapa_antes_followup') as ordem_antes
+         from oportunidades o join crm_etapas e on e.id = o.etapa_id
         where o.contato_id = $1 and not o.arquivado and e.tipo = 'aberta' order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
     // so_avancar (12/10): a IA marca "horários enviados" sem medo de puxar para trás quem já está mais à frente.
-    if (d.so_avancar === true && viva.rowCount && Number(viva.rows[0].ordem) >= Number(et.rows[0].ordem)) {
+    // Em Follow up ou Retomada (funil automático, migração 023) a comparação é com a etapa de onde o card saiu:
+    // origem "interesse" + pedido "oferecido" move, mesmo com Follow up depois de oferecido na ordem.
+    const v0 = viva.rows[0];
+    const ordemAtual = v0 ? Number(v0.antes && v0.ordem_antes != null ? v0.ordem_antes : v0.ordem) : 0;
+    if (d.so_avancar === true && viva.rowCount && ordemAtual > Number(et.rows[0].ordem)) {
       const atual = await c.query('select * from oportunidades where id = $1', [viva.rows[0].id]);
       return { oportunidade: atual.rows[0], etapa: et.rows[0], contato_id: contatoId, criou: false, movida: false };
     }
@@ -334,8 +340,10 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
     let op;
     if (viva.rowCount) {
       const cols = Object.keys(campos);
+      // Saindo da etapa de espera do funil automático: limpa a marca de follow-up (só existe com a 023).
+      const limpa = v0.antes && etapaId !== v0.etapa_id ? ', etapa_antes_followup = null, followup_em = null' : '';
       const res = await c.query(
-        `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, atualizado_em = now() where id = $1 returning *`,
+        `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}${limpa}, atualizado_em = now() where id = $1 returning *`,
         [viva.rows[0].id, ...Object.values(campos)]);
       op = res.rows[0];
       await auditar(c, chave, 'atualizar', 'oportunidades', op.id, { de: viva.rows[0].etapa_id, ...campos });
