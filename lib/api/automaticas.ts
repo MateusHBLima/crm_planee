@@ -4,10 +4,13 @@ import { ErroApi, transacao } from '@/lib/db';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { bancoDe, type Chave } from './auth';
 import { auditar, contatoDoTelefone, exigirEscopo, quando, texto } from './servico';
+import { ehFollowup } from '@/lib/automaticas-nomes';
+import { aposFollowupEnviado } from '@/lib/funil-automatico';
 
 // Mensagens automáticas da IA no CRM (migração 017). O relógio (quando enviar) fica do lado da IA; aqui ficam:
 //   POST /api/v1/automaticas/recusa  {telefone | contato_id, parar, motivo?, por?}
 //   POST /api/v1/automaticas/envios  {telefone, tipo, situacao, quando?, texto?, wamid?, motivo?, servico?, chave}
+//     tipo livre ([a-z0-9_]): followup_1h, followup_d1, retomada... Follow-up e retomada enviados movem o funil (023).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TIPO = /^[a-z0-9_]{2,40}$/;
@@ -120,7 +123,16 @@ export async function registrarEnvioAutomatico(chave: Chave, corpo: unknown) {
         [contatoId, tel, tipo, situacao, motivo, txt, wamid, em, servicoId, chaveEnvio, por]);
       const x = r.rows[0];
       await auditar(c, chave, x.novo ? 'criar' : 'atualizar', 'envios_automaticos', x.id, { tipo, situacao, chave: chaveEnvio });
-      return { ok: true, id: String(x.id), contato_id: String(x.contato_id), repetido: !x.novo, servico_id: servicoId };
+      // Funil automático (migração 023, crm_config "funil_automatico"): follow-up ou retomada enviados levam a
+      // oportunidade viva para a etapa de follow-up. Sem a regra configurada, nada muda.
+      let funil: { oportunidade_id: string; de: string } | null = null;
+      if (situacao === 'enviado' && ehFollowup(tipo)) {
+        const ids = await contatosDoTelefone(c, tel);
+        if (!ids.includes(String(x.contato_id))) ids.push(String(x.contato_id));
+        const m = await aposFollowupEnviado(c, ids, em, tipo);
+        if (m) funil = { oportunidade_id: m.id, de: m.de };
+      }
+      return { ok: true, id: String(x.id), contato_id: String(x.contato_id), repetido: !x.novo, servico_id: servicoId, funil };
     }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; if (semTabela(e)) throw falta017(); throw e; }
 }

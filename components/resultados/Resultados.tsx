@@ -7,7 +7,7 @@ import { FiltroData } from '@/components/FiltroData';
 import { carregarResultados } from '@/lib/painel/leitura-cliente';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import { Esqueleto } from '@/components/Esqueleto';
-import { TIPOS_AUTOMATICA } from '@/lib/automaticas-nomes';
+import { nomeDoTipo } from '@/lib/automaticas-nomes';
 import c from './resultados.module.css';
 
 // Resultados da empresa (fase 1.3, 09/10): conversas, espera pela equipe, quadro, agendamentos, funil, mensagens
@@ -212,7 +212,7 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
           {d.automaticas && d.automaticas.length ? (
             <table className={c.tabela}>
               <thead><tr><th>Tipo</th><th className={c.num}>Enviadas</th><th className={c.num}>Falharam</th><th className={c.num}>Canceladas</th></tr></thead>
-              <tbody>{d.automaticas.map((a) => <tr key={a.tipo}><td>{TIPOS_AUTOMATICA[a.tipo] ?? a.tipo}</td><td className={c.num}>{a.enviado}</td><td className={c.num}>{a.falhou}</td><td className={c.num}>{a.cancelado}</td></tr>)}</tbody>
+              <tbody>{d.automaticas.map((a) => <tr key={a.tipo}><td>{nomeDoTipo(a.tipo)}</td><td className={c.num}>{a.enviado}</td><td className={c.num}>{a.falhou}</td><td className={c.num}>{a.cancelado}</td></tr>)}</tbody>
             </table>
           ) : <div className={c.vazio}>Nenhuma mensagem automática registrada no período.</div>}
         </section>

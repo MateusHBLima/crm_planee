@@ -1,6 +1,7 @@
 import 'server-only';
 import { bancoDaEmpresa, central, registrarErro } from '@/lib/db';
 import { avisoDoSistema, lembreteDoSistema, resolverDoSistema } from '@/lib/avisos-sistema';
+import { rodarFunilAutomatico } from '@/lib/funil-automatico';
 
 // Vigia (08/10): de 15 em 15 minutos o painel confere sozinho o que costuma dar problema e abre aviso para a Planee.
 //   • token de integração vencendo (ex.: Feegow): a partir de 30 dias antes, lembra a cada 3 dias até a data mudar;
@@ -9,6 +10,8 @@ import { avisoDoSistema, lembreteDoSistema, resolverDoSistema } from '@/lib/avis
 //   • envios falhando: muitas mensagens com status "falhou" na última hora;
 //   • fila parada (09/10): em horário comercial, 5 ou mais pedidos do quadro esperando a equipe além do prazo
 //     vermelho (Configurações → prazos). Fecha sozinho quando a fila zera.
+//   • funil automático (12/10, lib/funil-automatico.ts): quem respondeu ao follow-up volta de etapa; quem ficou
+//     dias sem responder vai para "perdido". Só nas empresas com crm_config "funil_automatico".
 // Cada aviso tem chave própria: rodar de novo (ou em duas réplicas ao mesmo tempo) não duplica.
 // Ligado em instrumentation.ts; PAINEL_VIGIA=0 desliga. O botão "Verificar agora" do Interno Planee roda na hora.
 
@@ -22,7 +25,7 @@ const FALHAS_MIN = 5;
 const FALHAS_FRACAO = 0.2;
 const FILA_MIN = 5;
 
-export type ResumoVigia = { em: string; tokens: number; silencio: number; falhas: number; fila: number; resolvidos: number; empresas: number; sem_banco: string[] };
+export type ResumoVigia = { em: string; tokens: number; silencio: number; falhas: number; fila: number; resolvidos: number; empresas: number; sem_banco: string[]; funil: number };
 
 const fuso = () => process.env.PAINEL_FUSO || 'America/Sao_Paulo';
 const final4 = (s: string) => String(s).replace(/\D/g, '').slice(-4);
@@ -150,7 +153,7 @@ async function vigiarEmpresa(e: EmpresaVigia, agora: Date): Promise<{ silencio: 
 let rodando = false;
 
 export async function rodarVigia(agora = new Date()): Promise<ResumoVigia> {
-  const resumo: ResumoVigia = { em: agora.toISOString(), tokens: 0, silencio: 0, falhas: 0, fila: 0, resolvidos: 0, empresas: 0, sem_banco: [] };
+  const resumo: ResumoVigia = { em: agora.toISOString(), tokens: 0, silencio: 0, falhas: 0, fila: 0, resolvidos: 0, empresas: 0, sem_banco: [], funil: 0 };
   if (rodando) return resumo;
   rodando = true;
   try {
@@ -174,6 +177,10 @@ export async function rodarVigia(agora = new Date()): Promise<ResumoVigia> {
       } catch (err) {
         if (!['42P01', '42703'].includes((err as { code?: string }).code ?? '')) registrarErro(`vigia fila ${e.id}`, err);
       }
+      try {
+        const fa = await rodarFunilAutomatico(bancoDaEmpresa(e));
+        resumo.funil += fa.voltaram + fa.perdidos;
+      } catch (err) { registrarErro(`funil automático ${e.id}`, err); }
       try {
         const r = await vigiarEmpresa(e, agora);
         resumo.silencio += r.silencio; resumo.falhas += r.falhas; resumo.resolvidos += r.resolvidos;

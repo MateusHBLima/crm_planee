@@ -139,7 +139,7 @@ export async function lerRegistro(u: Usuario, q: URLSearchParams): Promise<Regis
     if (u.master) texto = mascararTexto(texto);
     crus.push({
       id: `d${r.id}`, quando: new Date(String(r.quando)).toISOString(), area: 'crm', usuario_id: (r.usuario_id as string | null) ?? null,
-      quem: r.usuario_id ? null : ((r.chave as string | null) ?? 'Integração'), email: null, sistema: !r.usuario_id,
+      quem: r.usuario_id ? null : ((r.chave as string | null) ?? ((r.detalhe as { por?: string } | null)?.por) ?? 'Integração'), email: null, sistema: !r.usuario_id,
       texto, alvo: (r.contato as string | null) ?? (r.recurso === 'topicos' ? topicos.get(String(r.alvo_id)) ?? null : null),
     });
   }

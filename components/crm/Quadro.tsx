@@ -116,6 +116,7 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onA
         <span><Icone nome="pessoa" tamanho={14} /><span><span className={c.metaRot}>Responsável</span> {k.responsavel
           ? `${k.responsavel}${k.assumido_em ? ` · ${fmt.quando(k.assumido_em)} (${duracao(k.aberto_em, k.assumido_em)} após abrir)` : ''}`
           : 'ninguém assumiu'}</span></span>
+        {k.automatica && <span data-automatica={k.automatica.tipo}><Icone nome="conversa" tamanho={14} /><span><span className={c.metaRot}>{k.automatica.nome}</span> enviado {fmt.quando(k.automatica.quando)}</span></span>}
         {fim && k.finalizado_em && <span><Icone nome="finalizado" tamanho={14} /><span><span className={c.metaRot}>Finalizado</span> {fmt.quando(k.finalizado_em)} · total {duracao(k.aberto_em, k.finalizado_em)}</span></span>}
       </div>
       <div className={c.chips}>

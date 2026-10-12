@@ -297,7 +297,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
 // Cria o contato se ainda não existir. Tudo numa transação, com auditoria.
 export async function moverNoFunil(chave: Chave, corpo: unknown) {
   exigirEscopo(chave, 'crm');
-  if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?}.');
+  if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?, "so_avancar"?}.');
   const d = corpo as Record<string, unknown>;
   const tel = normalizarTelefone(d.telefone);
   const etapaId = String(d.etapa_id ?? '');
@@ -307,7 +307,7 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
   const interesse = d.interesse === undefined ? undefined : String(d.interesse ?? '').trim().slice(0, 300) || null;
   const nome = String(d.nome ?? '').trim().slice(0, 120) || null;
   return transacao(async (c) => {
-    const et = await c.query('select id, nome, tipo from crm_etapas where id = $1 and not arquivado', [etapaId]);
+    const et = await c.query('select id, nome, tipo, ordem from crm_etapas where id = $1 and not arquivado', [etapaId]);
     if (!et.rowCount) throw new ErroApi(400, `Etapa "${etapaId}" não existe no funil.`);
     let cont = await c.query(`select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`, chaveTelefone(tel));
     let contatoId: string;
@@ -321,8 +321,13 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
     }
     // A oportunidade "viva" é a mais recente que não está arquivada nem fechada (ganho/perdido).
     const viva = await c.query(
-      `select o.id, o.etapa_id from oportunidades o join crm_etapas e on e.id = o.etapa_id
+      `select o.id, o.etapa_id, e.ordem from oportunidades o join crm_etapas e on e.id = o.etapa_id
         where o.contato_id = $1 and not o.arquivado and e.tipo = 'aberta' order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
+    // so_avancar (12/10): a IA marca "horários enviados" sem medo de puxar para trás quem já está mais à frente.
+    if (d.so_avancar === true && viva.rowCount && Number(viva.rows[0].ordem) >= Number(et.rows[0].ordem)) {
+      const atual = await c.query('select * from oportunidades where id = $1', [viva.rows[0].id]);
+      return { oportunidade: atual.rows[0], etapa: et.rows[0], contato_id: contatoId, criou: false, movida: false };
+    }
     const campos: Record<string, unknown> = { etapa_id: etapaId };
     if (interesse !== undefined) campos.interesse = interesse;
     if (valor !== undefined) campos.valor = valor;
@@ -341,7 +346,7 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
       op = res.rows[0];
       await auditar(c, chave, 'criar', 'oportunidades', op.id, { contato_id: contatoId, ...campos });
     }
-    return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount };
+    return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount, movida: true };
   }, bancoDe(chave));
 }
 

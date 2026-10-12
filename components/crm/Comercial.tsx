@@ -8,7 +8,7 @@ import { Campo, Janela, NovaOportunidade, useEnvio } from './Formularios';
 import { casaBusca, criarFormatos, telefoneBonito } from './util';
 import c from './crm.module.css';
 
-type Oportunidade = { id: string; etapa_id: string; interesse: string | null; valor: number | null; atualizado_em: string; nome: string | null; telefone: string | null };
+type Oportunidade = { id: string; etapa_id: string; interesse: string | null; valor: number | null; atualizado_em: string; nome: string | null; telefone: string | null; automatica?: { tipo: string; nome: string; quando: string } | null };
 type Dados = { etapas: { id: string; nome: string; tipo: string }[]; oportunidades: Oportunidade[] };
 
 const reais = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -58,6 +58,7 @@ export function Comercial({ busca, fuso, podeEditar, podeArquivar, onAviso }: {
                   {o.interesse && <span className={c.resumo}>{o.interesse}</span>}
                   <span className={c.detMeta}>{o.telefone ? telefoneBonito(o.telefone) + ' · ' : ''}atualizado {fmt.quando(o.atualizado_em)}</span>
                   {o.valor !== null && <span className={c.chipNeutro}>{reais(o.valor)}</span>}
+                  {o.automatica && <span className={c.seloAuto} data-selo="followup" data-automatica={o.automatica.tipo}>{o.automatica.nome} enviado · {fmt.quando(o.automatica.quando)}</span>}
                 </article>
               ))}
               {!cs.length && <div className={c.nadaAberto}>Vazio</div>}
