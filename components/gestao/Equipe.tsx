@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { MODELOS, NOME_NIVEL, PERMISSOES } from '@/lib/permissoes';
-import { adicionarPessoa, atualizarPessoa, cancelarLinkConvite, gerarLinkConvite, novoConvite } from '@/lib/painel/acoes-gestao';
+import { adicionarPessoa, atualizarPessoa, cancelarLinkConvite, definirAvisosDaPessoa, gerarLinkConvite, novoConvite } from '@/lib/painel/acoes-gestao';
 import type { LinkConvite, Pessoa } from '@/lib/painel/gestao';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
@@ -11,6 +11,7 @@ import g from './gestao.module.css';
 type Props = {
   inicial: Pessoa[]; empresa: { id: string; nome: string; modulos: string[] };
   souMaster: boolean; meuId: string; endereco: string; links: LinkConvite[];
+  assuntos?: { id: string; nome: string }[]; // assuntos do quadro, para os avisos do CRM de cada pessoa
 };
 
 const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -118,13 +119,48 @@ function Permissoes({ modulos, valor, onChange, prefixo }: { modulos: string[]; 
   );
 }
 
-export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links }: Props) {
+// Avisos do CRM da pessoa: de quais assuntos ela recebe aviso de cartão novo (null = todos).
+function nomeAvisos(lista: string[] | null, assuntos: { id: string; nome: string }[]) {
+  if (!lista) return 'todos os assuntos';
+  if (!lista.length) return 'nenhum assunto';
+  return lista.map((id) => assuntos.find((a) => a.id === id)?.nome ?? id).join(', ');
+}
+
+function EditorAvisos({ prefixo, assuntos, valor, onChange }: { prefixo: string; assuntos: { id: string; nome: string }[]; valor: string[] | null; onChange: (v: string[] | null) => void }) {
+  const todos = valor === null;
+  const marcar = (id: string, sim: boolean) => {
+    const base = valor ?? assuntos.map((a) => a.id);
+    const nova = sim ? [...new Set([...base, id])] : base.filter((x) => x !== id);
+    onChange(assuntos.every((a) => nova.includes(a.id)) ? null : nova);
+  };
+  return (
+    <div className={g.bloco}>
+      <span className={g.dica}>Avisos do CRM (som e notificação de cartão novo). Cartão passado para a pessoa avisa sempre.</span>
+      <div className={g.checks}>
+        <label className={g.check}>
+          <input type="checkbox" id={`${prefixo}-todos`} checked={todos} onChange={(e) => onChange(e.target.checked ? null : [])} />
+          <span><strong>Todos os assuntos</strong></span>
+        </label>
+        {assuntos.map((a) => (
+          <label key={a.id} className={g.check}>
+            <input type="checkbox" id={`${prefixo}-${a.id}`} data-assunto={a.id} checked={todos || valor.includes(a.id)} onChange={(e) => marcar(a.id, e.target.checked)} />
+            <span>{a.nome}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links, assuntos = [] }: Props) {
   const [pessoas, setPessoas] = useState(inicial);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
   const [novo, setNovo] = useState({ nome: '', email: '', nivel: 'membro', permissoes: MODELOS.secretaria.permissoes.filter((p) => empresa.modulos.includes(p)) as string[] });
   const [editando, setEditando] = useState<string | null>(null);
   const [permsEdit, setPermsEdit] = useState<string[]>([]);
+  const [avisosDe, setAvisosDe] = useState<string | null>(null);
+  const [avisosEdit, setAvisosEdit] = useState<string[] | null>(null);
   const [convite, setConvite] = useState<{ nome: string; codigo: string } | null>(null);
 
   const rodar = (fn: () => Promise<Resposta<Pessoa[]>>, ok: string, depois?: () => void) => iniciar(async () => {
@@ -226,6 +262,9 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links }: 
                   </div>
                 </div>
                 <div className={g.chips}>
+                  {assuntos.length > 0 && p.ativo && (
+                    <span className={`${g.chip} ${g.chipSo}`} data-avisos={p.id}>Avisos do CRM: {nomeAvisos(p.assuntos_aviso, assuntos)}</span>
+                  )}
                   {p.nivel === 'admin'
                     ? <span className={`${g.chip} ${g.chipSo}`}>Tudo o que a empresa tem</span>
                     : p.permissoes.length
@@ -234,8 +273,14 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links }: 
                 </div>
                 <div className={g.pessoaAcoes}>
                   {podeMexer && p.nivel === 'membro' && p.ativo && (
-                    <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} onClick={() => { setEditando(editando === p.id ? null : p.id); setPermsEdit(p.permissoes); }}>
+                    <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} onClick={() => { setEditando(editando === p.id ? null : p.id); setPermsEdit(p.permissoes); setAvisosDe(null); }}>
                       Permissões
+                    </button>
+                  )}
+                  {(podeMexer || eu) && p.ativo && assuntos.length > 0 && (
+                    <button type="button" className={`${g.botaoSec} ${g.botaoPeq}`} data-editar-avisos={p.id}
+                      onClick={() => { setAvisosDe(avisosDe === p.id ? null : p.id); setAvisosEdit(p.assuntos_aviso); setEditando(null); }}>
+                      Avisos
                     </button>
                   )}
                   {podeMexer && souMaster && p.ativo && (
@@ -256,6 +301,18 @@ export function Equipe({ inicial, empresa, souMaster, meuId, endereco, links }: 
                     </button>
                   )}
                 </div>
+                {avisosDe === p.id && (
+                  <div className={g.editor}>
+                    <EditorAvisos prefixo={`av-${p.id}`} assuntos={assuntos} valor={avisosEdit} onChange={setAvisosEdit} />
+                    <div className={g.linha}>
+                      <button type="button" className={g.botao} disabled={ocupado}
+                        onClick={() => rodar(() => definirAvisosDaPessoa(p.id, avisosEdit), `Avisos do CRM de ${p.nome} salvos.`, () => setAvisosDe(null))}>
+                        Salvar avisos
+                      </button>
+                      <button type="button" className={g.botaoSec} onClick={() => setAvisosDe(null)}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
                 {editando === p.id && (
                   <div className={g.editor}>
                     <Permissoes prefixo={`ed-${p.id}`} modulos={empresa.modulos} valor={permsEdit} onChange={setPermsEdit} />

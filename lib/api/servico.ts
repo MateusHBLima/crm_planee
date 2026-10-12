@@ -1,4 +1,5 @@
 import 'server-only';
+import { CORES, corValida, limparCor } from '@/lib/cores';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { transacao, ErroApi, empresaDoBancoPadrao } from '@/lib/db';
@@ -41,6 +42,11 @@ function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
     else desconhecidos.push(k);
   }
   if (desconhecidos.length) throw new ErroApi(400, `Campos que não existem em ${r.nome}: ${desconhecidos.join(', ')}.`, { campos_validos: Object.keys(r.campos) });
+  // Cor da coluna do assunto (migração 021): só chaves da paleta do painel; vazio apaga.
+  if (r.nome === 'topicos' && 'cor' in saida) {
+    if (!corValida(saida.cor)) throw new ErroApi(400, `Cor inválida. Use uma destas: ${CORES.map((c) => c.id).join(', ')} (ou vazio).`);
+    saida.cor = limparCor(saida.cor);
+  }
   return saida;
 }
 

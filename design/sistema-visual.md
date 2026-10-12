@@ -4,7 +4,7 @@ Aprovado como direção em 24/09/2026. O protótipo em `prototipo/Main.dc.html` 
 
 ## Regra central
 
-**Cor só para estado.** A interface é neutra; a ação primária é preta no tema claro e branca no escuro. Assuntos do quadro de atendimento e etapas do funil comercial **não têm cor**: têm ícone e nome. Assim qualquer projeto configura os seus sem quebrar a leitura, e uma cor sempre significa a mesma coisa.
+**Cor só para estado.** A interface é neutra; a ação primária é preta no tema claro e branca no escuro. Assuntos do quadro de atendimento e etapas do funil comercial **não têm cor**: têm ícone e nome. Assim qualquer projeto configura os seus sem quebrar a leitura, e uma cor sempre significa a mesma coisa. Exceção (decisão 35, 11/10): a coluna do assunto pode ter um **fundo leve** (8% da cor no claro, 13% no escuro) de uma paleta fixa, para separar os assuntos de longe; o cartão continua branco e o estado continua nas cores das etapas.
 
 ## Estados
 

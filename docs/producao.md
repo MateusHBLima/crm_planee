@@ -50,6 +50,14 @@ O pooler do Supabase em modo sessão aceita um número limitado de conexões por
 
 O link curto que abre áudio, foto e documento fica no **banco da empresa** (migração `020_midia_links_empresa.sql`), o mesmo em que o receptor grava as mensagens. O endereço é `/whatsapp/midia/<empresa>/<token>`. Antes ficava só no banco central, mas o receptor da clínica usa o banco da clínica como central: o painel gravava num banco e o receptor procurava em outro ("indisponível"). Banco de empresa sem a 020 continua no jeito antigo.
 
+## Cores, avisos por assunto e Registro (11/10)
+
+Decisão 35. Duas migrações, as duas idempotentes, **antes do merge**:
+1. Banco da empresa (clínica): `021_assunto_cor.sql` (coluna `crm_topicos.cor`), entre `set role painel_app; set search_path = painel;` e `reset role;`.
+2. Banco do painel (central): `022_avisos_por_assunto.sql` (coluna `painel_vinculos.assuntos_aviso`).
+
+Sem elas, o painel continua abrindo: as colunas ficam sem cor, todos recebem aviso de todos os assuntos, e só salvar uma cor ou escolher os avisos dá erro. A tela Registro não precisa de migração (lê as auditorias que já existem).
+
 ## Voltar versão
 
 No Portainer, stack `painel` → variável `VERSAO` com a versão curta anterior (lista em GitHub → Packages → crm_planee) → **Update the stack**. Para voltar ao normal, apague `VERSAO` (volta a `latest`).

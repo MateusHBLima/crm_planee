@@ -121,6 +121,12 @@ const servidor = http.createServer((req, res) => {
   ok('agendamento registrado pela Sara leva a etiqueta Sara', (await p.locator('[data-agendamento]', { hasText: 'Agenda Ficticia Tres' }).locator('[data-origem="sara"]').count()) === 1);
   await p.getByRole('button', { name: 'Próximo dia' }).click(); await p.waitForTimeout(1500);
   ok('próximo dia', ((await p.textContent('main')) || '').includes('Agenda Ficticia Um'));
+  // Calendário em português (11/10): o atalho "Hoje" e um dia escolhido no calendário.
+  await p.click('#dia-agenda'); await p.click('[data-atalho="hoje"]'); await p.waitForTimeout(1500);
+  ok('calendário: atalho Hoje', ((await p.textContent('#dia-agenda')) || '').includes('Hoje') && ((await p.textContent('main')) || '').includes('Agenda Ficticia Dois'));
+  await p.click('#dia-agenda'); await p.click(`[data-dia="${AMANHA}"]`).catch(async () => { await p.click('button[aria-label="Próximo mês"]'); await p.click(`[data-dia="${AMANHA}"]`); });
+  await p.waitForTimeout(1500);
+  ok('calendário: dia escolhido', ((await p.textContent('#dia-agenda')) || '').includes('Amanhã') && ((await p.textContent('main')) || '').includes('Agenda Ficticia Um'));
 
   // Sem o módulo de agendamentos: a leitura recusa
   sql(`update empresas set modulos = array_remove(modulos, 'pagamentos.ver') where id = 'teste'`);

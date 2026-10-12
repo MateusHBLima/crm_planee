@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { bancoDaEmpresa, ErroApi, registrarErro } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso } from './crm';
+import { diasEntre, type Intervalo } from '@/lib/periodo';
 
 // Resultados da empresa (fase 1.3, 09/10). Tudo sai das tabelas do modelo padrão no banco da empresa (decisão 22):
 // espelho do WhatsApp (wa_mensagens), quadro (atendimentos), agendamentos (servicos), funil (oportunidades),
@@ -10,7 +11,7 @@ import { fuso } from './crm';
 // rodam em paralelo. Tabela que a empresa ainda não tem (migração não rodada): o bloco volta vazio, sem erro.
 // Só números agregados: nenhum nome, telefone ou texto de paciente sai daqui.
 
-export type Periodo = '7' | '30' | '90' | 'mes';
+export type Periodo = '7' | '30' | '90' | 'mes' | 'datas';
 const PERIODOS: Periodo[] = ['7', '30', '90', 'mes'];
 
 export type Resultados = {
@@ -49,22 +50,28 @@ async function bloco<T>(nome: string, fn: () => Promise<T>): Promise<T | null> {
 const n = (v: unknown) => Number(v) || 0;
 const nOuNulo = (v: unknown) => (v === null || v === undefined ? null : Math.round(Number(v)));
 
-export async function lerResultados(u: Usuario, periodoPedido?: string | null): Promise<Resultados> {
+// Período: datas escolhidas no filtro (de/até, dias inteiros no fuso do painel) ou os atalhos antigos (?periodo=7|30|90|mes).
+// O fim é exclusivo (meia-noite do dia seguinte ao "até"), sem passar de agora.
+export async function lerResultados(u: Usuario, periodoPedido?: string | null, datas?: Intervalo | null): Promise<Resultados> {
   const banco: Pool = db(u);
-  const periodo: Periodo = PERIODOS.includes(periodoPedido as Periodo) ? (periodoPedido as Periodo) : '30';
+  const periodo: Periodo = datas ? 'datas' : PERIODOS.includes(periodoPedido as Periodo) ? (periodoPedido as Periodo) : '30';
   const f = fuso();
-  // Início do período no fuso do painel: hoje menos N-1 dias à meia-noite, ou o dia 1º do mês.
+  if (datas && diasEntre(datas.de, datas.ate) > 3 * 366) throw new ErroApi(400, 'Escolha um período de até 3 anos.');
   const ini = await banco.query(
-    `select (case when $2 = 'mes' then date_trunc('month', now() at time zone $1)
-                  else date_trunc('day', now() at time zone $1) - make_interval(days => $3::int - 1) end) at time zone $1 as de`,
-    [f, periodo, periodo === 'mes' ? 1 : Number(periodo)]);
+    datas
+      ? `select ($2::date::timestamp at time zone $1) as de, least(now(), (($3::date + 1)::timestamp at time zone $1)) as ate`
+      : `select (case when $2 = 'mes' then date_trunc('month', now() at time zone $1)
+                      else date_trunc('day', now() at time zone $1) - make_interval(days => $3::int - 1) end) at time zone $1 as de, now() as ate`,
+    datas ? [f, datas.de, datas.ate] : [f, periodo, periodo === 'mes' ? 1 : Number(periodo)]);
   const de: Date = ini.rows[0].de;
-  const P = [de, f];
+  // Período todo no futuro: fim = início (zero em tudo, sem erro).
+  const ate: Date = new Date(Math.max(new Date(ini.rows[0].ate).getTime(), de.getTime()));
+  const P = [de, ate, f];
 
   const [conversas, espera, quadro, agenda, funil, automaticas, comprovantes] = await Promise.all([
     bloco('conversas', async () => {
       const r = await banco.query(
-        `with m as (select wa_id, direcao, origem, enviada_em from wa_mensagens where enviada_em >= $1 and tipo <> 'reaction'),
+        `with m as (select wa_id, direcao, origem, enviada_em from wa_mensagens where enviada_em >= $1 and enviada_em < $2 and tipo <> 'reaction'),
               quem as (select distinct wa_id from m where direcao = 'entrada'),
               equipe as (select distinct wa_id from m where direcao = 'saida' and origem in ('celular', 'painel'))
          select (select count(*) from quem) as contatos,
@@ -73,7 +80,7 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
                 (select count(*) from m where direcao = 'saida' and origem in ('celular', 'painel')) as equipe,
                 (select count(*) from quem q where not exists (select 1 from equipe e where e.wa_id = q.wa_id)) as so_sara,
                 (select coalesce(json_agg(x order by x.dia), '[]'::json) from (
-                   select to_char(date_trunc('day', enviada_em at time zone $2), 'YYYY-MM-DD') as dia,
+                   select to_char(date_trunc('day', enviada_em at time zone $3), 'YYYY-MM-DD') as dia,
                           count(distinct wa_id) as contatos, count(*) as recebidas
                      from m where direcao = 'entrada' group by 1) x) as por_dia`, P);
       const x = r.rows[0];
@@ -88,7 +95,7 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
       const r = await banco.query(
         `with m as (
            select numero_id, wa_id, enviada_em, direcao, (direcao = 'saida' and origem in ('celular', 'painel')) as equipe
-             from wa_mensagens where enviada_em >= $1::timestamptz - interval '1 day' and tipo <> 'reaction'),
+             from wa_mensagens where enviada_em >= $1::timestamptz - interval '1 day' and enviada_em < $2 and tipo <> 'reaction'),
          b as (
            select *, count(*) filter (where equipe) over (partition by numero_id, wa_id order by enviada_em rows between unbounded preceding and 1 preceding) as bloco
              from m),
@@ -96,11 +103,11 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
          resp as (
            select extract(epoch from (r.enviada_em - p.desde)) / 60 as min
              from b r join primeira p on p.numero_id = r.numero_id and p.wa_id = r.wa_id and p.bloco = r.bloco
-            where r.equipe and r.enviada_em >= $1::timestamptz and r.enviada_em - p.desde <= interval '24 hours')
+            where r.equipe and r.enviada_em >= $1::timestamptz and r.enviada_em < $2 and r.enviada_em - p.desde <= interval '24 hours')
          select count(*) as total, percentile_cont(0.5) within group (order by min) as mediana,
                 count(*) filter (where min <= 15) as a, count(*) filter (where min > 15 and min <= 60) as b,
                 count(*) filter (where min > 60 and min <= 240) as c, count(*) filter (where min > 240) as d
-           from resp`, [de]);
+           from resp`, [de, ate]);
       const x = r.rows[0];
       return {
         respostas: n(x.total), mediana_min: nOuNulo(x.mediana),
@@ -113,10 +120,10 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
     bloco('quadro', async () => {
       const r = await banco.query(
         `with a as (select * from atendimentos where not arquivado and resumo !~ '^\\s*\\[SOMBRA\\]'),
-              p as (select * from a where aberto_em >= $1)
+              p as (select * from a where aberto_em >= $1 and aberto_em < $2)
          select (select count(*) from p) as abertos,
-                (select count(*) from a where finalizado_em >= $1) as finalizados,
-                (select count(*) from a where assumido_em >= $1) as assumidos,
+                (select count(*) from a where finalizado_em >= $1 and finalizado_em < $2) as finalizados,
+                (select count(*) from a where assumido_em >= $1 and assumido_em < $2) as assumidos,
                 (select percentile_cont(0.5) within group (order by extract(epoch from (assumido_em - aberto_em)) / 60) from p where assumido_em is not null) as med_assumir,
                 (select percentile_cont(0.5) within group (order by extract(epoch from (finalizado_em - aberto_em)) / 60) from p where finalizado_em is not null) as med_finalizar,
                 (select coalesce(json_agg(x order by x.ordem, x.nome), '[]'::json) from (
@@ -124,12 +131,14 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
                           count(*) filter (where a.etapa = 'aguardando') as aguardando,
                           count(*) filter (where a.etapa = 'em_atendimento') as em_atendimento,
                           count(*) filter (where a.etapa = 'pendente') as pendente,
-                          count(*) filter (where a.aberto_em >= $1) as abertos_periodo
+                          count(*) filter (where a.aberto_em >= $1 and a.aberto_em < $2) as abertos_periodo
                      from crm_topicos t left join a on a.topico_id = t.id
                     where not t.arquivado group by t.id, t.nome, t.ordem) x) as agora,
                 (select coalesce(json_agg(x order by x.finalizados desc, x.assumidos desc), '[]'::json) from (
-                   select responsavel as nome, count(*) filter (where assumido_em >= $1) as assumidos, count(*) filter (where finalizado_em >= $1) as finalizados
-                     from a where responsavel is not null and (assumido_em >= $1 or finalizado_em >= $1) group by responsavel) x) as pessoas`, [de]);
+                   select responsavel as nome, count(*) filter (where assumido_em >= $1 and assumido_em < $2) as assumidos,
+                          count(*) filter (where finalizado_em >= $1 and finalizado_em < $2) as finalizados
+                     from a where responsavel is not null and ((assumido_em >= $1 and assumido_em < $2) or (finalizado_em >= $1 and finalizado_em < $2))
+                    group by responsavel) x) as pessoas`, [de, ate]);
       const x = r.rows[0];
       return {
         abertos: n(x.abertos), finalizados: n(x.finalizados), assumidos: n(x.assumidos),
@@ -146,11 +155,12 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
     bloco('agenda', async () => {
       const r = await banco.query(
         `with s as (select * from servicos where not arquivado
-                      and case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $2 else criado_em end >= $1)
+                      and (case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else criado_em end) >= $1
+                      and (case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else criado_em end) < $2)
          select (select count(*) from s) as total,
                 (select count(*) from s where criado_por = 'IA' or criado_por in (select nome from api_chaves)) as ia,
                 (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select situacao, count(*) as qtde from s group by 1) x) as situacao,
-                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo`, [de, f]);
+                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo`, P);
       const x = r.rows[0];
       return {
         total: n(x.total), pelaIa: n(x.ia),
@@ -160,11 +170,11 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
     }),
     bloco('funil', async () => {
       const r = await banco.query(
-        `select count(*) filter (where o.criado_em >= $1) as novas,
-                count(*) filter (where e.tipo = 'ganho' and o.atualizado_em >= $1) as ganhas,
-                count(*) filter (where e.tipo = 'perdido' and o.atualizado_em >= $1) as perdidas,
-                coalesce(sum(o.valor) filter (where e.tipo = 'ganho' and o.atualizado_em >= $1), 0) as valor
-           from oportunidades o join crm_etapas e on e.id = o.etapa_id where not o.arquivado`, [de]);
+        `select count(*) filter (where o.criado_em >= $1 and o.criado_em < $2) as novas,
+                count(*) filter (where e.tipo = 'ganho' and o.atualizado_em >= $1 and o.atualizado_em < $2) as ganhas,
+                count(*) filter (where e.tipo = 'perdido' and o.atualizado_em >= $1 and o.atualizado_em < $2) as perdidas,
+                coalesce(sum(o.valor) filter (where e.tipo = 'ganho' and o.atualizado_em >= $1 and o.atualizado_em < $2), 0) as valor
+           from oportunidades o join crm_etapas e on e.id = o.etapa_id where not o.arquivado`, [de, ate]);
       const x = r.rows[0];
       return { novas: n(x.novas), ganhas: n(x.ganhas), perdidas: n(x.perdidas), valorGanho: n(x.valor) };
     }),
@@ -172,18 +182,18 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null): 
       const r = await banco.query(
         `select tipo, count(*) filter (where situacao = 'enviado') as enviado, count(*) filter (where situacao = 'falhou') as falhou,
                 count(*) filter (where situacao = 'cancelado') as cancelado
-           from envios_automaticos where quando >= $1 group by tipo order by count(*) desc`, [de]);
+           from envios_automaticos where quando >= $1 and quando < $2 group by tipo order by count(*) desc`, [de, ate]);
       return r.rows.map((x) => ({ tipo: String(x.tipo), enviado: n(x.enviado), falhou: n(x.falhou), cancelado: n(x.cancelado) }));
     }),
     bloco('comprovantes', async () => {
       const r = await banco.query(
         `select count(*) as total, count(*) filter (where analise = 'suspeito') as suspeitos, count(*) filter (where conferido_em is not null) as conferidos,
                 coalesce(sum(valor), 0) as valor
-           from pagamentos where not arquivado and criado_em >= $1`, [de]);
+           from pagamentos where not arquivado and criado_em >= $1 and criado_em < $2`, [de, ate]);
       const x = r.rows[0];
       return { total: n(x.total), suspeitos: n(x.suspeitos), conferidos: n(x.conferidos), valor: n(x.valor) };
     }),
   ]);
 
-  return { periodo, de: de.toISOString(), ate: new Date().toISOString(), fuso: f, lidoEm: new Date().toISOString(), conversas, espera, quadro, agenda, funil, automaticas, comprovantes };
+  return { periodo, de: de.toISOString(), ate: ate.toISOString(), fuso: f, lidoEm: new Date().toISOString(), conversas, espera, quadro, agenda, funil, automaticas, comprovantes };
 }

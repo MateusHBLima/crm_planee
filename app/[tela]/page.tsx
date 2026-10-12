@@ -7,9 +7,10 @@ import { Resultados } from '@/components/resultados/Resultados';
 import { Agenda } from '@/components/agenda/Agenda';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
+import { Registro } from '@/components/registro/Registro';
 import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
 import { hostDeCabecalhos } from '@/lib/empresa';
-import { lerConfigCrm } from '@/lib/painel/crm';
+import { assuntosParaAvisos, lerConfigCrm } from '@/lib/painel/crm';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
@@ -81,12 +82,23 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     );
   }
 
+  // Registro (11/10): só admin e Planee (a tela confere de novo na leitura). Os dados chegam pela leitura GET.
+  if (atual.id === 'registro' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Registro key={usuario.empresa.id} empresaNome={usuario.empresa.nome} />
+      </Shell>
+    );
+  }
+
   if (atual.id === 'equipe' && usuario.empresa) {
-    const [pessoas, links] = await Promise.all([listarEquipe(usuario), listarLinksConvite(usuario).catch(() => [])]);
+    // Assuntos do quadro, para escolher de quais cada pessoa recebe aviso. Empresa sem banco: lista vazia.
+    const [pessoas, links, assuntos] = await Promise.all([listarEquipe(usuario), listarLinksConvite(usuario).catch(() => []),
+      assuntosParaAvisos(usuario).catch(() => [])]);
     const endereco = hostDeCabecalhos(await headers()) ?? 'o endereço do painel';
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <Equipe key={usuario.empresa.id} inicial={pessoas} souMaster={usuario.nivel === 'master'} meuId={usuario.id} endereco={endereco} links={links}
+        <Equipe key={usuario.empresa.id} inicial={pessoas} souMaster={usuario.nivel === 'master'} meuId={usuario.id} endereco={endereco} links={links} assuntos={assuntos}
           empresa={{ id: usuario.empresa.id, nome: usuario.empresa.nome, modulos: usuario.empresa.modulos }} />
       </Shell>
     );

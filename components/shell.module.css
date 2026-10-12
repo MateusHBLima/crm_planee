@@ -35,6 +35,10 @@
 .sair:hover { background: var(--hover); color: var(--ink); }
 .sair:focus-visible, .itemNav:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .conteudoLargo { min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
+/* Telas largas (CRM, Inbox, Configurações) cabem na janela: quem rola é o quadro, não a página. Antes a página
+   crescia com o quadro e a barra de rolagem lateral do quadro ficava lá embaixo, fora da tela: no notebook as
+   colunas da direita pareciam cortadas (11/10). */
+@media (min-width: 761px) { .conteudoLargo { height: 100vh; height: 100dvh; min-height: 0; overflow: auto; } }
 @media (max-width: 760px) { .usuario { flex-grow: 1; } .conteudoLargo { min-height: 0; } }
 @media (max-width: 760px) { .rodape { flex-wrap: wrap; gap: 8px; } .usuario { flex-basis: 100%; } .app { grid-template-columns: minmax(0, 1fr); } }
 .faixaEmpresa { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 18px; padding: 9px 14px; border-radius: 10px; background: var(--sel); border: 1px solid var(--line-strong); font-size: 13px; color: var(--ink-2); }

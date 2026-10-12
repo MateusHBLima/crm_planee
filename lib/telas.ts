@@ -37,6 +37,9 @@ export const ICONES: Record<string, string> = {
   sair: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
   sol: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
   lua: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+  registro: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  passar: 'M4 12h14M13 7l5 5-5 5',
+  sino: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
 };
 
 // Telas do painel (decisão 26). Cada uma aparece para quem tem a permissão dela na empresa escolhida;
@@ -48,6 +51,7 @@ const TELAS: Tela[] = [
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },
   { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', exige: (u) => pode(u, 'crm.config') || pode(u, 'agente.config') },
   { id: 'planee', nome: 'Planee', icone: 'conversa', descricao: 'Avisos para a Planee, respostas, novidades e manutenções.', exige: (u) => Boolean(u.empresa) && u.nivel !== 'master' },
+  { id: 'registro', nome: 'Registro', icone: 'registro', descricao: 'Tudo o que cada pessoa fez no painel: respostas, repasses, assumir, mover, notas e mudanças na equipe. Só o admin vê.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
   { id: 'equipe', nome: 'Equipe', icone: 'pessoa', descricao: 'Pessoas da empresa, níveis e permissões.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
   { id: 'empresas', nome: 'Empresas', icone: 'clientes', descricao: 'Empresas, domínios, módulos liberados e admins.', exige: (u) => u.nivel === 'master' },
   { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Avisos de todos os clientes, saúde, novidades e integrações.', exige: (u) => u.nivel === 'master' },

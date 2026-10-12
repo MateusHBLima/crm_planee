@@ -8,6 +8,8 @@ import type * as av from './avisos';
 import type * as pl from './planee';
 import type * as rs from './resultados';
 import type * as ag from './agenda';
+import type * as rg from './registro';
+import type { Intervalo } from '@/lib/periodo';
 
 type R<F extends (...a: never[]) => Promise<unknown>> = Promise<Resposta<Awaited<ReturnType<F>>>>;
 
@@ -26,7 +28,10 @@ async function ler<T>(recurso: string, params: Record<string, string | null | un
   }
 }
 
-export const carregarQuadro = (): R<typeof crm.lerQuadro> => ler('quadro');
+export const carregarQuadro = (periodo?: Intervalo | null): R<typeof crm.lerQuadro> => ler('quadro', { de: periodo?.de, ate: periodo?.ate });
+export const carregarPessoasDoCrm = (): R<typeof crm.pessoasDoCrm> => ler('equipe_crm');
+export const carregarRegistro = (f: { de: string; ate: string; pessoa?: string; area?: string; sistema?: boolean; antes?: string | null }): R<typeof rg.lerRegistro> =>
+  ler('registro', { de: f.de, ate: f.ate, pessoa: f.pessoa, area: f.area, sistema: f.sistema ? '1' : null, antes: f.antes });
 export const carregarDetalhe = (id: string): R<typeof crm.lerDetalhe> => ler('detalhe', { id });
 export const carregarComercial = (): R<typeof crm.lerComercial> => ler('comercial');
 export const carregarContatos = (): R<typeof crm.lerContatos> => ler('contatos');
@@ -47,5 +52,5 @@ export const carregarSaude = (): R<typeof pl.saudeClientes> => ler('saude');
 export const carregarSaudeEmpresa = (id: string): R<typeof pl.saudeEmpresa> => ler('saude_empresa', { id });
 export const carregarNovidades = (): R<typeof pl.listarNovidades> => ler('novidades');
 export const carregarIntegracoes = (): R<typeof pl.listarIntegracoes> => ler('integracoes');
-export const carregarResultados = (periodo: string): R<typeof rs.lerResultados> => ler('resultados', { periodo });
+export const carregarResultados = (periodo: Intervalo): R<typeof rs.lerResultados> => ler('resultados', { de: periodo.de, ate: periodo.ate });
 export const carregarAgenda = (dia: string): R<typeof ag.lerAgenda> => ler('agenda', { dia });

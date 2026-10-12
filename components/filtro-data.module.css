@@ -1,0 +1,71 @@
+/* Filtro de data (components/FiltroData.tsx): botão com o período e painel com atalhos e calendário. */
+.caixa { position: relative; display: inline-flex; }
+.botao {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 9px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 500;
+  max-width: 100%; white-space: nowrap;
+}
+.botao:hover { background: var(--hover); }
+.botao[data-ativo='sim'] { border-color: var(--ink); }
+.botao[aria-expanded='true'] { border-color: var(--focus); box-shadow: 0 0 0 3px var(--eq-bg); }
+.texto { overflow: hidden; text-overflow: ellipsis; }
+
+.painel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-2); padding: 10px;
+  animation: abrir 120ms ease-out;
+}
+@keyframes abrir { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.conteudo { display: flex; gap: 10px; }
+.atalhos { list-style: none; margin: 0; padding: 0 10px 0 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.atalho {
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; border: 0; background: transparent; color: var(--ink-2);
+  font-size: 13px; white-space: nowrap;
+}
+.atalho:hover { background: var(--hover); color: var(--ink); }
+.atalho[aria-pressed='true'] { background: var(--sel); color: var(--ink); font-weight: 600; }
+
+.calendario { width: 266px; display: flex; flex-direction: column; gap: 8px; }
+.modos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-3); }
+.modo { height: 28px; border: 0; border-radius: 8px; background: transparent; font-size: 12.5px; color: var(--ink-2); }
+.modo[aria-selected='true'] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-1); }
+
+.navega { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 0; }
+.mesAno { font-size: 13.5px; font-weight: 600; }
+.mesAno::first-letter { text-transform: uppercase; }
+.seta { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; font-size: 18px; line-height: 1; color: var(--ink-2); }
+.seta:hover { background: var(--hover); color: var(--ink); }
+
+.grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px 0; }
+.semana { text-align: center; font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 4px 0; }
+.dia {
+  height: 34px; border: 0; background: transparent; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums;
+  border-radius: 9px; position: relative;
+}
+.dia:hover { background: var(--hover); }
+.dia[data-hoje='sim'] { font-weight: 700; }
+.dia[data-hoje='sim']::after { content: ''; position: absolute; left: 50%; bottom: 4px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--focus); }
+.dia[data-dentro='sim'] { background: var(--eq-bg); border-radius: 0; }
+.dia[data-ponta='sim'] { background: var(--ink); color: var(--inv); font-weight: 600; }
+.dia[data-ponta='sim']::after { background: var(--inv); }
+
+.meses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.mes {
+  height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; text-transform: capitalize;
+  color: var(--ink);
+}
+.mes:hover { background: var(--hover); }
+.mes[data-hoje='sim'] { border-color: var(--line-strong); font-weight: 700; }
+.mes[aria-pressed='true'] { background: var(--ink); color: var(--inv); border-color: var(--ink); }
+.dica { margin: 0; font-size: 12px; color: var(--ink-3); }
+
+/* Celular: o painel vira uma folha presa embaixo da tela, com os atalhos em linha. */
+@media (max-width: 640px) {
+  .caixa { position: static; }
+  .painel { position: fixed; left: 8px; right: 8px; bottom: 8px; top: auto; max-height: 80vh; overflow: auto; }
+  .conteudo { flex-direction: column; }
+  .atalhos { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; min-width: 0; }
+  .atalho { width: auto; border: 1px solid var(--line); }
+  .calendario { width: 100%; }
+}

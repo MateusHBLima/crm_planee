@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ConfigCrm as TConfig, Etapa } from '@/lib/painel/crm';
 import { arquivarDaConfig, salvarAssunto, salvarEtapaDoFunil, salvarNomesDasEtapas, salvarPrazosDoAtendimento, type Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
+import { CORES } from '@/lib/cores';
 import { Campo, useEnvio } from './Formularios';
 import c from './crm.module.css';
 
@@ -32,7 +33,7 @@ export function ConfigCrm({ inicial }: { inicial: TConfig }) {
 
         <section className={c.blocoConfig} aria-labelledby="cfg-assuntos">
           <h2 id="cfg-assuntos">Assuntos do atendimento</h2>
-          <p>Cada assunto é uma coluna do quadro. As palavras ajudam a IA a escolher o assunto certo.</p>
+          <p>Cada assunto é uma coluna do quadro. A cor pinta o fundo da coluna, para achar o assunto de longe. As palavras ajudam a IA a escolher o assunto certo.</p>
           {cfg.topicos.map((t) => (
             <LinhaAssunto key={t.id} item={t} onPronto={pronto} />
           ))}
@@ -129,19 +130,33 @@ function BotaoArquivar({ recurso, id, onPronto }: { recurso: 'topicos' | 'etapas
 }
 
 function LinhaAssunto({ item, onPronto }: { item: TConfig['topicos'][number] | null; onPronto: Pronto }) {
-  const [f, setF] = useState({ nome: item?.nome ?? '', icone: item?.icone ?? 'outros', ordem: String(item?.ordem ?? ''), palavras: item?.palavras ?? '' });
+  const [f, setF] = useState({ nome: item?.nome ?? '', icone: item?.icone ?? 'outros', ordem: String(item?.ordem ?? ''), palavras: item?.palavras ?? '', cor: item?.cor ?? '' });
   const { erro, enviando, enviar } = useEnvio<TConfig>();
   const p = item ? `as-${item.id}` : 'as-novo';
   const mudar = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  const salvar = () => enviar(() => salvarAssunto(item?.id ?? null, f) as Promise<Resposta<TConfig>>, onPronto(item ? 'Assunto salvo.' : 'Assunto criado.'));
+  // A cor só vai quando muda (assim o resto salva mesmo antes da migração 021 no banco).
+  const salvar = () => enviar(() => {
+    const { cor, ...resto } = f;
+    return salvarAssunto(item?.id ?? null, cor !== (item?.cor ?? '') ? { ...resto, cor } : resto) as Promise<Resposta<TConfig>>;
+  }, onPronto(item ? 'Assunto salvo.' : 'Assunto criado.'));
+  const amostra = CORES.find((x) => x.id === f.cor)?.amostra;
   return (
-    <form className={c.linhaConfig} onSubmit={(e) => { e.preventDefault(); salvar(); }} aria-label={item ? `Assunto ${item.nome}` : 'Novo assunto'}>
+    <form className={`${c.linhaConfig} ${c.linhaAssunto}`} onSubmit={(e) => { e.preventDefault(); salvar(); }} aria-label={item ? `Assunto ${item.nome}` : 'Novo assunto'}>
       <Campo id={`${p}-ordem`} rotulo="Ordem"><input id={`${p}-ordem`} inputMode="numeric" value={f.ordem} onChange={mudar('ordem')} /></Campo>
       <Campo id={`${p}-nome`} rotulo={item ? 'Nome' : 'Novo assunto'}><input id={`${p}-nome`} value={f.nome} onChange={mudar('nome')} maxLength={60} required /></Campo>
       <Campo id={`${p}-icone`} rotulo="Ícone">
         <select id={`${p}-icone`} value={f.icone} onChange={mudar('icone')}>
           {ICONES_ASSUNTO.map((i) => <option key={i} value={i}>{i}</option>)}
         </select>
+      </Campo>
+      <Campo id={`${p}-cor`} rotulo="Cor da coluna">
+        <span className={c.corCampo}>
+          <span className={c.corAmostra} style={amostra ? { background: amostra } : undefined} data-sem-cor={amostra ? undefined : 'sim'} aria-hidden="true" />
+          <select id={`${p}-cor`} value={f.cor} onChange={mudar('cor')}>
+            <option value="">Sem cor</option>
+            {CORES.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+          </select>
+        </span>
       </Campo>
       <Campo id={`${p}-palavras`} rotulo="Palavras para a IA"><input id={`${p}-palavras`} value={f.palavras} onChange={mudar('palavras')} maxLength={1000} placeholder="receita, renovar, remédio" /></Campo>
       <span className={c.acoes}>

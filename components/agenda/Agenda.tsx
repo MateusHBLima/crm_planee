@@ -7,6 +7,8 @@ import { sincronizarAgendaAgora } from '@/lib/painel/acoes-planee';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import { Esqueleto } from '@/components/Esqueleto';
 import { telefoneBonito } from '@/components/crm/util';
+import { FiltroData } from '@/components/FiltroData';
+import { hojeNoFuso } from '@/lib/periodo';
 import c from './agenda.module.css';
 
 // Tela Agenda (09/10): os agendamentos do dia por profissional, do espelho da Feegow e da Sara. Atualiza a cada
@@ -91,9 +93,9 @@ export function Agenda({ empresaId, master }: { empresaId: string; master: boole
         </div>
         <div className={c.navDia}>
           <button type="button" className={c.botaoSec} onClick={() => setDia(somaDias(dados.dia, -1))} aria-label="Dia anterior">←</button>
-          <input type="date" className={c.data} value={dados.dia} onChange={(ev) => ev.target.value && setDia(ev.target.value)} aria-label="Dia" />
+          <FiltroData id="dia-agenda" valor={{ de: dados.dia, ate: dados.dia }} onMudar={(v) => { if (v) setDia(v.de); }} hoje={hojeNoFuso(dados.fuso)}
+            atalhos={['ontem', 'hoje', 'amanha']} modos={['dia']} rotulo="Dia da agenda" />
           <button type="button" className={c.botaoSec} onClick={() => setDia(somaDias(dados.dia, 1))} aria-label="Próximo dia">→</button>
-          <button type="button" className={c.botaoSec} onClick={() => setDia(null)}>Hoje</button>
           <select className={c.filtro} value={prof} onChange={(ev) => setProf(ev.target.value)} aria-label="Profissional">
             <option value="">Todos os profissionais</option>
             {profissionais.map((p) => <option key={p} value={p}>{p}</option>)}

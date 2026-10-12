@@ -4,6 +4,8 @@ import { ErroApi } from '@/lib/db';
 import { comUsuario } from './resposta';
 import * as crm from './crm';
 import * as sv from './servicos';
+import { definirAssuntosAviso } from './gestao';
+import { esquecerSessoes } from '@/lib/sessao';
 
 // Ações chamadas pelas telas. Cada uma confere a sessão de novo (nunca confia no navegador)
 // e devolve o quadro atualizado, para a tela não precisar de outra ida ao servidor.
@@ -28,6 +30,16 @@ export async function moverAtendimento(id: string, etapa: crm.Etapa, de?: crm.Et
 
 export async function mudarAssunto(id: string, topico: string) {
   return comUsuario(async (u) => { await crm.mudarAssunto(u, id, topico); return crm.lerQuadro(u); });
+}
+
+// "Passar para…" (11/10): outro assunto e, se escolhida, outra pessoa. Devolve o quadro atualizado.
+export async function passarAtendimento(id: string, dados: { topico: string; pessoa?: string | null; recado?: string }) {
+  return comUsuario(async (u) => { const feito = await crm.passar(u, id, dados); return { ...feito, quadro: await crm.lerQuadro(u) }; });
+}
+
+// De quais assuntos a própria pessoa recebe aviso no CRM (null = todos). A sessão em memória é refeita.
+export async function salvarMeusAvisos(assuntos: string[] | null) {
+  return comUsuario(async (u) => { try { return await definirAssuntosAviso(u, u.id, assuntos); } finally { esquecerSessoes(); } });
 }
 
 export async function anotarAtendimento(id: string, texto: string) {
@@ -86,7 +98,7 @@ export async function carregarConfigCrm() {
   return comUsuario((u) => crm.lerConfigCrm(u));
 }
 
-export async function salvarAssunto(id: string | null, dados: { nome: string; icone: string; ordem: string; palavras: string }) {
+export async function salvarAssunto(id: string | null, dados: { nome: string; icone: string; ordem: string; palavras: string; cor?: string }) {
   return comUsuario(async (u) => { await crm.salvarTopico(u, id, dados); return crm.lerConfigCrm(u); });
 }
 

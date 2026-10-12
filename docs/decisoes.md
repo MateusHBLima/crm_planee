@@ -21,7 +21,7 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 8. **O painel é a tela da secretária; o ClickUp sai do plano de atendimento.** O painel usa as tabelas que já existem no schema `teste` (`conversa_estado`, `crm_eventos`, `crm_fatos`, `pacientes`, `pacientes_telefone`) e o robô do CRM. Esses nomes substituem os propostos na especificação onde coincidem.
 9. **O CRM é configurável por projeto.** Tabelas por cliente: `crm_etapas` (ordem, nome, tipo aberta/ganho/perdido, gatilho), `crm_topicos` (ordem, nome, ícone, palavras), `crm_config` (nomes das 4 etapas de atendimento, campos do cartão, modelo). Modelos de partida: Clínica, Assistência técnica, Contabilidade. O robô do CRM e o `notificar_equipe` leem gatilhos e palavras dessas tabelas.
 10. **Protótipo definitivo primeiro, código depois.** Next.js sobre Supabase, schema `teste`.
-11. **Sistema visual:** cor só para estado, assuntos e etapas sem cor. Detalhe em `design/sistema-visual.md`.
+11. **Sistema visual:** cor só para estado, assuntos e etapas sem cor. Detalhe em `design/sistema-visual.md`. *Atualizada pela 35 em 11/10: a coluna do assunto pode ter um fundo leve.*
 
 ## 24/09/2026 — cadastro da SSA
 
@@ -132,6 +132,14 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Quem já tem senha no painel** (outra empresa) usa a mesma senha; e-mail da Planee (master) e pessoa desativada não entram; quem já está na equipe é mandado para o login, sem gastar o link.
     - **O link é do domínio da empresa** quando ela tem um; aberto no domínio de outra empresa, é recusado.
     - O cadastro pelo e-mail com código de primeiro acesso continua valendo.
+
+35. **Equipe no CRM: assuntos por pessoa, "Passar para…", avisos por assunto, Registro, cores e filtro de data (11/10).** Pedido do Mateus.
+    - **Assuntos "Dra. Ariane" e "Dr. Amilton"** criados pela API, separados dos da Amanda.
+    - **"Passar para…"** no cartão e no detalhe: escolhe o assunto e, se quiser, a pessoa (só quem atende no CRM da empresa) e um recado. O cartão volta para "aguardando", a pessoa escolhida fica como responsável e o recado vira nota. Fica na auditoria quem passou, de onde e para onde.
+    - **Avisos por assunto:** cada pessoa recebe aviso só dos assuntos dela (`painel_vinculos.assuntos_aviso`, migração 022; vazio = todos). Ela escolhe no CRM ("Avisar: …") e o admin escolhe na Equipe. Cartão passado para a pessoa avisa sempre; cartão sem assunto avisa todo mundo.
+    - **Registro** (tela nova, só admin e Planee): tudo o que cada login fez no painel — respostas e conversas da Inbox, assumir, mover, passar, notas, assunto, arquivar, contatos, funil, configuração e equipe. Só leitura das duas auditorias (`painel_auditoria` no banco da empresa e `central_auditoria` no central). A Sara e as integrações aparecem só se pedido.
+    - **Cor de fundo da coluna** (`crm_topicos.cor`, migração 021): uma chave da paleta (cinza, azul, ciano, verde, amarelo, laranja, vermelho, rosa, roxo), escolhida em Configurações ou pela API. Muda a decisão 11 só para a coluna: o estado do cartão continua com as cores das etapas.
+    - **Filtro de data em português** no CRM, Registro, Resultados e Agenda: atalhos (Hoje, Ontem, Últimos 7 e 30 dias, Este mês, Mês passado, Este ano) e calendário para dia, mês, ano ou intervalo "de… até…", semana começando no domingo. No CRM, com um período escolhido, o quadro mostra os atendimentos abertos nele, em todas as etapas.
 
 ## Em aberto
 

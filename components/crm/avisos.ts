@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Quadro } from '@/lib/painel/crm';
 
 // Avisos de atendimento novo em "aguardando": som curto, notificação do navegador (com a aba escondida)
-// e contagem no título da aba. A escolha fica só neste navegador (localStorage, com try/catch).
+// e contagem no título da aba. Ligar ou desligar fica só neste navegador (localStorage, com try/catch).
+// Por assunto (11/10): cada pessoa só é avisada dos assuntos dela (quadro.eu.assuntos; null = todos) e de cartão
+// passado para ela ("Passar para…" com o nome dela como responsável), qualquer que seja o assunto. Cartão sem
+// assunto avisa todo mundo (melhor avisar a mais do que ninguém ver).
 
 const CHAVE = 'pp_avisos_crm';
 
@@ -50,10 +53,22 @@ export function useAvisos(quadro: Quadro) {
   }, []);
 
   // Compara com os cartões já vistos. A primeira leitura só registra (não avisa o que já estava lá).
+  // A chave inclui assunto e responsável: cartão passado para outro assunto ou pessoa conta como novo para quem recebe.
   useEffect(() => {
-    const aguardando = quadro.cartoes.filter((k) => k.etapa === 'aguardando' && !k.sombra).map((k) => k.id);
+    if (quadro.periodo) return; // olhando um período antigo no filtro de data: nada de aviso
+    const meu = (k: Quadro['cartoes'][number]) => {
+      const eu = quadro.eu;
+      if (!eu) return true;
+      if (k.responsavel && k.responsavel === eu.nome) return true;
+      return !eu.assuntos || !k.topico_id || eu.assuntos.includes(k.topico_id);
+    };
+    const chave = (k: Quadro['cartoes'][number]) => `${k.id}|${k.topico_id ?? ''}|${k.responsavel ?? ''}`;
+    // Todos entram em "vistos" (mudar os assuntos da pessoa não faz os cartões antigos tocarem); só os dela avisam.
+    const lista = quadro.cartoes.filter((k) => k.etapa === 'aguardando' && !k.sombra);
+    const aguardando = lista.map(chave);
     if (!vistos.current) { vistos.current = new Set(aguardando); return; }
-    const novos = aguardando.filter((id) => !vistos.current!.has(id));
+    const novosK = lista.filter((k) => !vistos.current!.has(chave(k)) && meu(k));
+    const novos = novosK.map((k) => k.id);
     for (const id of aguardando) vistos.current.add(id);
     if (!novos.length || !ligado) return;
     tocar(audio.current);
@@ -62,8 +77,9 @@ export function useAvisos(quadro: Quadro) {
       document.title = `(${novosEscondido.current}) ${tituloBase.current}`;
       try {
         if ('Notification' in window && Notification.permission === 'granted') {
-          const k = quadro.cartoes.find((x) => x.id === novos[0]);
-          new Notification(novos.length === 1 ? 'Atendimento novo aguardando' : `${novos.length} atendimentos novos aguardando`, {
+          const k = novosK[0];
+          const paraMim = novosK.length === 1 && k.responsavel === quadro.eu?.nome;
+          new Notification(paraMim ? 'Atendimento passado para você' : novos.length === 1 ? 'Atendimento novo aguardando' : `${novos.length} atendimentos novos aguardando`, {
             body: k ? `${k.nome || 'Contato sem nome'}: ${k.resumo.slice(0, 120)}` : undefined, tag: 'painel-crm',
           });
         }

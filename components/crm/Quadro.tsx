@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import type { Cartao, Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import type { Origem } from './Crm';
@@ -24,14 +25,14 @@ export function ordenar(a: Cartao, b: Cartao) {
     || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onAssumir, onMover }: {
+export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onAssumir, onMover, onPassar }: {
   quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
-  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
+  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort(ordenar);
   const ids = new Set(quadro.topicos.map((t) => t.id));
-  const colunas = [...quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, icone: t.icone }))];
-  if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros' });
+  const colunas: { id: string; nome: string; icone: string; cor: string | null }[] = quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, icone: t.icone, cor: t.cor ?? null }));
+  if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros', cor: null });
 
   if (!quadro.topicos.length) {
     return (
@@ -43,30 +44,55 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, p
   }
 
   return (
-    <div className={c.quadro}>
+    <RolagemQuadro chave={colunas.length}>
       {colunas.map((col) => {
         const cs = vis.filter((k) => (col.id === '__sem' ? !k.topico_id || !ids.has(k.topico_id) : k.topico_id === col.id));
         return (
-          <section key={col.id} className={cs.length ? c.coluna : c.colunaVazia} aria-label={col.nome}>
+          <section key={col.id} className={cs.length ? c.coluna : c.colunaVazia} aria-label={col.nome} data-cor={col.cor ?? undefined}>
             <div className={c.colTopo}>
               <span className={c.colIcone}><Icone nome={col.icone} tamanho={16} /></span>
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} onPassar={onPassar} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : 'Nada aberto'}</div>}
           </section>
         );
       })}
+    </RolagemQuadro>
+  );
+}
+
+// Setas para as colunas que não cabem na tela (11/10): no notebook nem todo mundo rola de lado com o mouse.
+// Aparecem só quando há colunas escondidas daquele lado; cada clique anda mais ou menos uma coluna.
+function RolagemQuadro({ chave, children }: { chave: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lados, setLados] = useState({ esq: false, dir: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => setLados({ esq: el.scrollLeft > 4, dir: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+    medir();
+    el.addEventListener('scroll', medir, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+    ro?.observe(el);
+    return () => { el.removeEventListener('scroll', medir); ro?.disconnect(); };
+  }, [chave]);
+  const andar = (lado: 1 | -1) => ref.current?.scrollBy({ left: lado * Math.max(280, ref.current.clientWidth * 0.6), behavior: 'smooth' });
+  return (
+    <div className={c.quadroCaixa}>
+      <div className={c.quadro} ref={ref} data-quadro>{children}</div>
+      {lados.esq && <button type="button" className={c.rolarQuadro} data-lado="esq" aria-label="Ver colunas à esquerda" onClick={() => andar(-1)}>‹</button>}
+      {lados.dir && <button type="button" className={c.rolarQuadro} data-lado="dir" aria-label="Ver mais colunas à direita" onClick={() => andar(1)}>›</button>}
     </div>
   );
 }
 
 const TEXTO_ATRASO: Record<Exclude<Atraso, 'ok'>, string> = { amarelo: 'Atenção', vermelho: 'Atrasado' };
 
-function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onAssumir, onMover }: {
+function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onAssumir, onMover, onPassar }: {
   k: Cartao; quadro: TQuadro; fmt: Fmt; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
-  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
+  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const fim = k.etapa === 'finalizado';
   return (
@@ -98,7 +124,7 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onA
         {k.notas > 0 && <span className={c.chipNeutro}><Icone nome="nota" tamanho={12} /> {k.notas} {k.notas === 1 ? 'nota' : 'notas'}</span>}
         {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
       </div>
-      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />}
+      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} onPassar={onPassar} />}
     </article>
   );
 }
@@ -113,8 +139,8 @@ export function Relativo({ de }: { de: string | null | undefined }) {
   return <span suppressHydrationWarning>{ha(de)}</span>;
 }
 
-export function Acoes({ k, quadro, ocupado, onAssumir, onMover }: {
-  k: Cartao; quadro: TQuadro; ocupado: boolean; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
+export function Acoes({ k, quadro, ocupado, onAssumir, onMover, onPassar }: {
+  k: Cartao; quadro: TQuadro; ocupado: boolean; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   if (k.sombra) return null; // cartão sombra: só conferir e arquivar (o servidor também recusa)
   const b = (rotulo: string, fn: () => void, forte: boolean) => (
@@ -126,6 +152,11 @@ export function Acoes({ k, quadro, ocupado, onAssumir, onMover }: {
       {k.etapa === 'em_atendimento' && [b(quadro.etapas.pendente, () => onMover(k.id, 'pendente'), false), b('Finalizar', () => onMover(k.id, 'finalizado'), true)]}
       {k.etapa === 'pendente' && [b('Retomar', () => onMover(k.id, 'em_atendimento'), false), b('Finalizar', () => onMover(k.id, 'finalizado'), true)]}
       {k.etapa === 'finalizado' && b('Reabrir', () => onMover(k.id, 'aguardando'), false)}
+      {onPassar && k.etapa === 'aguardando' && (
+        <button type="button" className={c.acaoSec} disabled={ocupado} onClick={() => onPassar(k.id)} data-passar title="Passar para outro assunto ou outra pessoa">
+          <Icone nome="passar" tamanho={13} /> Passar
+        </button>
+      )}
     </div>
   );
 }

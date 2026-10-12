@@ -8,6 +8,8 @@ import * as av from './avisos';
 import * as pl from './planee';
 import * as rs from './resultados';
 import * as ag from './agenda';
+import * as rg from './registro';
+import { lerIntervalo } from '@/lib/periodo';
 
 // Leituras das telas, servidas por GET /api/painel/ler/<recurso> (rota em app/api/painel/ler).
 // Por que rota e não "ação do servidor": o Next.js roda as ações uma por vez em cada navegador. Com as
@@ -22,7 +24,12 @@ const exigir = (q: URLSearchParams, k: string) => {
 };
 
 export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promise<unknown>> = {
-  quadro: (u) => crm.lerQuadro(u),
+  // Quadro de agora, ou os cartões abertos num período (?de=YYYY-MM-DD&ate=YYYY-MM-DD, filtro de data, 11/10).
+  quadro: (u, q) => crm.lerQuadro(u, lerIntervalo(q.get('de'), q.get('ate'))),
+  // Pessoas que atendem no CRM (para "Passar para…"): só nome e assuntos.
+  equipe_crm: (u) => crm.pessoasDoCrm(u),
+  // Registro (11/10): o que cada pessoa fez no painel. Só admin e Planee. ?de&ate&pessoa&area&sistema&antes
+  registro: (u, q) => rg.lerRegistro(u, q),
   detalhe: (u, q) => crm.lerDetalhe(u, exigir(q, 'id')),
   comercial: (u) => crm.lerComercial(u),
   contatos: (u) => crm.lerContatos(u),
@@ -47,7 +54,8 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   novidades: (u) => pl.listarNovidades(u),
   integracoes: (u) => pl.listarIntegracoes(u),
   // Resultados da empresa (fase 1.3, 09/10): ?periodo=7|30|90|mes
-  resultados: (u, q) => rs.lerResultados(u, q.get('periodo')),
+  // ou ?de=YYYY-MM-DD&ate=YYYY-MM-DD (filtro de data, 11/10)
+  resultados: (u, q) => rs.lerResultados(u, q.get('periodo'), lerIntervalo(q.get('de'), q.get('ate'))),
   // Agenda do dia (09/10): ?dia=YYYY-MM-DD
   agenda: (u, q) => ag.lerAgenda(u, q.get('dia')),
 };
