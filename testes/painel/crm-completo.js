@@ -129,15 +129,24 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.locator('form[aria-label="Assunto Receita"] button:has-text("Arquivar")').click(); await p.waitForTimeout(1200);
   ok('assunto com atendimento aberto não arquiva', ((await p.locator('form[aria-label="Assunto Receita"] [role=alert]').first().textContent()) || '').includes('atendimento(s) aberto(s)')
     && sql("select arquivado from crm_topicos where id='receita'") === 'f');
-  await p.fill('#et-nova-nome', 'Retorno agendado'); await p.fill('#et-nova-ordem', '7'); await p.fill('#et-nova-gatilho', 'IA marca retorno');
-  await p.click('form[aria-label="Nova etapa"] button:has-text("Criar")'); await p.waitForTimeout(1200);
-  ok('criar etapa do funil', sql("select tipo || '|' || gatilho from crm_etapas where id='retorno_agendado'") === 'aberta|IA marca retorno');
+  ok('admin da clínica não vê o funil comercial (só a Planee configura)', (await p.locator('#cfg-funil').count()) === 0 && (await p.locator('#et-nova-nome').count()) === 0);
   await p.screenshot({ path: out + '13_configuracoes.png', fullPage: true });
   await p.goto(B + '/crm'); await p.waitForTimeout(800);
   ok('assunto novo vira coluna e nome novo da etapa aparece', (await p.locator('section[aria-label="Laudos"]').count()) === 1 && (await p.locator('text=Na fila').count()) >= 1);
   await p.click('role=tab[name="Comercial"]'); await p.waitForTimeout(1200);
   await p.locator('article', { hasText: 'Primeira consulta' }).click(); await p.click('text=Arquivar oportunidade'); await p.click('aside button:has-text("Arquivar"):not(:has-text("oportunidade"))'); await p.waitForTimeout(1500);
   ok('admin arquiva oportunidade', sql("select arquivado from oportunidades where interesse='Primeira consulta'") === 't');
+  await ctx.close();
+
+  // ---------- Planee (master): etapas do funil comercial ----------
+  ({ ctx, p } = await nova());
+  await entrar(p, 'planee@teste.local');
+  if (await p.locator('#trocar-empresa').count()) { await Promise.all([p.waitForURL(/\/(crm|inbox)$/), p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
+  await p.goto(B + '/configuracoes'); await p.waitForTimeout(1000);
+  ok('Planee vê o funil comercial em Configurações', (await p.locator('#cfg-funil').count()) === 1);
+  await p.fill('#et-nova-nome', 'Retorno agendado'); await p.fill('#et-nova-ordem', '7'); await p.fill('#et-nova-gatilho', 'IA marca retorno');
+  await p.click('form[aria-label="Nova etapa"] button:has-text("Criar")'); await p.waitForTimeout(1200);
+  ok('Planee cria etapa do funil', sql("select tipo || '|' || gatilho from crm_etapas where id='retorno_agendado'") === 'aberta|IA marca retorno');
   await ctx.close();
 
   // ---------- API e MCP: ferramentas da IA ----------

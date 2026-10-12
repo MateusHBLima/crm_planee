@@ -102,13 +102,20 @@ export async function salvarAssunto(id: string | null, dados: { nome: string; ic
   return comUsuario(async (u) => { await crm.salvarTopico(u, id, dados); return crm.lerConfigCrm(u); });
 }
 
+// O funil comercial é onde a IA move os cartões: só a Planee (master) mexe nas etapas pela tela.
+const SO_PLANEE_FUNIL = 'As etapas do funil comercial são configuradas pela Planee, porque a IA move os cartões por elas.';
+
 export async function salvarEtapaDoFunil(id: string | null, dados: { nome: string; tipo: string; ordem: string; gatilho: string }) {
-  return comUsuario(async (u) => { await crm.salvarEtapaFunil(u, id, dados); return crm.lerConfigCrm(u); });
+  return comUsuario(async (u) => {
+    if (u.nivel !== 'master') throw new ErroApi(403, SO_PLANEE_FUNIL);
+    await crm.salvarEtapaFunil(u, id, dados); return crm.lerConfigCrm(u);
+  });
 }
 
 export async function arquivarDaConfig(recurso: 'topicos' | 'etapas', id: string) {
   return comUsuario(async (u) => {
     if (recurso !== 'topicos' && recurso !== 'etapas') throw new ErroApi(400, 'Item inválido.');
+    if (recurso === 'etapas' && u.nivel !== 'master') throw new ErroApi(403, SO_PLANEE_FUNIL);
     await crm.arquivarItemConfig(u, recurso, id);
     return crm.lerConfigCrm(u);
   });
