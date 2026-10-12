@@ -23,7 +23,7 @@ type Item = Record<string, unknown>;
 type Contato = { id: string; nome: string | null; telefone: string | null; documento: string | null };
 export type ResultadoItem = {
   indice: number; ok: boolean; contato_id?: string; criado?: boolean; separado?: boolean; servicos_movidos?: number;
-  removido?: boolean; aviso?: string; papel_gravado?: string; contato_cpf?: string; erro?: string;
+  removido?: boolean; dono_renomeado?: boolean; aviso?: string; papel_gravado?: string; contato_cpf?: string; erro?: string;
 };
 
 class ErroItem extends Error {}
@@ -39,6 +39,28 @@ async function contato(c: PoolClient, id: string): Promise<Contato | null> {
 async function novoContato(c: PoolClient, nome: string | null, tel: string | null): Promise<Contato> {
   const r = await c.query(`insert into contatos (nome, telefone) values ($1, $2) returning id`, [nome, tel]);
   return { id: String(r.rows[0].id), nome, telefone: tel, documento: null };
+}
+
+// Nome do número no WhatsApp: o dado pela equipe no painel, o salvo no celular da clínica ou o do perfil, nessa
+// ordem, desde que não seja o nome do paciente que está saindo do contato. Banco sem o espelho do WhatsApp: nenhum.
+async function nomeDoWhatsApp(c: PoolClient, ddd: string, fim: string, nomePaciente: string): Promise<string | null> {
+  await c.query('savepoint nome_wa');
+  try {
+    const r = await c.query(
+      `select nome_painel, nome_salvo, nome_perfil from wa_contatos
+        where substr(wa_id, 3, 2) = $1 and right(wa_id, 8) = $2 order by atualizado_em desc limit 1`, [ddd, fim]);
+    await c.query('release savepoint nome_wa');
+    const x = r.rows[0] ?? {};
+    for (const n of [x.nome_painel, x.nome_salvo, x.nome_perfil]) {
+      const t = String(n ?? '').trim().slice(0, 120);
+      if (t && normNome(t) !== normNome(nomePaciente)) return t;
+    }
+    return null;
+  } catch (e) {
+    await c.query('rollback to savepoint nome_wa');
+    if (['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return null;
+    throw e;
+  }
 }
 
 async function umItem(c: PoolClient, it: Item, origem: string | null, indice: number): Promise<ResultadoItem> {
@@ -97,9 +119,26 @@ async function umItem(c: PoolClient, it: Item, origem: string | null, indice: nu
     else { alvo = await novoContato(c, nome, null); criado = true; }
   }
 
+  // CPF do item (validado antes de mexer no dono, abaixo).
+  const cpfDig = digitos(it.cpf);
+  const cpfOk = cpfValido(cpfDig) ? cpfDig : null;
+
+  // O dono do número não é este paciente (a esposa fala pelo marido, a mãe pelo filho), mas ficou com o nome dele
+  // porque o espelho criou o contato pelo cadastro do paciente: o dono passa a ter o nome do WhatsApp (nome dado no
+  // painel, salvo no celular ou do perfil) ou, sem nenhum, "Contato WhatsApp ••1234". Vale também ao reenviar.
+  let donoRenomeado = false;
+  if (papel !== 'proprio' && dono && dono.id !== alvo.id && nome && normNome(dono.nome) === normNome(nome)) {
+    const novoNome = (await nomeDoWhatsApp(c, ddd, fim, nome)) ?? `Contato WhatsApp ••${tel.slice(-4)}`;
+    const tirarCpf = !!cpfOk && digitos(dono.documento) === cpfOk;
+    await c.query(
+      `update contatos set nome = $2, documento = case when $3 then null else documento end,
+              tipo_documento = case when $3 then null else tipo_documento end, atualizado_em = now() where id = $1`,
+      [dono.id, novoNome, tirarCpf]);
+    donoRenomeado = true;
+  }
+
   // CPF: só em contato sem CPF; outro CPF não troca; CPF de outro contato não grava.
   let aviso: string | undefined, contatoCpf: string | undefined, cpf: string | null = null;
-  const cpfDig = digitos(it.cpf);
   if (it.cpf !== undefined && it.cpf !== null && it.cpf !== '') {
     if (cpfValido(cpfDig)) cpf = cpfDig; else aviso = 'cpf_invalido';
   }
@@ -145,6 +184,7 @@ async function umItem(c: PoolClient, it: Item, origem: string | null, indice: nu
 
   const r: ResultadoItem = { indice, ok: true, contato_id: alvo.id, criado };
   if (separado) r.separado = true;
+  if (donoRenomeado) r.dono_renomeado = true;
   if (movidos) r.servicos_movidos = movidos;
   if (jaTemProprio) { r.aviso = aviso ? `ja_tem_proprio,${aviso}` : 'ja_tem_proprio'; r.papel_gravado = 'mesmo_numero'; }
   else if (aviso) r.aviso = aviso;
@@ -186,7 +226,7 @@ export async function carregarPessoas(chave: Chave, corpo: unknown) {
         await c.query('release savepoint item');
         await auditar(c, chave, 'carregar', 'contatos', saida[i].contato_id ?? null, {
           origem, papel: it.papel, paciente: it.paciente, criado: saida[i].criado, separado: saida[i].separado,
-          servicos_movidos: saida[i].servicos_movidos, removido: saida[i].removido, cpf: it.cpf ? (saida[i].aviso ?? 'enviado') : undefined,
+          servicos_movidos: saida[i].servicos_movidos, removido: saida[i].removido, dono_renomeado: saida[i].dono_renomeado, cpf: it.cpf ? (saida[i].aviso ?? 'enviado') : undefined,
         });
       } catch (e) {
         await c.query('rollback to savepoint item');

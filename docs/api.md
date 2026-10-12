@@ -106,10 +106,11 @@ Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com
   - `dependente` e `familiar` ligados ao dono **deste** número (o espelho juntou o filho na mãe): ganham contato próprio e levam os agendamentos do sistema que são deles (`servicos.detalhes.<sistema>.paciente_id`) e os comprovantes desses.
   - `mesmo_numero` e `equipe_fornecedor`: como dependente, mas o dono do número com o mesmo nome continua sendo ele.
   - O paciente passa a apontar para o contato certo em `agenda_pacientes`, e o espelho da agenda segue.
+  - Dono do número que não é paciente (a esposa fala pelo marido) e ficou com o nome do paciente que saiu dele: passa a ter o nome do WhatsApp (dado no painel, salvo no celular ou do perfil) ou "Contato WhatsApp ••1234" (`dono_renomeado: true`). Vale também ao reenviar um item já carregado.
   - `remover: true` arquiva o vínculo.
   - **CPF:** só 11 dígitos válidos, e só em contato sem CPF. Não troca CPF diferente (`aviso: cpf_diferente`) nem grava CPF de outro contato (`cpf_em_outro_contato`, com `contato_cpf`). O mesmo CPF para dois pacientes no mesmo lote volta `erro: cpf_conflito_no_lote`.
   - Devolve `{total, ok, erros, itens: [{indice, ok, contato_id, criado, separado?, servicos_movidos?, removido?, aviso?, erro?}]}`. O CPF nunca volta.
-- **Ficha:** `contatos` traz todas as pessoas do número, com `papel`, `dono_do_numero` e `cpf_final`; serviços e pagamentos de todas elas.
+- **Ficha:** `contatos` traz todas as pessoas do número, com `papel` (o dono sem titular carregado vem como `responsavel`), `dono_do_numero` e `cpf_final`; serviços e pagamentos de todas elas.
 - **No painel:** o histórico do contato (cartão e ficha) mostra "Também neste número" e, para quem não é dono, "Usa o número … como dependente".
 
 ## Painel → n8n

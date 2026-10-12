@@ -252,7 +252,7 @@ function NovoPagamento({ contatoId, servicos, onFechar, onPronto }: {
 // parar ou voltar a enviar. Parar vale para todos os cadastros do mesmo telefone.
 // Várias pessoas no mesmo WhatsApp (migração 024): a que número esta pessoa está ligada e quem mais está nele.
 function PessoasDoNumero({ n }: { n: THistorico['numero'] }) {
-  const ligados = n.numeros.filter((x) => x.papel !== 'proprio');
+  const ligados = n.numeros.filter((x) => x.papel !== 'proprio' && x.papel !== 'responsavel');
   if (!ligados.length && !n.outras.length) return null;
   return (
     <div className={c.blocoAuto} data-pessoas-numero aria-label="Pessoas neste número">

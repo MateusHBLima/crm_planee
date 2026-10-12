@@ -56,7 +56,7 @@ function textoCrm(acao: string, recurso: string, d: Record<string, unknown>, eta
     // Carga do "Quem é quem" (POST /api/v1/pessoas/lote, migração 024).
     if (d.removido) return 'Desligou a pessoa de um número';
     const papel = NOME_PAPEL[s('papel')] ?? s('papel');
-    return `${d.separado ? 'Separou do contato do número e ligou' : 'Ligou'} ao número como ${papel}${d.servicos_movidos ? ` (${s('servicos_movidos')} agendamentos)` : ''}`;
+    return `${d.separado ? 'Separou do contato do número e ligou' : 'Ligou'} ao número como ${papel}${d.servicos_movidos ? ` (${s('servicos_movidos')} agendamentos)` : ''}${d.dono_renomeado ? '; o dono do número ganhou o nome do WhatsApp' : ''}`;
   }
   if (recurso === 'contatos' && 'automaticas_paradas' in d) return d.automaticas_paradas ? 'Parou as mensagens automáticas' : 'Voltou as mensagens automáticas';
   return `${VERBO[acao] ?? acao} ${RECURSO[recurso] ?? recurso}`;
