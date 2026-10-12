@@ -74,6 +74,7 @@ export function Interno({ empresas, nome }: { empresas: EmpresaOpcao[]; nome: st
       tipo: r.sem_banco.length ? 'erro' : 'ok',
       texto: `Verificação feita em ${r.empresas} ${r.empresas === 1 ? 'banco' : 'bancos'}: ${novos} ${novos === 1 ? 'aviso novo' : 'avisos novos'}`
         + ` (tokens ${r.tokens}, números sem mensagens ${r.silencio}, envios falhando ${r.falhas}, fila parada ${r.fila ?? 0}), ${r.resolvidos} ${r.resolvidos === 1 ? 'resolvido' : 'resolvidos'} sozinhos.`
+        + (r.funil ? ` Funil automático: ${r.funil} ${r.funil === 1 ? 'oportunidade movida' : 'oportunidades movidas'}.` : '')
         + (r.sem_banco.length ? ` Sem resposta do banco: ${r.sem_banco.join(', ')}.` : ''),
     });
     setVersao((v) => v + 1);

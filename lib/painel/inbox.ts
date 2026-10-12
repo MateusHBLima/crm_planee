@@ -7,7 +7,7 @@ import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/tel
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 import { completarFalasDaIa } from './falas-ia';
-import { seloDoTelefone, type Selo } from '@/lib/automaticas';
+import { nomeDoTipo, seloDoTelefone, SQL_EH_FOLLOWUP, type Selo } from '@/lib/automaticas';
 
 // Inbox: espelho do WhatsApp (fase 1.1) e resposta pelo painel (fase 2.3). Lê as tabelas wa_* que o receptor
 // (servicos/receptor) grava no banco de cada empresa (migração 008). O painel não fala com a Meta: a resposta vai
@@ -72,6 +72,8 @@ export type Mensagem = {
   status: string | null; editada: boolean; apagada: boolean; em: string;
   reacoes: { emoji: string; daEmpresa: boolean }[];
   citada: { encontrada: boolean; tipo: string | null; texto: string | null; direcao: string | null } | null;
+  // Mensagem automática da IA (follow-up, retomada, lembrete...), casada com envios_automaticos pelo wamid ou pelo texto.
+  automatica?: string | null;
 };
 // selo: mensagens automáticas da IA (follow-up, recusa), migração 017; null sem selo ou sem a 017.
 export type ConversaAberta = { conversa: Conversa; mensagens: Mensagem[]; temMais: boolean; fuso: string; selo: Selo | null };
@@ -104,7 +106,7 @@ const SELECT_CONVERSA = `
 // Filtro "Em follow-up": o contato recebeu follow-up da IA nos últimos 31 dias e não respondeu depois (migração 017).
 const SQL_EM_FOLLOWUP = `
         and exists (select 1 from envios_automaticos e join contatos ct on ct.id = e.contato_id
-                     where e.tipo like 'followup%' and e.situacao = 'enviado' and e.quando > now() - interval '31 days'
+                     where ${SQL_EH_FOLLOWUP('e.tipo')} and e.situacao = 'enviado' and e.quando > now() - interval '31 days'
                        and ct.automaticas_paradas_em is null
                        and substr(regexp_replace(e.telefone, '\\D', '', 'g'), 3, 2) = substr(c.wa_id, 3, 2)
                        and right(regexp_replace(e.telefone, '\\D', '', 'g'), 8) = right(c.wa_id, 8)
@@ -213,13 +215,16 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
 
   // Em paralelo: o texto da Sara que faltava (lib/painel/falas-ia.ts), o selo das automáticas (só na primeira página),
   // o "lida" da equipe e o registro de acesso do master. Selo e registro são extras: falha neles não derruba a tela.
-  const [, seloBruto] = await Promise.all([
-    completarFalasDaIa(banco, waId, linhas),
+  // As automáticas são casadas depois do texto da Sara completado (o casamento usa o texto quando falta o wamid).
+  const completar = completarFalasDaIa(banco, waId, linhas);
+  const [, seloBruto, , , autos] = await Promise.all([
+    completar,
     primeira
       ? seloDoTelefone(banco, waId, entrada ? new Date(entrada as string).toISOString() : null).catch((e) => { registrarErro('selo das automáticas', e); return null; })
       : Promise.resolve(null),
     marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(),
     registrarAcessoDoMaster(u, numeroId, waId),
+    completar.then(() => automaticasDaPagina(banco, waId, linhas)).catch((e) => { registrarErro('automáticas na conversa', e); return new Map<string, string>(); }),
   ]);
   if (marcar) conversa.nao_lidas = 0;
   const selo: Selo | null = seloBruto && u.master ? { ...seloBruto, texto: mascararTexto(seloBruto.texto) } : seloBruto;
@@ -242,6 +247,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
       status: m.direcao === 'saida' ? ((m.status as string | null) ?? null) : null,
       editada: Boolean(m.editada_em), apagada: Boolean(m.apagada_em), em: iso(m.enviada_em) as string,
       reacoes: porWamid.get(String(m.wamid)) ?? [],
+      automatica: autos.get(String(m.id)) ?? null,
       citada: m.resposta_a
         ? cit
           ? { encontrada: true, tipo: String(cit.tipo), texto: mascarar(cit.texto == null ? null : String(cit.texto)), direcao: String(cit.direcao) }
@@ -250,6 +256,30 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     };
   });
   return { conversa, mensagens, temMais, fuso: fuso(), selo };
+}
+
+// Quais mensagens da página saíram como automáticas da IA (envios_automaticos, migração 017): pelo wamid ou, quando a
+// IA não mandou o wamid, pelo texto (o envio da Sara pode ter "Sara:" no topo). Devolve id da mensagem → nome do tipo.
+const normalizar = (t: string) => t.replace(/[*_~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+async function automaticasDaPagina(banco: ReturnType<typeof db>, waId: string, linhas: Record<string, unknown>[]): Promise<Map<string, string>> {
+  const saidas = linhas.filter((m) => m.direcao === 'saida');
+  const mapa = new Map<string, string>();
+  if (!saidas.length) return mapa;
+  const d = waId.replace(/\D/g, '');
+  let r;
+  try {
+    r = await banco.query(
+      `select tipo, wamid, texto from envios_automaticos
+        where situacao = 'enviado' and substr(regexp_replace(telefone, '\\D', '', 'g'), 3, 2) = $1
+          and right(regexp_replace(telefone, '\\D', '', 'g'), 8) = $2 and quando >= $3::timestamptz - interval '1 day'
+        order by quando desc limit 200`, [d.slice(2, 4), d.slice(-8), saidas[0].enviada_em]);
+  } catch (e) { if ((e as { code?: string }).code === '42P01') return mapa; throw e; }
+  for (const m of saidas) {
+    const texto = m.texto == null ? '' : normalizar(String(m.texto));
+    const e = r.rows.find((x) => (x.wamid && x.wamid === m.wamid) || (x.texto && texto && texto.includes(normalizar(String(x.texto)))));
+    if (e) mapa.set(String(m.id), nomeDoTipo(String(e.tipo)));
+  }
+  return mapa;
 }
 
 // ---- Ouvir, ver e baixar as mídias (áudio, foto, vídeo, documento) ----

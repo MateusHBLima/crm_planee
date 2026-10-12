@@ -5,9 +5,8 @@ import type { Pool, PoolClient } from 'pg';
 // Usado pela ficha da API, pela Inbox e pelo histórico do contato. Banco sem a 017: tudo vazio, nada quebra.
 
 // Nomes dos tipos ficam num arquivo sem 'server-only' (a tela de Resultados também usa).
-export { TIPOS_AUTOMATICA } from './automaticas-nomes';
-import { TIPOS_AUTOMATICA } from './automaticas-nomes';
-export const nomeDoTipo = (t: string) => TIPOS_AUTOMATICA[t] ?? `Automática (${t})`;
+export { TIPOS_AUTOMATICA, nomeDoTipo, ehFollowup, SQL_EH_FOLLOWUP } from './automaticas-nomes';
+import { nomeDoTipo, SQL_EH_FOLLOWUP } from './automaticas-nomes';
 
 export type Recusa = { desde: string; motivo: string | null; por: string | null };
 export type EnvioAutomatico = {
@@ -70,10 +69,9 @@ export function calcularSelo(recusa: Recusa | null, ultimoFollowup: EnvioAutomat
     return agora - entrada <= MOSTRA_RESPOSTA_MS ? { tipo: 'respondeu', texto: 'Respondeu ao follow-up', desde: new Date(entrada).toISOString() } : null;
   }
   if (f.situacao !== 'enviado') return null;
-  const nome = f.tipo_nome.replace(/^Follow-up /, '');
   return agora - enviadoEm >= UMA_HORA
-    ? { tipo: 'sem_resposta', texto: `Follow-up ${nome} enviado · sem resposta`, desde: f.quando }
-    : { tipo: 'followup', texto: `Follow-up ${nome} enviado`, desde: f.quando };
+    ? { tipo: 'sem_resposta', texto: `${f.tipo_nome} enviado · sem resposta`, desde: f.quando }
+    : { tipo: 'followup', texto: `${f.tipo_nome} enviado`, desde: f.quando };
 }
 
 // Selo pelo telefone (Inbox): contatos com o mesmo DDD + 8 últimos dígitos. Uma ida só ao banco (contatos, recusa e
@@ -90,7 +88,7 @@ export async function seloDoTelefone(b: Banco, waId: string, ultimaEntrada: stri
        select (select row_to_json(x) from (select automaticas_paradas_em, automaticas_motivo, automaticas_por from cs
                  where automaticas_paradas_em is not null order by automaticas_paradas_em limit 1) x) as recusa,
               (select row_to_json(e) from (select * from envios_automaticos where contato_id in (select id from cs)
-                 and tipo like 'followup%' order by quando desc limit 1) e) as followup`, [d.slice(2, 4), d.slice(-8)]);
+                 and ${SQL_EH_FOLLOWUP()} order by quando desc limit 1) e) as followup`, [d.slice(2, 4), d.slice(-8)]);
     const x = r.rows[0] ?? {};
     if (x.recusa) {
       const rc = x.recusa as Record<string, unknown>;
@@ -106,7 +104,7 @@ export async function seloDosContatos(b: Banco, contatoIds: string[], ultimaEntr
   if (recusa) return calcularSelo(recusa, null, null);
   try {
     const r = await b.query(
-      `select * from envios_automaticos where contato_id = any($1::uuid[]) and tipo like 'followup%' order by quando desc limit 1`, [contatoIds]);
+      `select * from envios_automaticos where contato_id = any($1::uuid[]) and ${SQL_EH_FOLLOWUP()} order by quando desc limit 1`, [contatoIds]);
     return calcularSelo(null, r.rows[0] ? limparEnvio(r.rows[0]) : null, ultimaEntrada);
   } catch (e) { if (semTabela(e)) return null; throw e; }
 }

@@ -650,7 +650,7 @@ function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; w
 
 function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
-  const autor = m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] ?? '';
+  const autor = (m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] || (m.automatica ? 'Sara' : '')) + (m.automatica ? ` · ${m.automatica}` : '');
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
   const rotMidia = MIDIA[m.tipo];
   let conteudo: React.ReactNode;

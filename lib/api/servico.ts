@@ -297,7 +297,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
 // Cria o contato se ainda não existir. Tudo numa transação, com auditoria.
 export async function moverNoFunil(chave: Chave, corpo: unknown) {
   exigirEscopo(chave, 'crm');
-  if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?}.');
+  if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?, "so_avancar"?}.');
   const d = corpo as Record<string, unknown>;
   const tel = normalizarTelefone(d.telefone);
   const etapaId = String(d.etapa_id ?? '');
@@ -307,7 +307,7 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
   const interesse = d.interesse === undefined ? undefined : String(d.interesse ?? '').trim().slice(0, 300) || null;
   const nome = String(d.nome ?? '').trim().slice(0, 120) || null;
   return transacao(async (c) => {
-    const et = await c.query('select id, nome, tipo from crm_etapas where id = $1 and not arquivado', [etapaId]);
+    const et = await c.query('select id, nome, tipo, ordem from crm_etapas where id = $1 and not arquivado', [etapaId]);
     if (!et.rowCount) throw new ErroApi(400, `Etapa "${etapaId}" não existe no funil.`);
     let cont = await c.query(`select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`, chaveTelefone(tel));
     let contatoId: string;
@@ -321,27 +321,64 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
     }
     // A oportunidade "viva" é a mais recente que não está arquivada nem fechada (ganho/perdido).
     const viva = await c.query(
-      `select o.id, o.etapa_id from oportunidades o join crm_etapas e on e.id = o.etapa_id
+      `select o.id, o.etapa_id, e.ordem, to_jsonb(o) ->> 'etapa_antes_followup' as antes,
+              (select a.ordem from crm_etapas a where a.id = to_jsonb(o) ->> 'etapa_antes_followup') as ordem_antes
+         from oportunidades o join crm_etapas e on e.id = o.etapa_id
         where o.contato_id = $1 and not o.arquivado and e.tipo = 'aberta' order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
+    // so_avancar (12/10): a IA marca "horários enviados" sem medo de puxar para trás quem já está mais à frente.
+    // Em Follow up ou Retomada (funil automático, migração 023) a comparação é com a etapa de onde o card saiu:
+    // origem "interesse" + pedido "oferecido" move, mesmo com Follow up depois de oferecido na ordem.
+    const v0 = viva.rows[0];
+    const ordemAtual = v0 ? Number(v0.antes && v0.ordem_antes != null ? v0.ordem_antes : v0.ordem) : 0;
+    if (d.so_avancar === true && viva.rowCount && ordemAtual > Number(et.rows[0].ordem)) {
+      const atual = await c.query('select * from oportunidades where id = $1', [viva.rows[0].id]);
+      return { oportunidade: atual.rows[0], etapa: et.rows[0], contato_id: contatoId, criou: false, movida: false };
+    }
     const campos: Record<string, unknown> = { etapa_id: etapaId };
     if (interesse !== undefined) campos.interesse = interesse;
     if (valor !== undefined) campos.valor = valor;
     let op;
     if (viva.rowCount) {
       const cols = Object.keys(campos);
+      // Saindo da etapa de espera do funil automático: limpa a marca de follow-up (só existe com a 023).
+      const limpa = v0.antes && etapaId !== v0.etapa_id ? ', etapa_antes_followup = null, followup_em = null' : '';
       const res = await c.query(
-        `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, atualizado_em = now() where id = $1 returning *`,
+        `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}${limpa}, atualizado_em = now() where id = $1 returning *`,
         [viva.rows[0].id, ...Object.values(campos)]);
       op = res.rows[0];
       await auditar(c, chave, 'atualizar', 'oportunidades', op.id, { de: viva.rows[0].etapa_id, ...campos });
     } else {
+      // Perdido pelo funil automático (migração 023): a IA chamou de novo, então a mesma oportunidade reabre em vez
+      // de nascer outra. Savepoint: banco sem a 023 cai no caminho de sempre.
+      let reaberta: Record<string, unknown> | null = null;
+      await c.query('savepoint reabrir');
+      try {
+        const r = await c.query(
+          `select o.id, o.etapa_id from oportunidades o join crm_etapas e on e.id = o.etapa_id
+            where o.contato_id = $1 and not o.arquivado and e.tipo = 'perdido' and o.perdido_auto_em is not null
+            order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
+        if (r.rowCount) {
+          const cols = Object.keys(campos);
+          const res = await c.query(
+            `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, perdido_auto_em = null,
+                    etapa_antes_followup = null, followup_em = null, atualizado_em = now() where id = $1 returning *`,
+            [r.rows[0].id, ...Object.values(campos)]);
+          reaberta = res.rows[0];
+          await auditar(c, chave, 'atualizar', 'oportunidades', String(r.rows[0].id), { de: r.rows[0].etapa_id, ...campos, reaberta: true });
+        }
+        await c.query('release savepoint reabrir');
+      } catch (e) {
+        await c.query('rollback to savepoint reabrir');
+        if (!['42703', '42P01'].includes((e as { code?: string }).code ?? '')) throw e;
+      }
+      if (reaberta) return { oportunidade: reaberta, etapa: et.rows[0], contato_id: contatoId, criou: false, movida: true, reaberta: true };
       const res = await c.query(
         'insert into oportunidades (contato_id, etapa_id, interesse, valor) values ($1, $2, $3, $4) returning *',
         [contatoId, etapaId, interesse ?? null, valor ?? null]);
       op = res.rows[0];
       await auditar(c, chave, 'criar', 'oportunidades', op.id, { contato_id: contatoId, ...campos });
     }
-    return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount };
+    return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount, movida: true };
   }, bancoDe(chave));
 }
 

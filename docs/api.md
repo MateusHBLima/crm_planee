@@ -32,7 +32,7 @@ Dois atalhos pelo telefone, para o agente não precisar saber ids:
 | Rota | Ferramenta MCP | Escopo | O que faz |
 |---|---|---|---|
 | `GET /api/v1/ficha?telefone=5547...` | `ficha_do_contato` | `leitura` | Tudo o que o CRM sabe do telefone: contato (nome, final do CPF com 3 dígitos, desde quando), atendimentos abertos e recentes (assunto, etapa, resumo, responsável), notas, oportunidades do funil (etapa, interesse, valor) e a lista `etapas_funil`. Telefone com ou sem o 9 e com ou sem 55. `encontrado: false` quando o número não é de ninguém. |
-| `POST /api/v1/funil` `{"telefone","etapa_id","interesse"?,"valor"?,"nome"?}` | `mover_no_funil` | `crm` | Põe o telefone na etapa: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). Chamar de novo move a mesma oportunidade; depois de ganho ou perdido, a próxima chamada abre outra. |
+| `POST /api/v1/funil` `{"telefone","etapa_id","interesse"?,"valor"?,"nome"?,"so_avancar"?}` | `mover_no_funil` | `crm` | Põe o telefone na etapa: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). Chamar de novo move a mesma oportunidade; depois de ganho ou perdido, a próxima chamada abre outra. Com `so_avancar: true` só move para uma etapa de ordem maior (ex.: horários enviados → `oferecido`); senão devolve `movida: false`. |
 
 O CPF inteiro nunca sai pela API nem pelo MCP (LGPD): na ficha vem só o final (3 dígitos) e em `contatos` (listar, obter, criar, atualizar) o campo `documento` vem como `***` + os 2 últimos dígitos. O filtro `documento` continua aceitando o número inteiro. O MCP aceita no máximo 20 chamadas por lote. Toda mudança fica em `painel_auditoria` com a chave que fez.
 
@@ -74,15 +74,25 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
   - Marcar de novo mantém a data e o motivo originais. Liberar limpa tudo.
   - Devolve `{ok, contato_id, contatos, parar, desde, motivo, por}`. Pelo MCP: `parar_automaticas`.
 - **Envio:** `POST /api/v1/automaticas/envios` com `{telefone, tipo, situacao, chave, quando?, texto?, wamid?, motivo?, servico?: {sistema, codigo_externo}, nome?}`. Escopo `crm`.
-  - `tipo`: `aniversario`, `lembrete_2d`, `lembrete_dia`, `followup_1h`, `followup_3h`, `followup_3d`, `followup_7d`, `followup_14d`, `followup_30d` ou `outro` (aceita outros nomes em letras minúsculas e `_`).
+  - `tipo`: `aniversario`, `lembrete_2d`, `lembrete_dia`, `followup_1h`, `followup_3h`, `followup_d1`, `followup_tarde`, `followup_transferencia`, `retomada` ou `outro` (aceita outros nomes em letras minúsculas e `_`; `followup_*` e `retomada*` contam como follow-up).
   - `situacao`: `enviado`, `falhou` ou `cancelado`.
   - `chave` é única por envio: a mesma chave atualiza (`repetido: true`) em vez de duplicar.
-  - Devolve `{ok, id, contato_id, repetido, servico_id}`. Pelo MCP: `registrar_envio_automatico`.
+  - Devolve `{ok, id, contato_id, repetido, servico_id, funil}`. Pelo MCP: `registrar_envio_automatico`.
+  - `funil`: `{oportunidade_id, de}` quando o envio moveu o funil (abaixo); `null` quando não.
+- **Funil automático** (migração 023, decisão 37): liga com a configuração `funil_automatico` (escopo `config`), por exemplo `{"followup": "followup", "retomada": "retomada", "de": ["contato", "interesse", "oferecido"], "perdido": "perdido", "dias_sem_resposta": 7}`. Sem ela, nada se move sozinho. `retomada` é opcional (sem ela, retomada vai para `followup`).
+  - follow-up (`followup_*`) enviado leva a oportunidade viva que está numa etapa de `de` para `followup`; retomada (`retomada*`) leva para `retomada`. O CRM guarda de onde ela saiu; outro toque troca a etapa conforme o tipo e só renova a data;
+  - o paciente respondeu depois do último toque (mensagem recebida na Inbox) → volta para a etapa de onde saiu;
+  - `dias_sem_resposta` dias sem resposta depois do último toque → `perdido` (marcado como perdido pelo funil);
+  - perdido pelo funil e a pessoa respondeu em até 30 dias → volta para a etapa de onde saiu;
+  - essas três regras rodam no vigia, a cada 15 minutos (e no "Verificar agora" do Interno). Tudo fica na auditoria como "Funil automático";
+  - `POST /api/v1/funil` para quem foi perdido pelo funil reabre a mesma oportunidade (`reaberta: true`) em vez de criar outra. Perdido marcado à mão pela equipe não reabre: nasce outra oportunidade, como antes.
 - **Ficha:** `GET /api/v1/ficha` traz `automaticas: {permitidas, desde, motivo, por, ultimos_envios}`. A IA confere `permitidas` antes de cada envio.
 - **No painel:**
   - o histórico do contato mostra cada envio e a recusa, com os botões "Parar mensagens automáticas" e "Voltar a enviar" (`crm.editar`);
   - a conversa na Inbox mostra o selo do follow-up ("Follow-up 1h enviado", "… · sem resposta", "Respondeu ao follow-up", "Parou: pediu para não receber");
-  - a lista da Inbox tem o filtro "Em follow-up".
+  - a lista da Inbox tem o filtro "Em follow-up";
+  - a mensagem automática na conversa aparece como "Sara · Follow-up 1h" (casada pelo `wamid` ou, sem ele, pelo texto);
+  - o cartão do quadro e o do funil comercial mostram o último follow-up ou retomada enviados nos últimos 31 dias.
 - **Texto na Inbox na hora:** depois de cada envio, chame também o `POST /whatsapp/envio` do receptor.
 
 ## Painel → n8n

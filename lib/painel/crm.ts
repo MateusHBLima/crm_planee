@@ -6,6 +6,7 @@ import { lerIntervalo, type Intervalo } from '@/lib/periodo';
 import * as api from '@/lib/api/servico';
 import { atorDe, pode, podeArquivar, type Usuario } from '@/lib/sessao';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
+import { nomeDoTipo, SQL_EH_FOLLOWUP } from '@/lib/automaticas-nomes';
 
 // Banco de dados da empresa escolhida pela pessoa (decisão 26). Sem empresa, nada de CRM.
 function db(u: Usuario) {
@@ -29,7 +30,10 @@ export type Cartao = {
   aberto_por: string | null; aberto_em: string; atualizado_em: string; responsavel: string | null; assumido_em: string | null; finalizado_em: string | null;
   contato_id: string | null; nome: string | null; telefone: string | null; documento: string | null; notas: number; lead: boolean;
   alerta: boolean; // aberto por alerta (ex.: comprovante suspeito): vermelho desde que abre
+  // Último follow-up ou retomada enviados pela IA ao contato nos últimos 31 dias (migração 017), para o cartão.
+  automatica?: Automatica | null;
 };
+export type Automatica = { tipo: string; nome: string; quando: string };
 // Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
 // Aguardando conta desde que abriu; pendente interno, desde a última mudança (atualizado_em).
 export type Prazo = { amarelo: number; vermelho: number };
@@ -68,6 +72,7 @@ function limparCartao(u: Usuario, r: Record<string, unknown>): Cartao {
     resumo: resumo.replace(SOMBRA, ''),
     notas: Number(r.notas) || 0,
     lead: Boolean(r.oportunidade_id),
+    automatica: limparAutomatica(r.automatica),
     alerta: r.alerta === true,
     aberto_em: iso(r.aberto_em) as string,
     atualizado_em: (iso(r.atualizado_em) ?? iso(r.aberto_em)) as string,
@@ -112,6 +117,22 @@ const SELECT_CARTAO = `
 export const RESUMO_NO_QUADRO = 600;
 const SELECT_CARTAO_QUADRO = SELECT_CARTAO.replace('a.etapa, a.resumo,', `a.etapa, left(a.resumo, ${RESUMO_NO_QUADRO}) as resumo,`);
 
+// Último follow-up ou retomada enviados ao contato (envios_automaticos, migração 017). Banco sem a 017: a consulta
+// roda de novo sem esta coluna (comAutomatica abaixo).
+const SQL_AUTOMATICA = (contato: string) => `
+  (select json_build_object('tipo', e.tipo, 'quando', e.quando) from envios_automaticos e
+    where e.contato_id = ${contato} and e.situacao = 'enviado' and ${SQL_EH_FOLLOWUP('e.tipo')} and e.quando > now() - interval '31 days'
+    order by e.quando desc limit 1) as automatica`;
+const SEM_AUTOMATICA = 'null::json as automatica';
+async function comAutomatica<T>(rodar: (col: (contato: string) => string) => Promise<T>): Promise<T> {
+  try { return await rodar(SQL_AUTOMATICA); }
+  catch (e) { if ((e as { code?: string }).code === '42P01') return rodar(() => SEM_AUTOMATICA); throw e; }
+}
+function limparAutomatica(v: unknown): Automatica | null {
+  const x = v as { tipo?: string; quando?: string } | null;
+  return x?.tipo && x.quando ? { tipo: x.tipo, nome: nomeDoTipo(x.tipo), quando: new Date(x.quando).toISOString() } : null;
+}
+
 export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): Promise<Quadro> {
   const f = fuso();
   const periodo = periodoPedido ? lerIntervalo(periodoPedido.de, periodoPedido.ate) : null;
@@ -119,10 +140,12 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
   // finalizados de hoje. O banco fica em outra região; cinco consultas em paralelo abriam cinco conexões.
   // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
   // e os abertos mais novos, nunca os que esperam há mais tempo.
-  const r = await db(u).query(
+  const banco = db(u);
+  const r = await comAutomatica((auto) => banco.query(
     `with hoje as (select (date_trunc('day', now() at time zone $1) at time zone $1) as ini),
      cartoes as (
-       ${SELECT_CARTAO_QUADRO}
+       ${SELECT_CARTAO_QUADRO.replace(' from atendimentos a', `, ${auto('a.contato_id')}
+    from atendimentos a`)}
         where not a.arquivado and ($2::boolean or ${SQL_SEM_SOMBRA})
           and (case when $3::date is null then (a.etapa <> 'finalizado' or a.finalizado_em >= (select ini from hoje))
                     else a.aberto_em >= ($3::date::timestamp at time zone $1) and a.aberto_em < (($4::date + 1)::timestamp at time zone $1) end)
@@ -135,7 +158,7 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
        (select count(*)::int from atendimentos a where not a.arquivado and a.etapa = 'finalizado'
            and ($2::boolean or ${SQL_SEM_SOMBRA}) and a.finalizado_em >= (select ini from hoje)) as fin,
        (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes,
-       to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null]);
+       to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null]));
   const x = r.rows[0];
   return {
     periodo, hoje: String(x.dia),
@@ -389,13 +412,14 @@ export async function arquivarAtendimento(u: Usuario, id: string) {
 
 export async function lerComercial(u: Usuario) {
   // Uma ida só ao banco: etapas do funil e oportunidades.
-  const r = await db(u).query(
+  const banco = db(u);
+  const r = await comAutomatica((auto) => banco.query(
     `select (select coalesce(json_agg(e order by e.ordem, e.nome), '[]'::json)
                from (select id, nome, tipo, ordem from crm_etapas where not arquivado) e) as etapas,
             (select coalesce(json_agg(o order by o.atualizado_em desc), '[]'::json)
-               from (select o.id, o.etapa_id, o.contato_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone
+               from (select o.id, o.etapa_id, o.contato_id, o.interesse, o.valor, o.atualizado_em, c.nome, c.telefone, ${auto('o.contato_id')}
                        from oportunidades o left join contatos c on c.id = o.contato_id
-                      where not o.arquivado order by o.atualizado_em desc limit 600) o) as ops`);
+                      where not o.arquivado order by o.atualizado_em desc limit 600) o) as ops`));
   const x = r.rows[0];
   return {
     etapas: x.etapas as { id: string; nome: string; tipo: string }[],
@@ -403,6 +427,7 @@ export async function lerComercial(u: Usuario) {
       id: String(o.id), etapa_id: String(o.etapa_id), contato_id: (o.contato_id as string) ?? null, interesse: (o.interesse as string) ?? null,
       nome: (o.nome as string) ?? null, telefone: (o.telefone as string) ?? null,
       atualizado_em: new Date(o.atualizado_em as string).toISOString(), valor: o.valor === null ? null : Number(o.valor),
+      automatica: limparAutomatica(o.automatica),
     })),
   };
 }
