@@ -340,6 +340,30 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
       op = res.rows[0];
       await auditar(c, chave, 'atualizar', 'oportunidades', op.id, { de: viva.rows[0].etapa_id, ...campos });
     } else {
+      // Perdido pelo funil automático (migração 023): a IA chamou de novo, então a mesma oportunidade reabre em vez
+      // de nascer outra. Savepoint: banco sem a 023 cai no caminho de sempre.
+      let reaberta: Record<string, unknown> | null = null;
+      await c.query('savepoint reabrir');
+      try {
+        const r = await c.query(
+          `select o.id, o.etapa_id from oportunidades o join crm_etapas e on e.id = o.etapa_id
+            where o.contato_id = $1 and not o.arquivado and e.tipo = 'perdido' and o.perdido_auto_em is not null
+            order by o.atualizado_em desc limit 1 for update of o`, [contatoId]);
+        if (r.rowCount) {
+          const cols = Object.keys(campos);
+          const res = await c.query(
+            `update oportunidades set ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, perdido_auto_em = null,
+                    etapa_antes_followup = null, followup_em = null, atualizado_em = now() where id = $1 returning *`,
+            [r.rows[0].id, ...Object.values(campos)]);
+          reaberta = res.rows[0];
+          await auditar(c, chave, 'atualizar', 'oportunidades', String(r.rows[0].id), { de: r.rows[0].etapa_id, ...campos, reaberta: true });
+        }
+        await c.query('release savepoint reabrir');
+      } catch (e) {
+        await c.query('rollback to savepoint reabrir');
+        if (!['42703', '42P01'].includes((e as { code?: string }).code ?? '')) throw e;
+      }
+      if (reaberta) return { oportunidade: reaberta, etapa: et.rows[0], contato_id: contatoId, criou: false, movida: true, reaberta: true };
       const res = await c.query(
         'insert into oportunidades (contato_id, etapa_id, interesse, valor) values ($1, $2, $3, $4) returning *',
         [contatoId, etapaId, interesse ?? null, valor ?? null]);

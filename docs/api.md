@@ -79,11 +79,13 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
   - `chave` é única por envio: a mesma chave atualiza (`repetido: true`) em vez de duplicar.
   - Devolve `{ok, id, contato_id, repetido, servico_id, funil}`. Pelo MCP: `registrar_envio_automatico`.
   - `funil`: `{oportunidade_id, de}` quando o envio moveu o funil (abaixo); `null` quando não.
-- **Funil automático** (migração 023, decisão 37): liga com a configuração `funil_automatico` (escopo `config`), por exemplo `{"followup": "followup", "de": ["interesse", "oferecido"], "perdido": "perdido", "dias_sem_resposta": 7}`. Sem ela, nada se move sozinho.
-  - follow-up ou retomada **enviados** levam a oportunidade viva que está numa etapa de `de` para `followup`, guardando de onde saiu; outro follow-up só renova a data;
-  - o paciente respondeu depois do follow-up (mensagem recebida na Inbox) → volta para a etapa de onde saiu;
-  - `dias_sem_resposta` dias sem resposta depois do último follow-up → `perdido`;
-  - as duas últimas regras rodam no vigia, a cada 15 minutos (e no "Verificar agora" do Interno). Tudo fica na auditoria como "Funil automático".
+- **Funil automático** (migração 023, decisão 37): liga com a configuração `funil_automatico` (escopo `config`), por exemplo `{"followup": "followup", "retomada": "retomada", "de": ["contato", "interesse", "oferecido"], "perdido": "perdido", "dias_sem_resposta": 7}`. Sem ela, nada se move sozinho. `retomada` é opcional (sem ela, retomada vai para `followup`).
+  - follow-up (`followup_*`) enviado leva a oportunidade viva que está numa etapa de `de` para `followup`; retomada (`retomada*`) leva para `retomada`. O CRM guarda de onde ela saiu; outro toque troca a etapa conforme o tipo e só renova a data;
+  - o paciente respondeu depois do último toque (mensagem recebida na Inbox) → volta para a etapa de onde saiu;
+  - `dias_sem_resposta` dias sem resposta depois do último toque → `perdido` (marcado como perdido pelo funil);
+  - perdido pelo funil e a pessoa respondeu em até 30 dias → volta para a etapa de onde saiu;
+  - essas três regras rodam no vigia, a cada 15 minutos (e no "Verificar agora" do Interno). Tudo fica na auditoria como "Funil automático";
+  - `POST /api/v1/funil` para quem foi perdido pelo funil reabre a mesma oportunidade (`reaberta: true`) em vez de criar outra. Perdido marcado à mão pela equipe não reabre: nasce outra oportunidade, como antes.
 - **Ficha:** `GET /api/v1/ficha` traz `automaticas: {permitidas, desde, motivo, por, ultimos_envios}`. A IA confere `permitidas` antes de cada envio.
 - **No painel:**
   - o histórico do contato mostra cada envio e a recusa, com os botões "Parar mensagens automáticas" e "Voltar a enviar" (`crm.editar`);
