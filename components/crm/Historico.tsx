@@ -222,7 +222,7 @@ function NovoPagamento({ contatoId, servicos, onFechar, onPronto }: {
         <Campo id="pg-servico" rotulo="Agendamento">
           <select id="pg-servico" name="servico_id" defaultValue="">
             <option value="">Sem agendamento (só no paciente)</option>
-            {servicos.map((s) => <option key={s.id} value={s.id}>{s.tipo}{s.inicio ? ' · ' + new Date(s.inicio).toLocaleDateString('pt-BR') : ''}{s.codigo_externo ? ' · ' + s.codigo_externo : ''}</option>)}
+            {servicos.map((s) => <option key={s.id} value={s.id}>{s.tipo}{s.inicio ? ' · ' + new Date(s.inicio).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : ''}{s.codigo_externo ? ' · ' + s.codigo_externo : ''}</option>)}
           </select>
         </Campo>
         <Campo id="pg-valor" rotulo="Valor (R$)"><input id="pg-valor" name="valor" inputMode="decimal" placeholder="200,00" /></Campo>

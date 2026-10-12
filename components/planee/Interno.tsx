@@ -21,7 +21,7 @@ type Toast = { tipo: 'ok' | 'erro'; texto: string } | null;
 
 const ESTADO: Record<string, string> = { aberto: 'Aberto', em_analise: 'Em análise', resolvido: 'Resolvido' };
 const NIVEL: Record<string, string> = { ok: 'Tudo certo', atencao: 'Atenção', problema: 'Problema' };
-const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 const dataBr = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`;
 function ha(iso: string | null) {
   if (!iso) return 'nunca';

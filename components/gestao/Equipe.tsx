@@ -14,7 +14,7 @@ type Props = {
   assuntos?: { id: string; nome: string }[]; // assuntos do quadro, para os avisos do CRM de cada pessoa
 };
 
-const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 // Nome do acesso de um link: "Nenhum", o nome do modelo, ou a quantidade de permissões.
 function nomeAcesso(perms: string[], modulos: string[]) {

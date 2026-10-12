@@ -12,7 +12,7 @@ import s from './planee.module.css';
 const CHAVE = 'pp_novidades_vistas';
 const vistas = (): string[] => { try { return JSON.parse(localStorage.getItem(CHAVE) ?? '[]'); } catch { return []; } };
 
-const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 export function Faixa({ largo }: { largo?: boolean }) {
   const [dados, setDados] = useState<{ manutencoes: Novidade[]; novidades: Novidade[] } | null>(null);
