@@ -164,6 +164,15 @@ const CPF_MAE = cpf(100200300), CPF_FILHO = cpf(100200301), CPF_OUTRO = cpf(1002
     && sql(`select nome from contatos where id = '${DONOG}'`) === 'Contato WhatsApp ••5012');
   sql(`delete from wa_contatos where numero_id = 'teste-pessoas'`);
 
+  // ---- Item com problema no banco não derruba o lote (cada item é uma transação) ----
+  sql(`insert into contatos (nome, telefone, arquivado) values ('Arquivado Ficticio', '5547900005020', true)`);
+  r = await lote([
+    { telefone: '5547900005020', papel: 'proprio', paciente: { sistema: 'feegow', codigo: 'PF70' }, nome: 'Novo Ficticio' },
+    { telefone: '5547900005021', papel: 'proprio', paciente: { sistema: 'feegow', codigo: 'PF71' }, nome: 'Outro Ficticio' },
+  ]);
+  ok('telefone preso num contato arquivado: só esse item falha, o resto grava', r.status === 200 && r.json.itens[0].erro === 'conflito_cadastro'
+    && r.json.itens[1].ok === true && sql(`select count(*) from contatos where telefone = '5547900005021'`) === '1', JSON.stringify(r.json?.itens));
+
   // ---- Remover ----
   r = await lote([{ telefone: A, papel: 'familiar', paciente: { sistema: 'feegow', codigo: 'PF3' }, remover: true }]);
   const f2 = await api('/api/v1/ficha?telefone=' + A);
