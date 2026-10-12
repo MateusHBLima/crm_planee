@@ -135,6 +135,38 @@ const tokenDe = (url) => url.split('/').pop();
   ok('modelo cortado ao que a empresa tem (só "Ver o CRM")', sql("select array_to_string(permissoes, ',') from convites_link where empresa_id='clinica-outra'") === 'crm.ver');
   await ctx.close();
 
+  // ---- Recusa do Supabase com o motivo certo (11/10) ----
+  // Login por e-mail desligado no Supabase: antes aparecia "E-mail ou senha incorretos" e ninguém sabia o que era.
+  const AUTH = `http://localhost:${process.env.PORTA_AUTH || 54321}`;
+  const modoAuth = (m) => fetch(AUTH + '/__teste/modo', { method: 'POST', body: JSON.stringify(m) });
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'gestor@teste.local', 'senha123', '/equipe');
+  const link6 = await gerar(p);
+  await ctx.close();
+  await modoAuth({ desligado: true });
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'amanda@teste.local', 'senha123', '/crm');
+  ok('login desligado no Supabase: mensagem clara, não "senha incorreta"', (await alerta(p)).includes('login por e-mail está desligado'), await alerta(p));
+  ok('login desligado abre aviso para a Planee', sql("select count(*) from avisos where tipo = 'login_desligado' and origem = 'sistema'") === '1');
+  const livresAntes = sql(`select count(*) from convites_link where usado_em is null and not cancelado and empresa_id = 'teste'`);
+  await cadastrar(p, link6, 'Pessoa Desligado', 'desligado@teste.local');
+  const livresDepois = sql(`select count(*) from convites_link where usado_em is null and not cancelado and empresa_id = 'teste'`);
+  ok('convite com login desligado: avisa e não gasta o link', (await alerta(p)).includes('login por e-mail está desligado') && livresAntes === livresDepois && livresAntes !== '0',
+    `${await alerta(p)} · livres ${livresAntes} → ${livresDepois}`);
+  await ctx.close();
+  // E-mail não confirmado (Supabase com "Confirm email" ligado quando a conta foi criada).
+  await modoAuth({ desligado: false, naoConfirmados: ['amanda@teste.local'] });
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'amanda@teste.local', 'senha123', '/crm');
+  ok('e-mail não confirmado: mensagem clara', (await alerta(p)).includes('ainda não foi confirmado'), await alerta(p));
+  await ctx.close();
+  await modoAuth({ desligado: false, naoConfirmados: [] });
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'amanda@teste.local', 'senha123', '/crm');
+  ok('login volta a funcionar quando religado', p.url().endsWith('/crm'), p.url());
+  await ctx.close();
+  sql("update convites_link set cancelado = true where usado_em is null and empresa_id = 'teste'; delete from avisos where tipo = 'login_desligado'");
+
   ok('sem erro de página', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);

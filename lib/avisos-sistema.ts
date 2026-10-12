@@ -6,7 +6,7 @@ import { central, registrarErro } from '@/lib/db';
 // Só o índice vai para o banco central: nada de nome, telefone inteiro ou texto de paciente no título.
 // Nenhuma destas funções derruba quem chamou: erro vai para o log e a função devolve false.
 
-export type TipoSistema = 'comprovante_suspeito' | 'numero_silencioso' | 'envios_falhando' | 'token_vencendo' | 'fila_parada';
+export type TipoSistema = 'comprovante_suspeito' | 'numero_silencioso' | 'envios_falhando' | 'token_vencendo' | 'fila_parada' | 'login_desligado';
 
 const semTabela = (e: unknown) => ['42P01', '42703'].includes((e as { code?: string }).code ?? '');
 const falhou = (onde: string, e: unknown) => { if (!semTabela(e)) registrarErro(onde, e); return false; };
@@ -45,4 +45,24 @@ export async function resolverDoSistema(ids: string[], resposta: string): Promis
         where id = any($1::uuid[]) and estado <> 'resolvido'`, [ids, resposta.slice(0, 2000)]);
     return r.rowCount ?? 0;
   } catch (e) { falhou('resolver aviso do sistema', e); return 0; }
+}
+
+// Login por e-mail desligado no Supabase do painel (11/10): ninguém consegue entrar com senha, mas quem já estava
+// logado continua (a sessão se renova sozinha), então o problema passa despercebido até alguém sair ou ser convidado.
+// Abre um aviso por dia na empresa de quem tentou (ou na primeira empresa ativa), para a Planee religar.
+export async function avisarLoginDesligado(email: string, empresaDoEndereco: string | null): Promise<boolean> {
+  try {
+    const r = await central().query(
+      `select coalesce($2::text,
+                (select v.empresa_id from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id where lower(p.email) = $1 and v.ativo order by v.empresa_id limit 1),
+                (select id from empresas where ativo order by criado_em limit 1)) as empresa`, [email, empresaDoEndereco]);
+    const empresa = r.rows[0]?.empresa as string | null;
+    registrarErro('login', new Error('Supabase recusou o login: login por e-mail desligado (Authentication → Sign In / Providers → Email)'));
+    if (!empresa) return false;
+    const dia = new Date().toISOString().slice(0, 10);
+    return avisoDoSistema(empresa, {
+      tipo: 'login_desligado', chave: `login_desligado:${dia}`,
+      titulo: 'Login por e-mail desligado no Supabase do painel: ninguém consegue entrar com senha. Religar em Authentication → Sign In / Providers → Email.',
+    });
+  } catch (e) { return falhou('aviso de login desligado', e); }
 }

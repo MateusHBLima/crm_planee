@@ -22,6 +22,7 @@ export const TIPOS_EQUIPE: Record<string, string> = {
 export const TIPOS_SISTEMA: Record<string, string> = {
   comprovante_suspeito: 'Comprovante suspeito',
   numero_silencioso: 'Número sem mensagens',
+  login_desligado: 'Login desligado',
   envios_falhando: 'Envios falhando',
   token_vencendo: 'Token de integração vencendo',
   fila_parada: 'Fila parada no quadro',

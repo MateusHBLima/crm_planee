@@ -8,7 +8,7 @@ import { AvisarPlanee } from './AvisarPlanee';
 import s from './planee.module.css';
 
 const ESTADO: Record<string, string> = { aberto: 'Aberto', em_analise: 'Em análise', resolvido: 'Resolvido' };
-const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 // Tela "Planee" da empresa: os avisos que a equipe mandou (com a resposta da Planee), novidades e manutenções.
 export function PlaneeEmpresa({ empresa, semAcesso = false }: { empresa: string; semAcesso?: boolean }) {

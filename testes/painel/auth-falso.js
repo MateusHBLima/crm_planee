@@ -4,6 +4,8 @@
 const http = require('http');
 const USERS = { 'amanda@teste.local': 'senha123', 'gestor@teste.local': 'senha123', 'planee@teste.local': 'senha123', 'semacesso@teste.local': 'senha123' };
 const ids = {}; const refresh = {}; const fatores = {};
+// Modo de teste (11/10): login por e-mail desligado e e-mails não confirmados, como o Supabase responde.
+const modo = { desligado: false, naoConfirmados: new Set() };
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const TTL = Number(process.env.TTL || 3600);
 const rnd = () => Math.random().toString(36).slice(2, 10);
@@ -25,8 +27,13 @@ function dono(req) {
 http.createServer((req, res) => {
   let body = ''; req.on('data', (c) => body += c); req.on('end', () => {
     const u = new URL(req.url, 'http://x'); const j = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
-    if (req.headers.apikey !== 'anon-teste') return j(401, { msg: 'no apikey' });
     const d = (() => { try { return JSON.parse(body || '{}'); } catch { return {}; } })();
+    if (u.pathname === '/__teste/modo') { modo.desligado = Boolean(d.desligado); modo.naoConfirmados = new Set(d.naoConfirmados || []); return j(200, { ok: true }); }
+    if (req.headers.apikey !== 'anon-teste') return j(401, { msg: 'no apikey' });
+    if (modo.desligado && (u.pathname === '/auth/v1/signup' || (u.pathname === '/auth/v1/token' && u.searchParams.get('grant_type') === 'password')))
+      return j(422, { code: 422, error_code: 'email_provider_disabled', msg: 'Email logins are disabled' });
+    if (u.pathname === '/auth/v1/token' && u.searchParams.get('grant_type') === 'password' && modo.naoConfirmados.has(d.email) && USERS[d.email] === d.password)
+      return j(400, { code: 400, error_code: 'email_not_confirmed', msg: 'Email not confirmed' });
     if (u.pathname === '/auth/v1/token') {
       if (u.searchParams.get('grant_type') === 'password') return USERS[d.email] === d.password ? j(200, emitir(d.email)) : j(400, { error: 'invalid_grant' });
       if (u.searchParams.get('grant_type') === 'refresh_token') { const e = refresh[d.refresh_token]; setTimeout(() => delete refresh[d.refresh_token], 10000); /* como o Supabase: reuso por 10 s */ return e ? j(200, emitir(e.email, e.aal)) : j(400, { error: 'invalid_grant' }); }

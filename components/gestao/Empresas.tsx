@@ -31,7 +31,7 @@ function Modulos({ valor, onChange, prefixo }: { valor: string[]; onChange: (v: 
 
 type Rodar = (fn: () => Promise<Resposta<LinhaEmpresa[]>>, ok: string, depois?: () => void) => void;
 
-const quando = (v: string | null) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+const quando = (v: string | null) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '');
 const fone = (t: string | null) => {
   const d = (t ?? '').replace(/\D/g, '');
   const m = d.match(/^55(\d{2})(\d{4,5})(\d{4})$/);

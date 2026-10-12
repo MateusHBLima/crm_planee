@@ -5,13 +5,31 @@ import { esquecerSessoes } from '@/lib/sessao';
 import { redirect } from 'next/navigation';
 import { bancoConfigurado, central } from '@/lib/db';
 import {
-  authConfigurado, COOKIE_ACESSO, COOKIE_RENOVA, criarConta, DIAS_SESSAO, encerrarSessao, entrarComSenha, mfaExigido,
+  authConfigurado, COOKIE_ACESSO, COOKIE_RENOVA, criarConta, DIAS_SESSAO, encerrarSessao, entrarComSenhaDetalhe, mfaExigido,
+  MSG_LOGIN_DESLIGADO, MSG_NAO_CONFIRMADO, type FalhaLogin,
   nivelDaSessao, opcoesCookie, verificarTotp, type Tokens,
 } from '@/lib/auth/gotrue';
 import { destinoSeguro } from '@/lib/destino';
 import { bloqueado, ipDe, LIMITES, limparFalhas, MSG_LIMITE, registrarFalha } from '@/lib/limite';
 import { hashCodigo, lerLinkConvite, normalizarCodigo, situacaoNoLink, tokenLinkValido, usarLinkConvite } from '@/lib/painel/gestao';
 import { empresaDoDominio, hostDeCabecalhos } from '@/lib/empresa';
+import { avisarLoginDesligado, avisoDoSistema } from '@/lib/avisos-sistema';
+
+// Texto da recusa do login (11/10). Só "senha" conta como tentativa errada (limite de tentativas).
+const MSG_FALHA: Record<FalhaLogin, string> = {
+  senha: 'E-mail ou senha incorretos.',
+  nao_confirmado: MSG_NAO_CONFIRMADO,
+  login_desligado: MSG_LOGIN_DESLIGADO,
+  muitas: 'Muitas tentativas de login agora. Espere alguns minutos e tente de novo.',
+  indisponivel: 'O login não respondeu agora. Tente de novo em instantes.',
+};
+async function recusa(falha: FalhaLogin, email: string, h: Headers) {
+  if (falha === 'login_desligado') {
+    const dono = await empresaDoDominio(hostDeCabecalhos(h)).catch(() => null);
+    await avisarLoginDesligado(email, dono?.id ?? null);
+  }
+  return MSG_FALHA[falha];
+}
 
 // O destino volta para o navegador, que navega sozinho. Um redirect() aqui seria renderizado pelo Next num
 // pedido interno para localhost, sem o endereço da empresa (decisão 26).
@@ -33,9 +51,11 @@ export async function entrar(_: EstadoEntrar, form: FormData): Promise<EstadoEnt
   const ip = ipDe(await headers());
   const chaves = [`login:${email}`, `ip:${ip}`];
   if (bloqueado([[chaves[0], LIMITES.email], [chaves[1], LIMITES.ip]])) return { erro: MSG_LIMITE, email };
-  let tokens = null;
-  try { tokens = await entrarComSenha(email, senha); } catch { tokens = null; }
-  if (!tokens) { registrarFalha(chaves); return { erro: 'E-mail ou senha incorretos.', email }; }
+  const { tokens, falha } = await entrarComSenhaDetalhe(email, senha);
+  if (!tokens) {
+    if (falha === 'senha' || !falha) registrarFalha(chaves);
+    return { erro: await recusa(falha ?? 'senha', email, await headers()), email };
+  }
   limparFalhas([chaves[0]]);
 
   const liberado = await central().query('select master from painel_usuarios where lower(email) = $1 and ativo', [email]);
@@ -154,7 +174,13 @@ export async function entrarPorConvite(_: EstadoConvite, form: FormData): Promis
 
   // Quem já tem senha no painel (outra empresa): a senha precisa ser a mesma. Quem não tem: cria agora.
   let tokens: Tokens | null = null;
-  try { tokens = await entrarComSenha(email, senha); } catch { tokens = null; }
+  const tentativa = await entrarComSenhaDetalhe(email, senha);
+  tokens = tentativa.tokens;
+  // Login desligado ou e-mail não confirmado: avisa já, sem gastar o link (antes o link era usado e a conta ficava
+  // criada sem conseguir entrar).
+  if (!tokens && (tentativa.falha === 'login_desligado' || (tentativa.falha === 'nao_confirmado' && situacao === 'tem_senha'))) {
+    return volta(await recusa(tentativa.falha, email, h));
+  }
   if (!tokens && situacao === 'tem_senha') {
     registrarFalha(chaves);
     return volta('Este e-mail já tem senha no painel. Use a mesma senha (ou peça ajuda a quem convidou você).');
@@ -165,7 +191,18 @@ export async function entrarPorConvite(_: EstadoConvite, form: FormData): Promis
     if (r.erro) return volta(r.erro);
     tokens = r.tokens;
     // Sem sessão na volta do cadastro (Supabase com confirmação de e-mail): tenta entrar com a senha recém-criada.
-    if (!tokens) { try { tokens = await entrarComSenha(email, senha); } catch { tokens = null; } }
+    if (!tokens) {
+      const segunda = await entrarComSenhaDetalhe(email, senha);
+      tokens = segunda.tokens;
+      // Supabase com "Confirm email" ligado: a conta nasce sem poder entrar. Avisa a Planee para desligar e liberar.
+      if (!tokens && segunda.falha === 'nao_confirmado') {
+        const dono = await empresaDoDominio(hostDeCabecalhos(h)).catch(() => null);
+        if (dono) {
+          await avisoDoSistema(dono.id, { tipo: 'login_desligado', chave: `nao_confirmado:${new Date().toISOString().slice(0, 10)}`,
+            titulo: 'Conta criada pelo convite sem poder entrar: "Confirm email" ligado no Supabase do painel. Desligar e confirmar a conta.' });
+        }
+      }
+    }
   }
   if (!(await usarLinkConvite(token, { nome, email }))) {
     if (tokens) await encerrarSessao(tokens.access_token).catch(() => {});

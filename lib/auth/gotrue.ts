@@ -42,6 +42,37 @@ async function token(grant: 'password' | 'refresh_token', corpo: Record<string, 
 
 export const entrarComSenha = (email: string, senha: string) => token('password', { email, password: senha });
 
+// Por que o Supabase recusou o login (11/10). Antes toda recusa virava "E-mail ou senha incorretos", inclusive
+// quando o login por e-mail estava desligado no Supabase ou o e-mail ainda não tinha sido confirmado: a pessoa
+// achava que tinha errado a senha e ninguém sabia o que consertar.
+export type FalhaLogin = 'senha' | 'nao_confirmado' | 'login_desligado' | 'muitas' | 'indisponivel';
+export function motivoDaRecusa(status: number, j: Record<string, unknown>): FalhaLogin {
+  const codigo = String(j.error_code ?? j.code ?? j.error ?? '').toLowerCase();
+  const texto = String(j.msg ?? j.message ?? j.error_description ?? '').toLowerCase();
+  if (codigo === 'email_not_confirmed' || /not confirmed/.test(texto)) return 'nao_confirmado';
+  if (codigo === 'email_provider_disabled' || codigo === 'signup_disabled' || /logins are disabled|signups not allowed|provider is disabled/.test(texto)) return 'login_desligado';
+  if (status === 429 || codigo.startsWith('over_')) return 'muitas';
+  if (status >= 500) return 'indisponivel';
+  return 'senha';
+}
+export async function entrarComSenhaDetalhe(email: string, senha: string): Promise<{ tokens: Tokens | null; falha: FalhaLogin | null }> {
+  const { url, chave } = base();
+  let r: Response;
+  try {
+    r = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+      method: 'POST', headers: { apikey: chave, 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: senha }), cache: 'no-store', signal: limite(),
+    });
+  } catch { return { tokens: null, falha: 'indisponivel' }; }
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok) return { tokens: null, falha: motivoDaRecusa(r.status, j) };
+  const tokens = lerTokens(j as Partial<Tokens>);
+  return tokens ? { tokens, falha: null } : { tokens: null, falha: 'indisponivel' };
+}
+
+export const MSG_LOGIN_DESLIGADO = 'O login por e-mail está desligado no painel agora. A Planee já foi avisada; tente de novo mais tarde.';
+export const MSG_NAO_CONFIRMADO = 'Este e-mail ainda não foi confirmado no painel. Peça ao admin da sua empresa (ou à Planee) para liberar o acesso.';
+
 // Primeiro acesso: cria a conta no Supabase Auth. Com confirmação de e-mail ligada no Supabase, volta sem tokens
 // (a pessoa confirma pelo e-mail e depois entra); sem confirmação, já volta com a sessão.
 export async function criarConta(email: string, senha: string): Promise<{ tokens: Tokens | null; erro: string | null }> {
@@ -51,7 +82,10 @@ export async function criarConta(email: string, senha: string): Promise<{ tokens
     body: JSON.stringify({ email, password: senha }), cache: 'no-store', signal: limite(),
   });
   const j = (await r.json().catch(() => ({}))) as Partial<Tokens> & { msg?: string; error_description?: string; code?: string | number };
-  if (!r.ok) return { tokens: null, erro: j.msg || j.error_description || 'Não foi possível criar a senha.' };
+  if (!r.ok) {
+    if (motivoDaRecusa(r.status, j as Record<string, unknown>) === 'login_desligado') return { tokens: null, erro: MSG_LOGIN_DESLIGADO };
+    return { tokens: null, erro: j.msg || j.error_description || 'Não foi possível criar a senha.' };
+  }
   if (j.access_token && j.refresh_token) {
     return { tokens: { access_token: j.access_token, refresh_token: j.refresh_token, expires_in: Number(j.expires_in) || 3600 }, erro: null };
   }
