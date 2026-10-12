@@ -9,6 +9,7 @@ import { recurso as acharRecurso, type Recurso } from './recursos';
 import { bancoDe, type Chave } from './auth';
 import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
+import { PAPEIS, pessoasDoNumero } from '@/lib/pessoas';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
 
@@ -42,6 +43,11 @@ function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
     else desconhecidos.push(k);
   }
   if (desconhecidos.length) throw new ErroApi(400, `Campos que não existem em ${r.nome}: ${desconhecidos.join(', ')}.`, { campos_validos: Object.keys(r.campos) });
+  // Vínculo pessoa ↔ número (migração 024): telefone normalizado; papel só dos conhecidos.
+  if (r.nome === 'contato_telefones') {
+    if ('telefone' in saida) saida.telefone = normalizarTelefone(saida.telefone);
+    if ('papel' in saida && !(PAPEIS as readonly string[]).includes(String(saida.papel))) throw new ErroApi(400, `papel inválido. Use: ${PAPEIS.join(', ')}.`);
+  }
   // Cor da coluna do assunto (migração 021): só chaves da paleta do painel; vazio apaga.
   if (r.nome === 'topicos' && 'cor' in saida) {
     if (!corValida(saida.cor)) throw new ErroApi(400, `Cor inválida. Use uma destas: ${CORES.map((c) => c.id).join(', ')} (ou vazio).`);
@@ -235,13 +241,10 @@ export async function ficha(chave: Chave, telefone: unknown) {
   exigirEscopo(chave, 'leitura');
   const tel = normalizarTelefone(telefone);
   const db = bancoDe(chave);
-  const cont = await db.query(
-    `select id, nome, telefone, documento, tipo_documento, criado_em from contatos
-      where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em`,
-    chaveTelefone(tel),
-  );
+  // Todas as pessoas do número (migração 024): o dono (contatos.telefone) e quem está ligado a ele em contato_telefones.
+  const cont = { rows: await pessoasDoNumero(db, tel) };
   const etapas = await db.query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`);
-  if (!cont.rowCount) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows, automaticas: { permitidas: true, desde: null, motivo: null, por: null, ultimos_envios: [] } };
+  if (!cont.rows.length) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows, automaticas: { permitidas: true, desde: null, motivo: null, por: null, ultimos_envios: [] } };
   const ids = cont.rows.map((c) => c.id);
   const [atend, ops, notas] = await Promise.all([
     db.query(
@@ -282,7 +285,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
     servicos: servs.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
     pagamentos: pags.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
     contatos: cont.rows.map((c) => ({
-      id: c.id, nome: c.nome, contato_desde: c.criado_em,
+      id: c.id, nome: c.nome, contato_desde: c.criado_em, papel: c.papel, dono_do_numero: c.dono,
       cpf_final: c.documento ? String(c.documento).replace(/\D/g, '').slice(-3) : null,
     })),
     atendimentos_abertos: atend.rows.filter((a) => a.etapa !== 'finalizado'),

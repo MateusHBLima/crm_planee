@@ -5,7 +5,8 @@ import type { EventoHistorico, Historico as THistorico, Pagamento, Servico } fro
 import { conferirPagamento, mudarAutomaticas, registrarPagamento } from '@/lib/painel/acoes';
 import { carregarHistorico, carregarServico } from '@/lib/painel/leitura-cliente';
 import { Campo, Janela } from './Formularios';
-import type { criarFormatos } from './util';
+import { telefoneBonito, type criarFormatos } from './util';
+import { NOME_PAPEL } from '@/lib/pessoas-papeis';
 import c from './crm.module.css';
 
 // Histórico do paciente (linha do tempo), agendamentos e comprovantes (migração 013).
@@ -59,6 +60,7 @@ export function HistoricoPaciente({ contatoId, fmt, podeConferir, compacto = fal
           <button type="button" className={c.acaoSec} onClick={() => setNovoPag(true)}>Registrar pagamento</button>
         )}
       </div>
+      <PessoasDoNumero n={h.numero} />
       {h.automaticas && (
         <Automaticas a={h.automaticas} compacto={compacto} fmt={fmt}
           onMudar={async (parar, motivo) => {
@@ -248,6 +250,26 @@ function NovoPagamento({ contatoId, servicos, onFechar, onPronto }: {
 
 // Mensagens automáticas da Sara (aniversário, lembretes, follow-up): o selo do momento e, na ficha, o botão para
 // parar ou voltar a enviar. Parar vale para todos os cadastros do mesmo telefone.
+// Várias pessoas no mesmo WhatsApp (migração 024): a que número esta pessoa está ligada e quem mais está nele.
+function PessoasDoNumero({ n }: { n: THistorico['numero'] }) {
+  const ligados = n.numeros.filter((x) => x.papel !== 'proprio');
+  if (!ligados.length && !n.outras.length) return null;
+  return (
+    <div className={c.blocoAuto} data-pessoas-numero aria-label="Pessoas neste número">
+      {ligados.map((x) => (
+        <span key={x.telefone} className={c.detMeta}>Usa o número <span className={c.mono}>{telefoneBonito(x.telefone)}</span> como {NOME_PAPEL[x.papel] ?? x.papel}</span>
+      ))}
+      {n.outras.length > 0 && (
+        <span className={c.detMeta}>
+          Também neste número: {n.outras.map((p, i) => (
+            <span key={p.id} data-pessoa={p.id}>{i ? ', ' : ''}<strong>{p.nome || 'sem nome'}</strong> ({p.dono ? 'dono do número' : NOME_PAPEL[p.papel] ?? p.papel})</span>
+          ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Automaticas({ a, compacto, fmt, onMudar }: {
   a: NonNullable<THistorico['automaticas']>; compacto: boolean; fmt: Fmt; onMudar: (parar: boolean, motivo?: string) => Promise<boolean>;
 }) {

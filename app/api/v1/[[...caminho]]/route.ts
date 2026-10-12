@@ -5,6 +5,7 @@ import { hostDeCabecalhos } from '@/lib/empresa';
 import { catalogo } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 import * as auto from '@/lib/api/automaticas';
+import { carregarPessoas } from '@/lib/api/pessoas';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +50,11 @@ async function tratar(req: NextRequest, ctx: Ctx) {
     if (rec === 'automaticas' && (id === 'recusa' || id === 'envios')) {
       if (req.method !== 'POST') throw new ErroApi(405, `Use POST /api/v1/automaticas/${id}.`);
       return NextResponse.json(id === 'recusa' ? await auto.recusaAutomaticas(chave, await corpo(req)) : await auto.registrarEnvioAutomatico(chave, await corpo(req)));
+    }
+    // Várias pessoas no mesmo número (migração 024): carga do "Quem é quem" da IA, até 500 por chamada.
+    if (rec === 'pessoas' && id === 'lote') {
+      if (req.method !== 'POST') throw new ErroApi(405, 'Use POST /api/v1/pessoas/lote.');
+      return NextResponse.json(await carregarPessoas(chave, await corpo(req)));
     }
     if (rec === 'funil' && !id) {
       if (req.method !== 'POST') throw new ErroApi(405, 'Use POST /api/v1/funil com {"telefone", "etapa_id"}.');

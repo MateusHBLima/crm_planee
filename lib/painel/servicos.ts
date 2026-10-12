@@ -7,6 +7,7 @@ import type { Chave } from '@/lib/api/auth';
 import { auditar } from './gestao';
 import { mascararTexto } from './crm';
 import { enviosDe, recusaDe, seloDosContatos, type Recusa, type Selo } from '@/lib/automaticas';
+import { numerosDoContato, pessoasDoNumero } from '@/lib/pessoas';
 
 // Histórico do paciente e serviços/pagamentos para as telas do CRM (migração 013).
 // Ver serviços e comprovantes: pagamentos.ver. Conferir e registrar pagamento: pagamentos.conferir.
@@ -43,7 +44,9 @@ export type EventoHistorico = {
 };
 // automaticas: mensagens automáticas da IA (migração 017). null = banco sem a 017.
 export type Automaticas = { recusa: Recusa | null; selo: Selo | null; podeMudar: boolean };
-export type Historico = { eventos: EventoHistorico[]; servicos: Servico[]; pagamentos: Pagamento[]; podePagamentos: boolean; instalado: boolean; automaticas: Automaticas | null };
+// numero: as pessoas do mesmo número de WhatsApp (migração 024): a que números este contato está ligado e quem mais está neles.
+export type PessoasNumero = { numeros: { telefone: string; papel: string }[]; outras: { id: string; nome: string | null; papel: string; dono: boolean }[] };
+export type Historico = { eventos: EventoHistorico[]; servicos: Servico[]; pagamentos: Pagamento[]; podePagamentos: boolean; instalado: boolean; automaticas: Automaticas | null; numero: PessoasNumero };
 
 const SITUACAO: Record<string, string> = { agendado: 'agendado', confirmado: 'confirmado', realizado: 'realizado', cancelado: 'cancelado', faltou: 'faltou' };
 const reais = (v: number | null) => (v === null ? '' : 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
@@ -139,7 +142,21 @@ export async function historicoContato(u: Usuario, contatoId: string): Promise<H
   }
   const automaticas = await automaticasDoContato(u, banco, contatoId, eventos);
   eventos.sort((x, y) => y.quando.localeCompare(x.quando));
-  return { eventos, servicos, pagamentos, podePagamentos: podePag, instalado, automaticas };
+  return { eventos, servicos, pagamentos, podePagamentos: podePag, instalado, automaticas, numero: await pessoasDoContato(banco, contatoId) };
+}
+
+async function pessoasDoContato(banco: ReturnType<typeof db>, contatoId: string): Promise<PessoasNumero> {
+  const numeros = await numerosDoContato(banco, contatoId);
+  const outras: PessoasNumero['outras'] = [];
+  const vistos = new Set([contatoId]);
+  for (const n of numeros.slice(0, 5)) {
+    for (const p of await pessoasDoNumero(banco, n.telefone)) {
+      if (vistos.has(p.id)) continue;
+      vistos.add(p.id);
+      outras.push({ id: p.id, nome: p.nome, papel: p.papel, dono: p.dono });
+    }
+  }
+  return { numeros, outras };
 }
 
 // Detalhe do agendamento: tudo do serviço e os comprovantes dele.

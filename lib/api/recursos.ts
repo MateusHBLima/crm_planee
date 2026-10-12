@@ -130,6 +130,18 @@ Object.assign(RECURSOS, {
     },
     filtros: ['contato_id', 'servico_id', 'analise', 'arquivado'], ordem: 'criado_em desc',
   },
+  // Várias pessoas no mesmo número (migração 024). A carga em lote é POST /api/v1/pessoas/lote.
+  contato_telefones: {
+    nome: 'contato_telefones', tabela: 'contato_telefones', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
+    descricao: 'Liga uma pessoa (contato) a um número de WhatsApp, com o papel dela nesse número. O dono do número é o contato com esse telefone; dependente e familiar são contatos sem telefone ligados aqui. A ficha por telefone devolve todas as pessoas do número. Para carregar muitos de uma vez, use POST /api/v1/pessoas/lote.',
+    campos: {
+      contato_id: 'id do contato (a pessoa)',
+      telefone: '55 + DDD + número, só dígitos',
+      papel: 'proprio | dependente | familiar | mesmo_numero | equipe_fornecedor',
+      origem: 'de onde veio (ex.: quem_e_quem)',
+    },
+    filtros: ['contato_id', 'telefone', 'papel', 'arquivado'], ordem: 'criado_em desc',
+  },
 } satisfies Record<string, Recurso>);
 
 export function recurso(nome: string): Recurso | undefined {
@@ -148,7 +160,8 @@ export function catalogo() {
       'Toda escrita fica registrada em painel_auditoria.',
     ],
     para_a_ia: [
-      'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). Escopo leitura.',
+      'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). "contatos" traz todas as pessoas do número, com papel, dono_do_numero e cpf_final. Escopo leitura.',
+      'POST /api/v1/pessoas/lote {"origem"?,"itens":[{"telefone","papel":"proprio|dependente|familiar|mesmo_numero|equipe_fornecedor","paciente":{"sistema":"feegow","codigo"},"nome"?,"cpf"?,"remover"?}]} — liga as pessoas aos números (até 500 por chamada, idempotente). Dependente que estava no contato do dono do número ganha contato próprio e leva os agendamentos dele. CPF só em contato sem CPF; nunca volta na resposta. Escopo crm.',
       'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
       'POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.',
       'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.',
