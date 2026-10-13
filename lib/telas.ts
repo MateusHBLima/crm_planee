@@ -43,15 +43,16 @@ export const ICONES: Record<string, string> = {
 };
 
 // Telas do painel (decisão 26). Cada uma aparece para quem tem a permissão dela na empresa escolhida;
-// Equipe é do admin e do master; Empresas e Interno, só do master.
+// Equipe é do admin e do master; Configurações, Registro, Empresas e Interno, só do master (13/10: a clínica não vê
+// Configurações nem Registro).
 const TELAS: Tela[] = [
   { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'agenda', nome: 'Agenda', icone: 'agenda', descricao: 'Agendamentos do dia: o espelho da agenda da clínica e os que a Sara marcou.', exige: (u) => pode(u, 'pagamentos.ver') },
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },
-  { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4.', exige: (u) => pode(u, 'crm.config') || pode(u, 'agente.config') },
+  { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4. Só a Planee.', exige: (u) => u.nivel === 'master' && Boolean(u.empresa) },
   { id: 'planee', nome: 'Planee', icone: 'conversa', descricao: 'Avisos para a Planee, respostas, novidades e manutenções.', exige: (u) => Boolean(u.empresa) && u.nivel !== 'master' },
-  { id: 'registro', nome: 'Registro', icone: 'registro', descricao: 'Tudo o que cada pessoa fez no painel: respostas, repasses, assumir, mover, notas e mudanças na equipe. Só o admin vê.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
+  { id: 'registro', nome: 'Registro', icone: 'registro', descricao: 'Tudo o que cada pessoa fez no painel: respostas, repasses, assumir, mover, notas e mudanças na equipe. Só a Planee vê.', exige: (u) => Boolean(u.empresa) && u.nivel === 'master' },
   { id: 'equipe', nome: 'Equipe', icone: 'pessoa', descricao: 'Pessoas da empresa, níveis e permissões.', exige: (u) => Boolean(u.empresa) && (u.nivel === 'master' || u.nivel === 'admin') },
   { id: 'empresas', nome: 'Empresas', icone: 'clientes', descricao: 'Empresas, domínios, módulos liberados e admins.', exige: (u) => u.nivel === 'master' },
   { id: 'interno', nome: 'Interno Planee', icone: 'interno', descricao: 'Avisos de todos os clientes, saúde, novidades e integrações.', exige: (u) => u.nivel === 'master' },

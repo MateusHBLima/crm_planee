@@ -9,9 +9,12 @@ import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
-export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFinal: boolean) {
+// Fase (13/10): com uma fase escolhida, o quadro mostra só os cartões dela (finalizado mostra os finalizados, mesmo
+// com "Mostrar finalizados" desligado).
+export type Fase = Etapa | 'todas';
+export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFinal: boolean, fase: Fase = 'todas') {
   return cartoes.filter((k) =>
-    (verFinal || k.etapa !== 'finalizado')
+    (fase === 'todas' ? (verFinal || k.etapa !== 'finalizado') : k.etapa === fase)
     && (origem === 'todos' || (origem === 'sombra') === k.sombra)
     && casaBusca(busca, [k.nome, k.telefone, k.documento, k.resumo, k.responsavel]));
 }
@@ -25,11 +28,11 @@ export function ordenar(a: Cartao, b: Cartao) {
     || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onAssumir, onMover, onPassar }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
-  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
+export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
+  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
-  const vis = filtrar(quadro.cartoes, busca, origem, verFinal).sort(ordenar);
+  const vis = filtrar(quadro.cartoes, busca, origem, verFinal, fase).sort(ordenar);
   const ids = new Set(quadro.topicos.map((t) => t.id));
   const colunas: { id: string; nome: string; icone: string; cor: string | null }[] = quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, icone: t.icone, cor: t.cor ?? null }));
   if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros', cor: null });
@@ -54,8 +57,8 @@ export function Quadro({ quadro, busca, origem, verFinal, fmt, agora, ocupado, p
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onAssumir={onAssumir} onMover={onMover} onPassar={onPassar} />)}
-            {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : 'Nada aberto'}</div>}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} />)}
+            {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : fase !== 'todas' ? `Nada em ${quadro.etapas[fase]}` : 'Nada aberto'}</div>}
           </section>
         );
       })}
@@ -90,9 +93,9 @@ function RolagemQuadro({ chave, children }: { chave: number; children: React.Rea
 
 const TEXTO_ATRASO: Record<Exclude<Atraso, 'ok'>, string> = { amarelo: 'Atenção', vermelho: 'Atrasado' };
 
-function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onAssumir, onMover, onPassar }: {
+function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onMover, onPassar }: {
   k: Cartao; quadro: TQuadro; fmt: Fmt; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
-  onAbrir: (id: string) => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
+  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const fim = k.etapa === 'finalizado';
   return (
@@ -125,7 +128,7 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onA
         {k.notas > 0 && <span className={c.chipNeutro}><Icone nome="nota" tamanho={12} /> {k.notas} {k.notas === 1 ? 'nota' : 'notas'}</span>}
         {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
       </div>
-      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} onPassar={onPassar} />}
+      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} onPassar={onPassar} />}
     </article>
   );
 }
@@ -140,8 +143,10 @@ export function Relativo({ de }: { de: string | null | undefined }) {
   return <span suppressHydrationWarning>{ha(de)}</span>;
 }
 
-export function Acoes({ k, quadro, ocupado, onAssumir, onMover, onPassar }: {
-  k: Cartao; quadro: TQuadro; ocupado: boolean; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
+// Sem "Assumir" (13/10, pedido da clínica): quem resolve o cartão aguardando finaliza direto (o servidor grava quem
+// finalizou como responsável). Cartões que já estão em atendimento continuam com pendente e finalizar.
+export function Acoes({ k, quadro, ocupado, onMover, onPassar }: {
+  k: Cartao; quadro: TQuadro; ocupado: boolean; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   if (k.sombra) return null; // cartão sombra: só conferir e arquivar (o servidor também recusa)
   const b = (rotulo: string, fn: () => void, forte: boolean) => (
@@ -149,7 +154,7 @@ export function Acoes({ k, quadro, ocupado, onAssumir, onMover, onPassar }: {
   );
   return (
     <div className={c.acoes}>
-      {k.etapa === 'aguardando' && b('Assumir', () => onAssumir(k.id), true)}
+      {k.etapa === 'aguardando' && b('Finalizar', () => onMover(k.id, 'finalizado'), true)}
       {k.etapa === 'em_atendimento' && [b(quadro.etapas.pendente, () => onMover(k.id, 'pendente'), false), b('Finalizar', () => onMover(k.id, 'finalizado'), true)]}
       {k.etapa === 'pendente' && [b('Retomar', () => onMover(k.id, 'em_atendimento'), false), b('Finalizar', () => onMover(k.id, 'finalizado'), true)]}
       {k.etapa === 'finalizado' && b('Reabrir', () => onMover(k.id, 'aguardando'), false)}

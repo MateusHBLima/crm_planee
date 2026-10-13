@@ -27,15 +27,14 @@ async function entrar(p, email, senha='senha123') {
   const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox, CRM e Planee (avisos)', nav.join(',') === 'Inbox,CRM,Planee', nav.join(','));
   const cols = await p.$$eval('section[aria-label]', (s) => s.map((x) => x.getAttribute('aria-label'))); ok('colunas por assunto', cols.includes('Receita') && cols.includes('Valores e pagamento'), cols.join('|'));
   ok('secretária não tem filtro de sombra (cartão sombra é só da Planee)', (await p.locator('button:has-text("Só sombra")').count()) === 0);
-  // Assumir o cartão da Rita
-  const rita = p.locator('article', { hasText: 'Rita Ficticia' }); await rita.getByRole('button', { name: 'Assumir' }).click(); await p.waitForTimeout(1500);
-  ok('Assumir muda para Em atendimento', (await rita.textContent()).includes('Em atendimento'));
-  ok('responsável gravado', sql("select responsavel || '|' || (assumido_em is not null) from atendimentos a join contatos c on c.id=a.contato_id where c.nome='Rita Ficticia'") === 'Amanda Teste|true');
-  ok('auditoria com usuario_id', sql("select count(*) from painel_auditoria p join painel_usuarios u on u.id=p.usuario_id where u.email='amanda@teste.local' and p.acao='atualizar'") === '1');
+  // Sem "Assumir" (13/10): cartão aguardando tem Finalizar e Passar
+  const rita = p.locator('article', { hasText: 'Rita Ficticia' });
+  ok('cartão aguardando sem Assumir e com Finalizar', (await p.locator('article button', { hasText: 'Assumir' }).count()) === 0
+    && (await rita.getByRole('button', { name: 'Finalizar' }).count()) === 1);
   // Detalhe + nota
   await rita.getByRole('button', { name: 'Rita Ficticia' }).click(); await p.waitForSelector('aside[aria-label^="Atendimento"]'); await p.waitForTimeout(800);
   await p.fill('#nova-nota', 'Liguei para a paciente, confirmou o Pix.'); await p.click('text=Salvar nota'); await p.waitForTimeout(1200);
-  const hist = await p.textContent('aside[aria-label^="Atendimento"] ol'); ok('nota aparece no histórico', hist.includes('confirmou o Pix') && hist.includes('Assumiu'), hist.replace(/\s+/g,' ').slice(0,200));
+  const hist = await p.textContent('aside[aria-label^="Atendimento"] ol'); ok('nota aparece no histórico', hist.includes('confirmou o Pix'), hist.replace(/\s+/g,' ').slice(0,200));
   ok('nota gravada com autor', sql("select autor from notas where texto like 'Liguei%'") === 'Amanda Teste');
   ok('secretaria não vê Arquivar', (await p.locator('text=Arquivar atendimento').count()) === 0);
   await p.screenshot({ path: out + '02_detalhe.png' });
@@ -46,17 +45,29 @@ async function entrar(p, email, senha='senha123') {
   // Finalizar
   const rita2 = p.locator('article', { hasText: 'Rita Ficticia' }); await rita2.getByRole('button', { name: 'Finalizar' }).click(); await p.waitForTimeout(1500);
   ok('Finalizar tira do quadro', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 0);
+  ok('finalizar direto grava quem finalizou como responsável', sql("select etapa || '|' || responsavel || '|' || (finalizado_em is not null) from atendimentos a join contatos c on c.id=a.contato_id where c.nome='Rita Ficticia'") === 'finalizado|Amanda Teste|true');
+  ok('auditoria com usuario_id', Number(sql("select count(*) from painel_auditoria p join painel_usuarios u on u.id=p.usuario_id where u.email='amanda@teste.local' and p.acao='atualizar'")) >= 1);
   await p.click('text=/Mostrar finalizados hoje/'); await p.waitForTimeout(300);
   ok('Mostrar finalizados traz de volta', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1);
+  await p.click('text=/Ocultar finalizados hoje/'); await p.waitForTimeout(300);
+  // Filtro por fase (13/10)
+  await p.click('[data-fases] button[data-fase="finalizado"]'); await p.waitForTimeout(300);
+  const etapasVistas = await p.$$eval('article [data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
+  ok('fase Finalizado mostra só os finalizados', etapasVistas.join(',') === 'finalizado' && (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1, etapasVistas.join(','));
+  await p.click('[data-fases] button[data-fase="aguardando"]'); await p.waitForTimeout(300);
+  const soAguardando = await p.$$eval('article [data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
+  ok('fase Aguardando mostra só os aguardando', soAguardando.join(',') === 'aguardando', soAguardando.join(','));
+  await p.click('[data-fases] button[data-fase="aguardando"]'); await p.waitForTimeout(300);
+  ok('clicar de novo na fase volta para Todas', (await p.locator('[data-fases] button[aria-pressed="true"]').textContent()) === 'Todas');
   // Busca
   await p.fill('#busca-crm', '0012'); await p.waitForTimeout(200);
   ok('busca por final do telefone', (await p.locator('article').count()) === 1, String(await p.locator('article').count()));
   await p.fill('#busca-crm', '');
-  // concorrência: outra pessoa já assumiu
+  // concorrência: outra pessoa já mexeu no cartão
   const idMarina = sql("select a.id from atendimentos a join contatos c on c.id=a.contato_id where c.nome='Marina Teste'");
   sql(`update atendimentos set etapa='em_atendimento', responsavel='Outra Pessoa' where id='${idMarina}'`);
-  await p.locator('article', { hasText: 'Marina Teste' }).getByRole('button', { name: 'Assumir' }).click(); await p.waitForTimeout(1500);
-  ok('não assume o que outra pessoa já assumiu', ((await p.textContent('[role=status]'))||'').includes('Outra Pessoa já assumiu'), await p.textContent('[role=status]'));
+  await p.locator('article', { hasText: 'Marina Teste' }).getByRole('button', { name: 'Finalizar' }).click(); await p.waitForTimeout(1500);
+  ok('não finaliza o que outra pessoa já mudou', ((await p.textContent('[role=status]'))||'').includes('Outra pessoa já mudou') && sql(`select etapa from atendimentos where id='${idMarina}'`) === 'em_atendimento', await p.textContent('[role=status]'));
   // atualização automática: cartão novo entra sozinho
   sql("insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000002','receita','Cartão novo aberto pela Sara durante o teste','IA')");
   await p.waitForTimeout(17000);

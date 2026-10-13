@@ -1,5 +1,5 @@
 // Equipe no CRM (11/10, decisão 35): cor da coluna (Configurações e API), avisos por assunto (no CRM e na Equipe),
-// "Passar para…", tela Registro (só admin) e filtro de data em português (CRM e Resultados). Roda pelo rodar.sh
+// "Passar para…", tela Registro (só a Planee desde 13/10) e filtro de data em português (CRM e Resultados). Roda pelo rodar.sh
 // depois do convite.js. Dados fictícios; no fim arquiva os cartões que criou e volta os avisos da Amanda para "todos".
 const { chromium } = require('playwright');
 const crypto = require('crypto');
@@ -34,17 +34,22 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   const gestorId = sql("select id from painel_usuarios where email='gestor@teste.local'");
   const avisosDaAmanda = () => sql(`select coalesce(array_to_string(assuntos_aviso, ','), 'todos') from painel_vinculos where usuario_id='${amandaId}' and empresa_id='teste'`);
 
-  // ---------- 1. Cor da coluna: Configurações e API ----------
-  const g = await nova();
-  await entrar(g.p, 'gestor@teste.local', '/configuracoes');
-  await g.p.selectOption('#as-receita-cor', 'azul');
-  await g.p.click(`form[aria-label="Assunto ${RECEITA}"] button:has-text("Salvar")`); await g.p.waitForTimeout(1500);
+  // ---------- 1. Cor da coluna: Configurações (só a Planee, 13/10) e API ----------
+  const pl = await nova();
+  await entrar(pl.p, 'planee@teste.local');
+  if (await pl.p.locator('#trocar-empresa').count()) { await Promise.all([pl.p.waitForURL(/\/(crm|inbox)$/), pl.p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
+  await pl.p.goto(B + '/configuracoes'); await pl.p.locator('#as-receita-cor').waitFor({ timeout: 10000 });
+  await pl.p.selectOption('#as-receita-cor', 'azul');
+  await pl.p.click(`form[aria-label="Assunto ${RECEITA}"] button:has-text("Salvar")`); await pl.p.waitForTimeout(1500);
   ok('cor da coluna salva em Configurações', sql("select cor from crm_topicos where id='receita'") === 'azul');
-  await g.p.goto(B + '/crm'); await g.p.locator(`section[aria-label="${RECEITA}"]`).waitFor({ timeout: 10000 });
+  const g = await nova();
+  await entrar(g.p, 'gestor@teste.local', '/crm'); await g.p.locator(`section[aria-label="${RECEITA}"]`).waitFor({ timeout: 10000 });
   const fundo = await g.p.locator(`section[aria-label="${RECEITA}"]`).evaluate((e) => ({ cor: e.getAttribute('data-cor'), bg: getComputedStyle(e).backgroundColor }));
   const semCor = await g.p.locator(`section[aria-label="${DOCS}"]`).evaluate((e) => ({ cor: e.getAttribute('data-cor'), bg: getComputedStyle(e).backgroundColor }));
   ok('coluna com fundo da cor escolhida; as outras sem fundo', fundo.cor === 'azul' && !/rgba\(0, 0, 0, 0\)|transparent/.test(fundo.bg) && semCor.cor === null && /rgba\(0, 0, 0, 0\)|transparent/.test(semCor.bg), JSON.stringify([fundo, semCor]));
   await g.p.screenshot({ path: out + '40_colunas_coloridas.png' });
+  await g.p.goto(B + '/configuracoes'); await g.p.waitForTimeout(500);
+  ok('admin da clínica não abre Configurações', !g.p.url().endsWith('/configuracoes'), g.p.url());
 
   const chave = 'teste-cor-' + crypto.randomBytes(8).toString('hex');
   sql(`insert into api_chaves (nome, hash, escopos) values ('Config teste', '${crypto.createHash('sha256').update(chave).digest('hex')}', array['leitura','config'])`);
@@ -123,20 +128,23 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   const recusa = await ler(a.p, '/api/painel/ler/registro');
   ok('membro não lê o Registro', recusa.s === 403, JSON.stringify(recusa));
 
-  // ---------- 5. Registro (só admin) ----------
-  await g.p.goto(B + '/registro'); await g.p.locator('[data-registro]').first().waitFor({ timeout: 10000 });
-  const linhas = await g.p.locator('[data-registro]').allTextContents();
+  // ---------- 5. Registro (só a Planee, 13/10) ----------
+  const recusaAdmin = await ler(g.p, '/api/painel/ler/registro');
+  await g.p.goto(B + '/registro'); await g.p.waitForTimeout(800);
+  ok('admin da clínica não abre nem lê o Registro', recusaAdmin.s === 403 && !g.p.url().includes('/registro'), `${recusaAdmin.s} ${g.p.url()}`);
+  await pl.p.goto(B + '/registro'); await pl.p.locator('[data-registro]').first().waitFor({ timeout: 10000 });
+  const linhas = await pl.p.locator('[data-registro]').allTextContents();
   ok('Registro mostra o repasse com quem fez', linhas.some((t) => t.includes('Gestor Teste') && t.includes(`Passou para ${AGENDA} · Amanda Teste`)), linhas.slice(0, 5).join(' / '));
   ok('Registro mostra a escolha de avisos e quem fez', linhas.some((t) => t.includes('Amanda Teste') && t.includes('Avisos do CRM de Amanda Teste')) && linhas.some((t) => t.includes('Gestor Teste') && t.includes(`Avisos do CRM de Amanda Teste: ${DOCS}`)));
   ok('Registro mostra o nome do paciente do cartão', linhas.some((t) => t.includes('Passou para') && t.includes('Rita Ficticia')));
-  await g.p.screenshot({ path: out + '42_registro.png', fullPage: true });
-  await g.p.selectOption('#registro-pessoa', amandaId); await g.p.waitForTimeout(1500);
-  const soAmanda = await g.p.locator('[data-registro]').allTextContents();
+  await pl.p.screenshot({ path: out + '42_registro.png', fullPage: true });
+  await pl.p.selectOption('#registro-pessoa', amandaId); await pl.p.waitForTimeout(1500);
+  const soAmanda = await pl.p.locator('[data-registro]').allTextContents();
   ok('filtro por pessoa', soAmanda.length > 0 && soAmanda.every((t) => t.includes('Amanda Teste')) && !soAmanda.some((t) => t.includes('Gestor Teste')), soAmanda.join(' / ').slice(0, 300));
-  await g.p.selectOption('#registro-pessoa', ''); await g.p.click('button[data-area="equipe"]'); await g.p.waitForTimeout(1500);
-  const areas = await g.p.locator('li[data-registro]').evaluateAll((ls) => ls.map((l) => l.getAttribute('data-area')));
+  await pl.p.selectOption('#registro-pessoa', ''); await pl.p.click('button[data-area="equipe"]'); await pl.p.waitForTimeout(1500);
+  const areas = await pl.p.locator('li[data-registro]').evaluateAll((ls) => ls.map((l) => l.getAttribute('data-area')));
   ok('filtro por área', areas.length > 0 && areas.every((x) => x === 'equipe'), areas.join(','));
-  const ontemReg = await ler(g.p, `/api/painel/ler/registro?de=${diaSp(-3)}&ate=${diaSp(-2)}`);
+  const ontemReg = await ler(pl.p, `/api/painel/ler/registro?de=${diaSp(-3)}&ate=${diaSp(-2)}`);
   ok('Registro respeita o período', ontemReg.s === 200 && ontemReg.j.dados.itens.every((x) => new Date(x.quando) < new Date(Date.now() - 86400_000)), JSON.stringify(ontemReg.j).slice(0, 200));
   await a.p.goto(B + '/registro'); await a.p.waitForTimeout(1000);
   ok('membro não abre a tela Registro', !a.p.url().includes('/registro'), a.p.url());

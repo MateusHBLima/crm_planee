@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import { arquivarAtendimento, assumirAtendimento, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
+import { arquivarAtendimento, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
 import type { Intervalo } from '@/lib/periodo';
 import { FiltroData } from '@/components/FiltroData';
 import { carregarQuadro } from '@/lib/painel/leitura-cliente';
 import { lembrar } from '@/lib/painel/memoria-cliente';
 import { Icone } from '@/components/Icone';
-import { Quadro } from './Quadro';
+import { Quadro, type Fase } from './Quadro';
 import { Detalhe } from './Detalhe';
 import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
@@ -55,6 +55,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [busca, setBusca] = useState('');
   const [origem, setOrigem] = useState<Origem>('todos');
   const [verFinal, setVerFinal] = useState(false);
+  const [fase, setFase] = useState<Fase>('todas');
   const [aberto, setAberto] = useState<string | null>(null);
   const [passarAberto, setPassarAberto] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
@@ -142,9 +143,6 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
     (q: TQuadro): TQuadro => ({ ...q, cartoes: q.cartoes.map((k) => (k.id === id ? f(k) : k)) });
 
   const acoes = useMemo(() => ({
-    assumir: (id: string) => executar(id,
-      mudarCartao(id, (k) => ({ ...k, etapa: 'em_atendimento', responsavel: nome, assumido_em: k.assumido_em ?? agoraIso(), finalizado_em: null })),
-      () => assumirAtendimento(id), 'Você assumiu o atendimento.'),
     mover: (id: string, etapa: Etapa) => {
       const de = quadro.cartoes.find((k) => k.id === id)?.etapa;
       executar(id, (q) => {
@@ -231,12 +229,16 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       {aba === 'atendimento' && (
         <>
           <div className={c.barra}>
-            <div className={c.resumo}>
-              {(['aguardando', 'em_atendimento', 'pendente'] as Etapa[]).map((e) => (
-                <span key={e} className={c.resumoItem}>
-                  <span className={c.chip} data-etapa={e}><Icone nome={e} tamanho={12} /></span>
-                  {quadro.etapas[e]} <strong>{contagem(e)}</strong>
-                </span>
+            {/* Filtro por fase (13/10): clicar numa fase mostra só os cartões dela; clicar de novo (ou em Todas) volta. */}
+            <div className={`${c.segmentadoPeq} ${c.fases}`} role="group" aria-label="Filtrar por fase" data-fases>
+              <button type="button" aria-pressed={fase === 'todas'} className={c.segItem} onClick={() => setFase('todas')}>Todas</button>
+              {(['aguardando', 'em_atendimento', 'pendente', 'finalizado'] as Etapa[]).map((e) => (
+                <button key={e} type="button" aria-pressed={fase === e} className={c.segItem} data-fase={e} onClick={() => setFase((f) => (f === e ? 'todas' : e))}>
+                  <span className={c.faseItem}>
+                    <span className={c.chip} data-etapa={e}><Icone nome={e} tamanho={12} /></span>
+                    {quadro.etapas[e]} <strong>{contagem(e)}</strong>
+                  </span>
+                </button>
               ))}
             </div>
             {agora !== null && (
@@ -258,7 +260,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               </div>
             )}
             <FiltroData id="periodo-crm" valor={periodo} onMudar={mudarPeriodo} hoje={quadro.hoje ?? new Date().toISOString().slice(0, 10)} vazio="Abertos agora" rotulo="Período do quadro" />
-            {!quadro.periodo && (
+            {!quadro.periodo && fase === 'todas' && (
               <button type="button" className={c.botaoSec} aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
                 {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
               </button>
@@ -277,8 +279,8 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
             )}
           </div>
           {quadro.periodo && <p className={c.nota} data-nota-periodo>Atendimentos abertos neste período, em todas as etapas{quadro.cartoes.length >= 1000 ? ' (os 1.000 primeiros)' : ''}.</p>}
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
-            onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onAssumir={acoes.assumir} onMover={acoes.mover}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
+            onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onMover={acoes.mover}
             onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
         </>
       )}
@@ -294,7 +296,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
 
       {cartaoAberto && (
         <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
-          onFechar={fechar} onAssumir={acoes.assumir} onMover={acoes.mover} onAssunto={acoes.assunto}
+          onFechar={fechar} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} passarAberto={passarAberto} onPassar={acoes.passar} />
       )}
     </div>

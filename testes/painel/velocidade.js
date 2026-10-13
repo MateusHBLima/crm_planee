@@ -42,19 +42,17 @@ const NUM = '100000000000001'; const BIA = '5547900001001';
     return route.continue();
   });
   const card = p.locator('article', { hasText: 'Velocidade Ficticia' }).first();
-  // Posição do cartão na coluna (entre os cartões da mesma coluna), para conferir que assumir não o tira do lugar.
-  const posicao = () => card.evaluate((el) => [...el.parentElement.querySelectorAll(':scope > article')].indexOf(el));
-  const antes = await posicao();
-  await card.getByRole('button', { name: 'Assumir' }).click();
+  // Finalizar direto do aguardando (13/10, sem "Assumir"): o cartão sai do quadro antes da resposta do servidor.
+  await card.getByRole('button', { name: 'Finalizar' }).click();
   await p.waitForTimeout(300);
-  ok('assumir aparece na hora (antes da resposta do servidor)', ((await card.textContent()) || '').includes('Gestor Teste')
+  ok('finalizar aparece na hora (antes da resposta do servidor)', (await p.locator('article', { hasText: 'Velocidade Ficticia' }).count()) === 0
     && sql(`select etapa from atendimentos where id = '${alvo}'`) === 'aguardando');
-  await p.getByText('Você assumiu o atendimento.').waitFor({ timeout: 10000 }).catch(() => undefined);
-  ok('servidor confirma e grava', sql(`select etapa || '|' || responsavel || '|' || (assumido_em is not null) from atendimentos where id = '${alvo}'`) === 'em_atendimento|Gestor Teste|true');
+  await p.getByText('Movido para Finalizado.').waitFor({ timeout: 10000 }).catch(() => undefined);
+  ok('servidor confirma e grava quem finalizou', sql(`select etapa || '|' || responsavel || '|' || (finalizado_em is not null) from atendimentos where id = '${alvo}'`) === 'finalizado|Gestor Teste|true');
   ok('auditoria da ação com a pessoa e o que mudou', sql(`select count(*) from painel_auditoria where recurso = 'atendimentos' and alvo_id = '${alvo}'
-      and usuario_id is not null and detalhe->>'etapa' = 'em_atendimento' and detalhe->>'responsavel' = 'Gestor Teste'`) === '1');
-  ok('assumir não tira o cartão do lugar na coluna', (await posicao()) === antes, `${antes} → ${await posicao()}`);
+      and usuario_id is not null and detalhe->>'etapa' = 'finalizado' and detalhe->>'responsavel' = 'Gestor Teste'`) === '1');
   await p.unroute((u) => u.pathname === '/crm');
+  await p.click('text=/Mostrar finalizados hoje/'); await card.waitFor({ timeout: 5000 });
 
   // Assunto, nota e arquivar pelo caminho novo (um comando só no banco).
   await card.getByRole('button', { name: 'Velocidade Ficticia' }).click(); await p.locator('#det-assunto').waitFor({ timeout: 5000 });

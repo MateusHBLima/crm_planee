@@ -38,7 +38,8 @@ export type Automatica = { tipo: string; nome: string; quando: string };
 // Aguardando conta desde que abriu; pendente interno, desde a última mudança (atualizado_em).
 export type Prazo = { amarelo: number; vermelho: number };
 export type Prazos = { aguardando: Prazo; pendente: Prazo };
-export const PRAZOS_PADRAO: Prazos = { aguardando: { amarelo: 15, vermelho: 30 }, pendente: { amarelo: 24 * 60, vermelho: 48 * 60 } };
+// Aguardando: amarelo com 12 h e vermelho com 1 dia (13/10, pedido da clínica; antes 15 e 30 min).
+export const PRAZOS_PADRAO: Prazos = { aguardando: { amarelo: 12 * 60, vermelho: 24 * 60 }, pendente: { amarelo: 24 * 60, vermelho: 48 * 60 } };
 
 export type Quadro = {
   topicos: Topico[]; etapas: Record<Etapa, string>; cartoes: Cartao[]; finalizadosHoje: number; fuso: string; lidoEm: string;

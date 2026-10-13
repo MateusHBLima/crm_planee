@@ -59,7 +59,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
         <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
-          podeConfig={pode(usuario, 'crm.config')} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+          podeConfig={usuario.nivel === 'master'} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
       </Shell>
     );
   }
@@ -82,7 +82,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     );
   }
 
-  // Registro (11/10): só admin e Planee (a tela confere de novo na leitura). Os dados chegam pela leitura GET.
+  // Registro (11/10; só a Planee desde 13/10): a tela confere de novo na leitura. Os dados chegam pela leitura GET.
   if (atual.id === 'registro' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario}>
@@ -104,7 +104,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     );
   }
 
-  if (atual.id === 'configuracoes' && usuario.empresa && pode(usuario, 'crm.config')) {
+  if (atual.id === 'configuracoes' && usuario.empresa && usuario.nivel === 'master') {
     const config = await tentar(() => lerConfigCrm(usuario));
     if ('erro' in config) return aviso(config.erro);
     return (
