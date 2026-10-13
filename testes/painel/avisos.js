@@ -205,9 +205,9 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   sql(`update avisos set estado = 'resolvido', lembrado_em = now() - interval '3 days' where tipo = 'token_vencendo'`);
   await p.getByRole('button', { name: 'Verificar agora' }).click(); await p.waitForTimeout(2500);
   ok('3 dias depois, sem renovar: o lembrete volta a abrir', sql(`select estado || '|' || (lembrado_em > now() - interval '1 minute') from avisos where tipo = 'token_vencendo'`) === 'aberto|true');
-  // Fila parada (09/10): 5 pedidos aguardando além do prazo vermelho. Em horário comercial vira aviso; fora dele, não.
+  // Fila parada (09/10): 5 pedidos aguardando além do prazo vermelho (1 dia desde 13/10). Em horário comercial vira aviso; fora dele, não.
   const ids = sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por, aberto_em)
-     select '00000000-0000-4000-8000-000000000001', 'outros', 'Fila parada fictícia ' || n, 'IA', now() - interval '3 hours'
+     select '00000000-0000-4000-8000-000000000001', 'outros', 'Fila parada fictícia ' || n, 'IA', now() - interval '25 hours'
        from generate_series(1, 5) n returning id`).split('\n');
   await p.getByRole('button', { name: 'Verificar agora' }).click(); await p.waitForTimeout(2500);
   const sp = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
