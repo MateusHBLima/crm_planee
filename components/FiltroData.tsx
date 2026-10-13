@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   anoInteiro, atalhoDe, diaDe, diaBr, intervaloDoAtalho, MESES_CURTOS, mesInteiro, nomeIntervalo, nomeMes, NOMES_ATALHO,
   type Atalho, type Intervalo,
@@ -43,6 +43,17 @@ export function FiltroData({ valor, onMudar, hoje, atalhos = ['hoje', 'ontem', '
     return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
   }, [aberto]);
 
+  // O painel abre alinhado pela direita do botão; se assim ele passaria por baixo do menu lateral (botão perto da
+  // esquerda da tela, como no CRM com o filtro por fase), abre alinhado pela esquerda.
+  const painel = useRef<HTMLDivElement>(null);
+  const [aEsquerda, setAEsquerda] = useState(false);
+  useLayoutEffect(() => {
+    if (!aberto) { setAEsquerda(false); return; }
+    const p = painel.current; if (!p || getComputedStyle(p).position !== 'absolute') return;
+    const limite = caixa.current?.closest('main')?.getBoundingClientRect().left ?? 0;
+    if (p.getBoundingClientRect().left < limite) setAEsquerda(true);
+  }, [aberto]);
+
   const escolher = (v: Intervalo | null) => { onMudar(v); setAberto(false); };
 
   return (
@@ -54,7 +65,7 @@ export function FiltroData({ valor, onMudar, hoje, atalhos = ['hoje', 'ontem', '
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
       {aberto && (
-        <div className={f.painel} id={idPainel} role="dialog" aria-label={rotulo}>
+        <div className={f.painel} id={idPainel} role="dialog" aria-label={rotulo} ref={painel} data-lado={aEsquerda ? 'esquerda' : undefined}>
           <Conteudo valor={valor} hoje={hoje} atalhos={atalhos} modos={modos} vazio={vazio} onEscolher={escolher} />
         </div>
       )}
