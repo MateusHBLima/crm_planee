@@ -50,6 +50,8 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   await g.p.screenshot({ path: out + '40_colunas_coloridas.png' });
   await g.p.goto(B + '/configuracoes'); await g.p.waitForTimeout(500);
   ok('admin da clínica não abre Configurações', !g.p.url().endsWith('/configuracoes'), g.p.url());
+  // Volta ao CRM: o resto do teste usa o botão Atualizar do quadro nesta aba.
+  await g.p.goto(B + '/crm'); await g.p.locator(`section[aria-label="${RECEITA}"]`).waitFor({ timeout: 10000 });
 
   const chave = 'teste-cor-' + crypto.randomBytes(8).toString('hex');
   sql(`insert into api_chaves (nome, hash, escopos) values ('Config teste', '${crypto.createHash('sha256').update(chave).digest('hex')}', array['leitura','config'])`);
