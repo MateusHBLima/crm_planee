@@ -1,6 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
-import { transacao, ErroApi } from '@/lib/db';
+import { transacao, ErroApi, registrarErro } from '@/lib/db';
 import { chaveTelefone, normalizarTelefone } from '@/lib/telefone';
 import { cpfValido, PAPEIS } from '@/lib/pessoas';
 import { bancoDe, type Chave } from './auth';
@@ -15,15 +15,16 @@ import { auditar, exigirEscopo } from './servico';
 // • mesmo_numero/equipe_fornecedor: como dependente, mas o dono do número com o mesmo nome continua sendo ele;
 // • o vínculo fica em contato_telefones; remover: true arquiva o vínculo;
 // • CPF só se o contato não tem; nunca troca; nunca volta na resposta.
-// Cada item roda num savepoint: erro num item não derruba os outros. Os "proprio" vão primeiro.
+// Cada item é uma transação curta: erro num item não derruba os outros. Os "proprio" vão primeiro.
 
 const MAX = 500;
+const PRAZO_MS = 100_000; // depois disso o resto do lote volta como "nao_processado" (o proxy corta em ~5 min)
 const SISTEMA = /^[a-z0-9_]{1,30}$/;
 type Item = Record<string, unknown>;
 type Contato = { id: string; nome: string | null; telefone: string | null; documento: string | null };
 export type ResultadoItem = {
   indice: number; ok: boolean; contato_id?: string; criado?: boolean; separado?: boolean; servicos_movidos?: number;
-  removido?: boolean; dono_renomeado?: boolean; aviso?: string; papel_gravado?: string; contato_cpf?: string; erro?: string;
+  removido?: boolean; dono_renomeado?: boolean; aviso?: string; papel_gravado?: string; contato_cpf?: string; erro?: string; codigo?: string;
 };
 
 class ErroItem extends Error {}
@@ -213,28 +214,40 @@ export async function carregarPessoas(chave: Chave, corpo: unknown) {
     .sort((a, b) => Number(a.it.papel !== 'proprio') - Number(b.it.papel !== 'proprio') || a.i - b.i);
   const saida: ResultadoItem[] = new Array(itens.length);
 
-  await transacao(async (c) => {
-    try { await c.query(`select 1 from contato_telefones limit 1`); } catch (e) {
-      if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Várias pessoas por número ainda não foram instaladas no banco desta empresa (migração 024).');
-      throw e;
-    }
-    for (const { it, i } of ordem) {
-      if (conflito(it)) { saida[i] = { indice: i, ok: false, erro: 'cpf_conflito_no_lote' }; continue; }
-      await c.query('savepoint item');
-      try {
-        saida[i] = await umItem(c, it, origem, i);
-        await c.query('release savepoint item');
-        await auditar(c, chave, 'carregar', 'contatos', saida[i].contato_id ?? null, {
-          origem, papel: it.papel, paciente: it.paciente, criado: saida[i].criado, separado: saida[i].separado,
-          servicos_movidos: saida[i].servicos_movidos, removido: saida[i].removido, dono_renomeado: saida[i].dono_renomeado, cpf: it.cpf ? (saida[i].aviso ?? 'enviado') : undefined,
+  const banco = bancoDe(chave);
+  try { await banco.query(`select 1 from contato_telefones limit 1`); } catch (e) {
+    if ((e as { code?: string }).code === '42P01') throw new ErroApi(503, 'Várias pessoas por número ainda não foram instaladas no banco desta empresa (migração 024).');
+    throw e;
+  }
+  // Cada item é uma transação curta, com a sua conexão (12/10, carga da noite): um lote longo numa transação só
+  // segurava conexão e linhas por minutos e derrubava os lotes seguintes com "Erro interno". Agora o que já foi
+  // gravado fica gravado, um item com problema volta com erro só nele, e passando do tempo o resto volta como
+  // "nao_processado" (é só reenviar: tudo é idempotente).
+  const inicio = Date.now();
+  for (const { it, i } of ordem) {
+    if (conflito(it)) { saida[i] = { indice: i, ok: false, erro: 'cpf_conflito_no_lote' }; continue; }
+    if (Date.now() - inicio > PRAZO_MS) { saida[i] = { indice: i, ok: false, erro: 'nao_processado' }; continue; }
+    try {
+      saida[i] = await transacao(async (c) => {
+        await c.query(`set local lock_timeout = '5s'`);
+        const r = await umItem(c, it, origem, i);
+        await auditar(c, chave, 'carregar', 'contatos', r.contato_id ?? null, {
+          origem, papel: it.papel, paciente: it.paciente, criado: r.criado, separado: r.separado,
+          servicos_movidos: r.servicos_movidos, removido: r.removido, dono_renomeado: r.dono_renomeado, cpf: it.cpf ? (r.aviso ?? 'enviado') : undefined,
         });
-      } catch (e) {
-        await c.query('rollback to savepoint item');
-        if (e instanceof ErroItem) { saida[i] = { indice: i, ok: false, erro: e.message }; continue; }
-        throw e;
+        return r;
+      }, banco);
+    } catch (e) {
+      if (e instanceof ErroItem) { saida[i] = { indice: i, ok: false, erro: e.message }; continue; }
+      const code = (e as { code?: string }).code ?? '';
+      if (code === '23505') { saida[i] = { indice: i, ok: false, erro: 'conflito_cadastro' }; continue; }
+      if (['55P03', '57014', '40P01', '40001'].includes(code) || /timeout/i.test(String((e as Error)?.message ?? ''))) {
+        saida[i] = { indice: i, ok: false, erro: 'ocupado_tente_de_novo' }; continue;
       }
+      registrarErro('pessoas/lote', e);
+      saida[i] = { indice: i, ok: false, erro: 'erro_interno', codigo: code || undefined };
     }
-  }, bancoDe(chave));
+  }
 
   const erros = saida.filter((x) => !x.ok).length;
   return { total: saida.length, ok: saida.length - erros, erros, itens: saida };
