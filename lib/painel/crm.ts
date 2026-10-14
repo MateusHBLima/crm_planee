@@ -32,6 +32,9 @@ export type Cartao = {
   alerta: boolean; // aberto por alerta (ex.: comprovante suspeito): vermelho desde que abre
   // Último follow-up ou retomada enviados pela IA ao contato nos últimos 31 dias (migração 017), para o cartão.
   automatica?: Automatica | null;
+  // "Esperando a equipe" (14/10, pedido da Letícia): cartão aberto pela IA, ainda aguardando, sem nenhuma mensagem
+  // da equipe (celular ou painel) para o contato depois que abriu. Fora disso (ou banco sem a Inbox), fica de fora.
+  esperandoEquipe?: boolean;
 };
 export type Automatica = { tipo: string; nome: string; quando: string };
 // Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
@@ -161,13 +164,37 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
        (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes,
        to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null]));
   const x = r.rows[0];
+  const cartoes = (x.cartoes as Record<string, unknown>[]).map((c) => limparCartao(u, c));
+  await marcarEsperandoEquipe(banco, cartoes);
   return {
     periodo, hoje: String(x.dia),
     eu: { nome: u.nome, assuntos: u.assuntosAviso, escolhe: !u.master },
     topicos: (x.topicos as Topico[]).map((t) => ({ ...t, cor: limparCor(t.cor) })), etapas: { ...NOMES_PADRAO, ...((x.etapas ?? {}) as Partial<Record<Etapa, string>>) },
     fuso: f, lidoEm: new Date().toISOString(), prazos: limparPrazos(x.prazos),
-    cartoes: (x.cartoes as Record<string, unknown>[]).map((c) => limparCartao(u, c)), finalizadosHoje: x.fin,
+    cartoes, finalizadosHoje: x.fin,
   };
+}
+
+// Marca os cartões que estão esperando a equipe: abertos pela IA, ainda em "aguardando", e sem mensagem da equipe
+// (origem celular ou painel) para o mesmo número depois que o cartão abriu. Uma ida a mais ao banco, só com os
+// cartões candidatos. Banco sem as tabelas da Inbox (migração 008): nada é marcado.
+async function marcarEsperandoEquipe(banco: ReturnType<typeof db>, cartoes: Cartao[]) {
+  const candidatos = cartoes.filter((k) => k.etapa === 'aguardando' && !k.sombra && k.contato_id && /^ia$/i.test(String(k.aberto_por ?? '')));
+  if (!candidatos.length) return;
+  try {
+    const r = await banco.query(
+      `select a.id from atendimentos a join contatos c on c.id = a.contato_id
+        where a.id = any($1::uuid[])
+          and exists (select 1 from wa_conversas cv join wa_mensagens m on m.numero_id = cv.numero_id and m.wa_id = cv.wa_id
+                       where substr(cv.wa_id, 3, 2) = substr(regexp_replace(c.telefone, '\D', '', 'g'), 3, 2)
+                         and right(cv.wa_id, 8) = right(regexp_replace(c.telefone, '\D', '', 'g'), 8)
+                         and m.direcao = 'saida' and m.origem in ('celular', 'painel') and m.enviada_em > a.aberto_em)`,
+      [candidatos.map((k) => k.id)]);
+    const respondidos = new Set(r.rows.map((x) => String(x.id)));
+    for (const k of candidatos) k.esperandoEquipe = !respondidos.has(k.id) && Boolean(k.telefone);
+  } catch (e) {
+    if ((e as { code?: string }).code !== '42P01') throw e;
+  }
 }
 
 export type Evento = { quando: string; texto: string; quem: string | null; tipo: 'nota' | 'acao' };

@@ -155,6 +155,10 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Filtro por fase** no topo do quadro: Todas, Aguardando, Em atendimento, Pendente e Finalizado, com a contagem de cada uma.
     - **Configurações e Registro só para a Planee (master):** somem do menu da clínica, e o servidor recusa a leitura do Registro e as ações de configuração para quem não é master. A IA continua configurando pela API.
 
+40. **Dias sem IA e "Esperando a equipe" (14/10).** Pedidos do chat da Sara e da Letícia (`PARA_CHAT_PAINEL_pendencias_14-10.md`).
+    - **Dias sem marcação pela IA:** botão no CRM para quem edita o quadro (crm.editar), não em Configurações (que é só da Planee). Grava `agenda_fechada` pela API, com auditoria; os profissionais vêm de `agenda_profissionais` (nada de nome de cliente no código).
+    - **Esperando a equipe:** filtro no quadro e selo no cartão. É o cartão aberto pela IA, ainda aguardando, sem nenhuma mensagem da equipe (celular ou painel) para o número depois que abriu. Os assuntos do quadro fazem o papel do motivo; o detalhe ganhou "Abrir na Inbox".
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

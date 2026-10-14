@@ -95,6 +95,12 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
   - o cartão do quadro e o do funil comercial mostram o último follow-up ou retomada enviados nos últimos 31 dias.
 - **Texto na Inbox na hora:** depois de cada envio, chame também o `POST /whatsapp/envio` do receptor.
 
+## Dias sem marcação pela IA (14/10)
+- A equipe fecha dias pelo CRM (botão **Dias sem IA**, para quem edita o quadro). A lista fica na configuração `agenda_fechada`: `[{"prof": 1, "data": "AAAA-MM-DD", "motivo": "..."}]`, sem `prof` = todos os profissionais. Dias passados saem da lista no próximo salvamento.
+- A IA lê com `GET /api/v1/config/agenda_fechada` (escopo `leitura`). Resposta: `{"chave": "agenda_fechada", "valor": [...], "atualizado_em": "..."}`. Sem a chave: 404 com `{"erro": "Configuração \"agenda_fechada\" não existe."}`.
+- Os profissionais que aparecem para escolher vêm de `agenda_profissionais`: `[{"id": 1, "nome": "Dr. Fulano"}]` (o `id` é o do sistema da agenda). Sem ela, só dá para fechar o dia para todos.
+- Fechar o dia não desmarca ninguém.
+
 ## Várias pessoas no mesmo número (migração 024)
 
 Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com `contatos.telefone` igual (quem conversa; funil e Inbox ficam nele). As outras pessoas são contatos próprios, sem telefone, ligados ao número em `contato_telefones` com o papel.

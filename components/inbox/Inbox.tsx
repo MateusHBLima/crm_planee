@@ -242,6 +242,19 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
     const q = new URLSearchParams(window.location.search);
     const numero = q.get('numero'); const wa = q.get('wa');
     if (numero && wa && /^\d{5,30}$/.test(numero) && /^\d{8,20}$/.test(wa)) abrir({ numero_id: numero, wa_id: wa });
+    // Do cartão do CRM (/inbox?tel=55...; 14/10): busca pelos 8 últimos dígitos e abre a conversa se houver uma só.
+    const tel = (q.get('tel') ?? '').replace(/\D/g, '');
+    if (!numero && tel.length >= 10) {
+      const fim = tel.slice(-8);
+      setBusca(fim); buscaRef.current = fim;
+      void carregarConversas(fim, filtroRef.current).then((r) => {
+        if (!r.ok) return;
+        setLista(r.dados);
+        const certas = r.dados.conversas.filter((k) => k.wa_id.slice(2, 4) === tel.slice(2, 4) && k.wa_id.slice(-8) === fim);
+        if (certas.length === 1) abrir(certas[0]);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrir]);
 
   useEffect(() => {

@@ -11,10 +11,11 @@ type Fmt = ReturnType<typeof criarFormatos>;
 
 // Fase (13/10): com uma fase escolhida, o quadro mostra só os cartões dela (finalizado mostra os finalizados, mesmo
 // com "Mostrar finalizados" desligado).
-export type Fase = Etapa | 'todas';
+// "esperando" (14/10): cartões abertos pela IA que ninguém da equipe respondeu ainda (Cartao.esperandoEquipe).
+export type Fase = Etapa | 'todas' | 'esperando';
 export function filtrar(cartoes: Cartao[], busca: string, origem: Origem, verFinal: boolean, fase: Fase = 'todas') {
   return cartoes.filter((k) =>
-    (fase === 'todas' ? (verFinal || k.etapa !== 'finalizado') : k.etapa === fase)
+    (fase === 'todas' ? (verFinal || k.etapa !== 'finalizado') : fase === 'esperando' ? k.esperandoEquipe === true : k.etapa === fase)
     && (origem === 'todos' || (origem === 'sombra') === k.sombra)
     && casaBusca(busca, [k.nome, k.telefone, k.documento, k.resumo, k.responsavel]));
 }
@@ -58,7 +59,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', fmt, a
               <span className={c.colN}>{cs.length}</span>
             </div>
             {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} />)}
-            {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : fase !== 'todas' ? `Nada em ${quadro.etapas[fase]}` : 'Nada aberto'}</div>}
+            {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : fase === 'esperando' ? 'Ninguém esperando a equipe' : fase !== 'todas' ? `Nada em ${quadro.etapas[fase]}` : 'Nada aberto'}</div>}
           </section>
         );
       })}
@@ -108,6 +109,7 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onM
             {k.alerta && k.etapa === 'aguardando' ? 'Alerta' : TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
           </span>
         )}
+        {k.esperandoEquipe && <span className={c.selo} data-esperando title="Aberto pela IA e ninguém da equipe respondeu o contato desde então">sem resposta da equipe</span>}
         {k.sombra && <span className={c.selo} title="Aberto pela Sara nova no modo sombra (não foi para o paciente)">sombra</span>}
       </div>
       <div className={c.cartaoNome}>
