@@ -93,13 +93,17 @@ export async function arquivarOportunidade(id: string) {
 }
 
 // ---- Configuração do CRM ----
+// Só a Planee (master) configura pela tela (13/10): a tela Configurações some para a clínica, e as ações recusam
+// chamada direta. A IA e o n8n continuam mexendo pela API, com chave de escopo config.
+const SO_PLANEE_CONFIG = 'As configurações do CRM são feitas pela Planee.';
+function soPlanee(u: { nivel: string }) { if (u.nivel !== 'master') throw new ErroApi(403, SO_PLANEE_CONFIG); }
 
 export async function carregarConfigCrm() {
-  return comUsuario((u) => crm.lerConfigCrm(u));
+  return comUsuario((u) => { soPlanee(u); return crm.lerConfigCrm(u); });
 }
 
 export async function salvarAssunto(id: string | null, dados: { nome: string; icone: string; ordem: string; palavras: string; cor?: string }) {
-  return comUsuario(async (u) => { await crm.salvarTopico(u, id, dados); return crm.lerConfigCrm(u); });
+  return comUsuario(async (u) => { soPlanee(u); await crm.salvarTopico(u, id, dados); return crm.lerConfigCrm(u); });
 }
 
 // O funil comercial é onde a IA move os cartões: só a Planee (master) mexe nas etapas pela tela.
@@ -115,18 +119,18 @@ export async function salvarEtapaDoFunil(id: string | null, dados: { nome: strin
 export async function arquivarDaConfig(recurso: 'topicos' | 'etapas', id: string) {
   return comUsuario(async (u) => {
     if (recurso !== 'topicos' && recurso !== 'etapas') throw new ErroApi(400, 'Item inválido.');
-    if (recurso === 'etapas' && u.nivel !== 'master') throw new ErroApi(403, SO_PLANEE_FUNIL);
+    soPlanee(u);
     await crm.arquivarItemConfig(u, recurso, id);
     return crm.lerConfigCrm(u);
   });
 }
 
 export async function salvarNomesDasEtapas(nomes: Record<string, string>) {
-  return comUsuario(async (u) => { await crm.salvarNomesEtapas(u, nomes); return crm.lerConfigCrm(u); });
+  return comUsuario(async (u) => { soPlanee(u); await crm.salvarNomesEtapas(u, nomes); return crm.lerConfigCrm(u); });
 }
 
 export async function salvarPrazosDoAtendimento(prazos: Record<string, Record<string, number>>) {
-  return comUsuario(async (u) => { await crm.salvarPrazos(u, prazos); return crm.lerConfigCrm(u); });
+  return comUsuario(async (u) => { soPlanee(u); await crm.salvarPrazos(u, prazos); return crm.lerConfigCrm(u); });
 }
 
 // ---- Histórico do paciente, agendamentos e comprovantes (migração 013) ----

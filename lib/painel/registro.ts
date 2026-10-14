@@ -101,7 +101,7 @@ const alvoConversa = (alvo: string | null) => {
 
 export async function lerRegistro(u: Usuario, q: URLSearchParams): Promise<Registro> {
   if (!u.empresa) throw new ErroApi(400, 'Escolha uma empresa primeiro.');
-  if (u.nivel !== 'admin' && u.nivel !== 'master') throw new ErroApi(403, 'Só o admin da empresa e a Planee veem o registro.');
+  if (u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee vê o registro.');
   const empresa = u.empresa;
   const f = fuso();
   const hoje = hojeNoFuso(f);

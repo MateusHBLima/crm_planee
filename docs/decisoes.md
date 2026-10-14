@@ -149,6 +149,12 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Carga:** `POST /api/v1/pessoas/lote` recebe a carga do "Quem é quem" e separa o paciente que o espelho tinha juntado no dono do número, junto com os agendamentos dele.
     - **CPF:** é gravado só em contato sem CPF e nunca é trocado.
 
+39. **Quadro sem "Assumir", fases e telas da Planee (13/10).** Pedido do Mateus para a clínica.
+    - **Finalizar no lugar de Assumir:** o cartão aguardando tem Finalizar e Passar. Quem finaliza fica como responsável. Cartões em atendimento seguem com pendente e finalizar.
+    - **Prazos padrão do aguardando:** amarelo com 12 h e vermelho com 1 dia (antes, 15 e 30 min). A Planee muda por empresa em Configurações.
+    - **Filtro por fase** no topo do quadro: Todas, Aguardando, Em atendimento, Pendente e Finalizado, com a contagem de cada uma.
+    - **Configurações e Registro só para a Planee (master):** somem do menu da clínica, e o servidor recusa a leitura do Registro e as ações de configuração para quem não é master. A IA continua configurando pela API.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

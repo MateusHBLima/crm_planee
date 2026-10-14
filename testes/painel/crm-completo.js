@@ -116,10 +116,25 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   sql(`delete from painel_vinculos where usuario_id in (select id from painel_usuarios where email='semacesso@teste.local');
        delete from painel_usuarios where email='semacesso@teste.local';`);
 
-  // ---------- Admin (gestor): Configurações do CRM ----------
+  // ---------- Admin (gestor): sem Configurações nem Registro (13/10: só a Planee) ----------
   ({ ctx, p } = await nova());
-  await entrar(p, 'gestor@teste.local'); await p.goto(B + '/configuracoes'); await p.waitForTimeout(800);
-  ok('admin abre Configurações do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
+  await entrar(p, 'gestor@teste.local');
+  const navG = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim()));
+  ok('admin não vê Configurações nem Registro no menu', !navG.includes('Configurações') && !navG.includes('Registro') && navG.includes('Equipe'), navG.join(','));
+  await p.goto(B + '/configuracoes'); await p.waitForTimeout(500);
+  ok('admin não abre Configurações por URL', !p.url().endsWith('/configuracoes'), p.url());
+  await p.goto(B + '/crm'); await p.waitForTimeout(800);
+  await p.click('role=tab[name="Comercial"]'); await p.waitForTimeout(1200);
+  await p.locator('article', { hasText: 'Primeira consulta' }).click(); await p.click('text=Arquivar oportunidade'); await p.click('aside button:has-text("Arquivar"):not(:has-text("oportunidade"))'); await p.waitForTimeout(1500);
+  ok('admin arquiva oportunidade', sql("select arquivado from oportunidades where interesse='Primeira consulta'") === 't');
+  await ctx.close();
+
+  // ---------- Planee (master): Configurações do CRM e etapas do funil comercial ----------
+  ({ ctx, p } = await nova());
+  await entrar(p, 'planee@teste.local');
+  if (await p.locator('#trocar-empresa').count()) { await Promise.all([p.waitForURL(/\/(crm|inbox)$/), p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
+  await p.goto(B + '/configuracoes'); await p.waitForTimeout(1000);
+  ok('Planee abre Configurações do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
   await p.fill('[id="etapa-aguardando"]', 'Na fila'); await p.click('button:has-text("Salvar nomes")'); await p.waitForTimeout(1200);
   ok('renomear etapa do atendimento', sql("select valor->>'aguardando' from crm_config where chave='etapas_atendimento'") === 'Na fila');
   await p.fill('#as-novo-nome', 'Laudos'); await p.selectOption('#as-novo-icone', 'doc'); await p.fill('#as-novo-ordem', '99'); await p.fill('#as-novo-palavras', 'laudo, relatório');
@@ -129,24 +144,13 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.locator('form[aria-label="Assunto Receita"] button:has-text("Arquivar")').click(); await p.waitForTimeout(1200);
   ok('assunto com atendimento aberto não arquiva', ((await p.locator('form[aria-label="Assunto Receita"] [role=alert]').first().textContent()) || '').includes('atendimento(s) aberto(s)')
     && sql("select arquivado from crm_topicos where id='receita'") === 'f');
-  ok('admin da clínica não vê o funil comercial (só a Planee configura)', (await p.locator('#cfg-funil').count()) === 0 && (await p.locator('#et-nova-nome').count()) === 0);
   await p.screenshot({ path: out + '13_configuracoes.png', fullPage: true });
-  await p.goto(B + '/crm'); await p.waitForTimeout(800);
-  ok('assunto novo vira coluna e nome novo da etapa aparece', (await p.locator('section[aria-label="Laudos"]').count()) === 1 && (await p.locator('text=Na fila').count()) >= 1);
-  await p.click('role=tab[name="Comercial"]'); await p.waitForTimeout(1200);
-  await p.locator('article', { hasText: 'Primeira consulta' }).click(); await p.click('text=Arquivar oportunidade'); await p.click('aside button:has-text("Arquivar"):not(:has-text("oportunidade"))'); await p.waitForTimeout(1500);
-  ok('admin arquiva oportunidade', sql("select arquivado from oportunidades where interesse='Primeira consulta'") === 't');
-  await ctx.close();
-
-  // ---------- Planee (master): etapas do funil comercial ----------
-  ({ ctx, p } = await nova());
-  await entrar(p, 'planee@teste.local');
-  if (await p.locator('#trocar-empresa').count()) { await Promise.all([p.waitForURL(/\/(crm|inbox)$/), p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
-  await p.goto(B + '/configuracoes'); await p.waitForTimeout(1000);
   ok('Planee vê o funil comercial em Configurações', (await p.locator('#cfg-funil').count()) === 1);
   await p.fill('#et-nova-nome', 'Retorno agendado'); await p.fill('#et-nova-ordem', '7'); await p.fill('#et-nova-gatilho', 'IA marca retorno');
   await p.click('form[aria-label="Nova etapa"] button:has-text("Criar")'); await p.waitForTimeout(1200);
   ok('Planee cria etapa do funil', sql("select tipo || '|' || gatilho from crm_etapas where id='retorno_agendado'") === 'aberta|IA marca retorno');
+  await p.goto(B + '/crm'); await p.waitForTimeout(1200);
+  ok('assunto novo vira coluna e nome novo da etapa aparece', (await p.locator('section[aria-label="Laudos"]').count()) === 1 && (await p.locator('text=Na fila').count()) >= 1);
   await ctx.close();
 
   // ---------- API e MCP: ferramentas da IA ----------
@@ -192,8 +196,8 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   // ---------- Prazos: cores de atraso e o mais antigo em cima ----------
   const sexames = `insert into atendimentos (topico_id, etapa, resumo, aberto_por, aberto_em, atualizado_em) values
     ('exames', 'aguardando', 'PRAZO-A cinco minutos', 'IA', now() - interval '5 minutes', now() - interval '5 minutes'),
-    ('exames', 'aguardando', 'PRAZO-B vinte minutos', 'IA', now() - interval '20 minutes', now() - interval '20 minutes'),
-    ('exames', 'aguardando', 'PRAZO-C quarenta minutos', 'IA', now() - interval '40 minutes', now() - interval '40 minutes'),
+    ('exames', 'aguardando', 'PRAZO-B treze horas', 'IA', now() - interval '13 hours', now() - interval '13 hours'),
+    ('exames', 'aguardando', 'PRAZO-C vinte e cinco horas', 'IA', now() - interval '25 hours', now() - interval '25 hours'),
     ('exames', 'pendente', 'PRAZO-D pendente parado', 'Amanda Teste', now() - interval '50 hours', now() - interval '30 hours'),
     ('exames', 'em_atendimento', 'PRAZO-E em atendimento antigo', 'IA', now() - interval '3 hours', now() - interval '3 hours'),
     ('exames', 'em_atendimento', 'PRAZO-F em atendimento novo', 'IA', now() - interval '1 hour', now() - interval '1 hour');`;
@@ -202,30 +206,32 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
   const col = p.locator('section[aria-label="Exames"] article');
   const textos = (await col.allTextContents()).map((t) => (t.match(/PRAZO-([A-F])/) || ['', ''])[1]).filter(Boolean);
-  ok('mais antigo em cima: aguardando e em atendimento por chegada (E, F, C, B, A), pendente depois (D)', textos.join('') === 'EFCBAD', textos.join(''));
+  ok('mais antigo em cima: aguardando e em atendimento por chegada (C, B, E, F, A), pendente depois (D)', textos.join('') === 'CBEFAD', textos.join(''));
   const nivel = (k) => p.locator('section[aria-label="Exames"] article', { hasText: k }).getAttribute('data-atraso');
-  ok('aguardando há 40 min fica vermelho', (await nivel('PRAZO-C')) === 'vermelho');
-  ok('aguardando há 20 min fica amarelo', (await nivel('PRAZO-B')) === 'amarelo');
+  ok('aguardando há 25 h fica vermelho (passou de 1 dia)', (await nivel('PRAZO-C')) === 'vermelho');
+  ok('aguardando há 13 h fica amarelo (passou de 12 h)', (await nivel('PRAZO-B')) === 'amarelo');
   ok('aguardando há 5 min fica normal', (await nivel('PRAZO-A')) === null);
   ok('pendente parado há 30 h fica amarelo', (await nivel('PRAZO-D')) === 'amarelo');
   ok('em atendimento não muda de cor', (await nivel('PRAZO-E')) === null);
-  ok('selo "Atrasado · há 40 min" no cartão vermelho', ((await p.locator('section[aria-label="Exames"] article', { hasText: 'PRAZO-C' }).textContent()) || '').includes('Atrasado · há 40 min'));
+  ok('selo "Atrasado · há …" no cartão vermelho', ((await p.locator('section[aria-label="Exames"] article', { hasText: 'PRAZO-C' }).textContent()) || '').includes('Atrasado · há'));
   const fila = ((await p.locator('[data-fila]').textContent()) || '').replace(/\s+/g, ' ');
   ok('topo mostra o mais antigo aguardando e os atrasados', fila.includes('Mais antigo aguardando: há') && (await p.locator('[data-fila] [data-contagem="vermelho"]').count()) === 1, fila);
   await p.screenshot({ path: out + '14_quadro_prazos.png', fullPage: true });
   await ctx.close();
-  // Prazos em Configurações (gestor): aguardando 60/120 min → o de 40 min volta ao normal
+  // Prazos em Configurações (Planee): aguardando 1.560/1.800 min (26 h/30 h) → o de 25 h volta ao normal
   ({ ctx, p } = await nova());
-  await entrar(p, 'gestor@teste.local'); await p.goto(B + '/configuracoes'); await p.waitForTimeout(800);
-  ok('Configurações mostra os prazos padrão', (await p.inputValue('#prazo-ag_am')) === '15' && (await p.inputValue('#prazo-ag_vm')) === '30'
+  await entrar(p, 'planee@teste.local');
+  if (await p.locator('#trocar-empresa').count()) { await Promise.all([p.waitForURL(/\/(crm|inbox)$/), p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
+  await p.goto(B + '/configuracoes'); await p.waitForTimeout(800);
+  ok('Configurações mostra os prazos padrão (12 h e 1 dia)', (await p.inputValue('#prazo-ag_am')) === '720' && (await p.inputValue('#prazo-ag_vm')) === '1440'
     && (await p.inputValue('#prazo-pd_am')) === '24' && (await p.inputValue('#prazo-pd_vm')) === '48');
-  await p.fill('#prazo-ag_am', '60'); await p.fill('#prazo-ag_vm', '50'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
+  await p.fill('#prazo-ag_am', '1560'); await p.fill('#prazo-ag_vm', '1500'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
   ok('vermelho antes do amarelo é recusado', ((await p.locator('section[aria-labelledby="cfg-prazos"] [role=alert]').textContent()) || '').includes('vermelho precisa vir depois'));
-  await p.fill('#prazo-ag_vm', '120'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
-  ok('prazos salvos pela API (com auditoria)', sql("select valor->'aguardando'->>'amarelo' || '/' || (valor->'aguardando'->>'vermelho') || '/' || (valor->'pendente'->>'amarelo') from crm_config where chave='prazos_atendimento'") === '60/120/1440'
+  await p.fill('#prazo-ag_vm', '1800'); await p.click('button:has-text("Salvar prazos")'); await p.waitForTimeout(1000);
+  ok('prazos salvos pela API (com auditoria)', sql("select valor->'aguardando'->>'amarelo' || '/' || (valor->'aguardando'->>'vermelho') || '/' || (valor->'pendente'->>'amarelo') from crm_config where chave='prazos_atendimento'") === '1560/1800/1440'
     && sql("select count(*) from painel_auditoria where alvo_id = 'prazos_atendimento'") !== '0');
   await p.goto(B + '/crm'); await p.waitForTimeout(1200);
-  ok('com 60/120 min, o de 40 min sai do vermelho', (await nivel('PRAZO-C')) === null);
+  ok('com 26 h/30 h, o de 25 h sai do vermelho', (await nivel('PRAZO-C')) === null);
   await ctx.close();
   sql("delete from crm_config where chave='prazos_atendimento'; update atendimentos set arquivado = true where resumo like 'PRAZO-%'");
 

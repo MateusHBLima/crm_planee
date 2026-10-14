@@ -15,9 +15,9 @@ type Fmt = ReturnType<typeof criarFormatos>;
 
 export type DadosPassar = { topico: string; pessoa: { id: string; nome: string } | null; recado: string };
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onAssumir, onMover, onAssunto, onArquivar, onErro, passarAberto = false, onPassar }: {
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, passarAberto = false, onPassar }: {
   cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; nome: string; ocupado: boolean;
-  onFechar: () => void; onAssumir: (id: string) => void; onMover: (id: string, e: Etapa) => void;
+  onFechar: () => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
   passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void;
 }) {
@@ -104,7 +104,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
 
           <section className={c.detBloco}>
             <h3 className={c.rotuloSec}>Andamento</h3>
-            {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onAssumir={onAssumir} onMover={onMover} />}
+            {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} />}
             <div className={c.detCampos}>
               <label className={c.campo}>
                 <span>Etapa</span>

@@ -82,7 +82,7 @@ type EmpresaVigia = { id: string; banco_url_cifrado: string | null };
 async function vigiarFila(e: EmpresaVigia, agora: Date): Promise<{ aberto: number; resolvidos: number }> {
   const b = bancoDaEmpresa(e);
   const r = await b.query(
-    `with p as (select coalesce((select (valor->'aguardando'->>'vermelho')::int from crm_config where chave = 'prazos_atendimento'), 30) as min)
+    `with p as (select coalesce((select (valor->'aguardando'->>'vermelho')::int from crm_config where chave = 'prazos_atendimento'), 1440) as min)
      select count(*) as atrasados, min(a.aberto_em) as mais_antigo
        from atendimentos a, p
       where not a.arquivado and a.etapa = 'aguardando' and a.resumo !~ '^\\s*\\[SOMBRA\\]'
