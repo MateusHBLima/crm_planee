@@ -116,11 +116,11 @@ function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onM
       </div>
       <div className={c.cartaoMeta}>
         <span><Icone nome="relogio" tamanho={14} /><span><span className={c.metaRot}>Aberto</span> {fmt.quando(k.aberto_em)}{k.aberto_por ? ` · ${k.aberto_por}` : ''}{!fim && k.etapa === 'aguardando' ? <> · <Relativo de={k.aberto_em} /></> : ''}</span></span>
-        <span><Icone nome="pessoa" tamanho={14} /><span><span className={c.metaRot}>Responsável</span> {k.responsavel
-          ? `${k.responsavel}${k.assumido_em ? ` · ${fmt.quando(k.assumido_em)} (${duracao(k.aberto_em, k.assumido_em)} após abrir)` : ''}`
-          : 'ninguém assumiu'}</span></span>
+        {/* Sem "Assumir" (13/10): o responsável só aparece quando existe (cartão passado para alguém ou em atendimento);
+            no finalizado, vira "por quem" na linha do Finalizado. */}
+        {!fim && k.responsavel && <span data-responsavel><Icone nome="pessoa" tamanho={14} /><span><span className={c.metaRot}>Responsável</span> {k.responsavel}</span></span>}
         {k.automatica && <span data-automatica={k.automatica.tipo}><Icone nome="conversa" tamanho={14} /><span><span className={c.metaRot}>{k.automatica.nome}</span> enviado {fmt.quando(k.automatica.quando)}</span></span>}
-        {fim && k.finalizado_em && <span><Icone nome="finalizado" tamanho={14} /><span><span className={c.metaRot}>Finalizado</span> {fmt.quando(k.finalizado_em)} · total {duracao(k.aberto_em, k.finalizado_em)}</span></span>}
+        {fim && k.finalizado_em && <span><Icone nome="finalizado" tamanho={14} /><span><span className={c.metaRot}>Finalizado</span> {fmt.quando(k.finalizado_em)}{k.responsavel ? ` por ${k.responsavel}` : ''} · total {duracao(k.aberto_em, k.finalizado_em)}</span></span>}
       </div>
       <div className={c.chips}>
         {k.telefone && <span className={c.chipNeutro + ' ' + c.mono}>{telefoneBonito(k.telefone)}</span>}
