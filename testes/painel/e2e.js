@@ -49,6 +49,8 @@ async function entrar(p, email, senha='senha123') {
   ok('auditoria com usuario_id', Number(sql("select count(*) from painel_auditoria p join painel_usuarios u on u.id=p.usuario_id where u.email='amanda@teste.local' and p.acao='atualizar'")) >= 1);
   await p.click('text=/Mostrar finalizados hoje/'); await p.waitForTimeout(300);
   ok('Mostrar finalizados traz de volta', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1);
+  ok('finalizado mostra quem finalizou', ((await p.locator('article', { hasText: 'Rita Ficticia' }).textContent()) || '').includes('por Amanda Teste'));
+  ok('cartão sem responsável não mostra "ninguém assumiu"', (await p.locator('article', { hasText: 'ninguém assumiu' }).count()) === 0);
   await p.click('text=/Ocultar finalizados hoje/'); await p.waitForTimeout(300);
   // Filtro por fase (13/10)
   await p.click('[data-fases] button[data-fase="finalizado"]'); await p.waitForTimeout(300);
