@@ -30,14 +30,16 @@ export function ordenar(a: Cartao, b: Cartao) {
     || (a.etapa === 'finalizado' ? (b.finalizado_em ?? b.aberto_em).localeCompare(a.finalizado_em ?? a.aberto_em) : a.aberto_em.localeCompare(b.aberto_em));
 }
 
-export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
+// coluna (15/10): com um assunto escolhido, o quadro mostra só a coluna dele, mais larga. null = todas.
+export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna = null, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; coluna?: string | null; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
   onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal, fase).sort(ordenar);
   const ids = new Set(quadro.topicos.map((t) => t.id));
   const colunas: { id: string; nome: string; icone: string; cor: string | null }[] = quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, icone: t.icone, cor: t.cor ?? null }));
   if (vis.some((k) => !k.topico_id || !ids.has(k.topico_id))) colunas.push({ id: '__sem', nome: 'Sem assunto', icone: 'outros', cor: null });
+  const mostradas = coluna ? colunas.filter((col) => col.id === coluna) : colunas;
 
   if (!quadro.topicos.length) {
     return (
@@ -49,11 +51,11 @@ export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', fmt, a
   }
 
   return (
-    <RolagemQuadro chave={colunas.length}>
-      {colunas.map((col) => {
+    <RolagemQuadro chave={mostradas.length}>
+      {mostradas.map((col) => {
         const cs = vis.filter((k) => (col.id === '__sem' ? !k.topico_id || !ids.has(k.topico_id) : k.topico_id === col.id));
         return (
-          <section key={col.id} className={cs.length ? c.coluna : c.colunaVazia} aria-label={col.nome} data-cor={col.cor ?? undefined}>
+          <section key={col.id} className={`${cs.length || coluna ? c.coluna : c.colunaVazia}${coluna ? ' ' + c.colunaSo : ''}`} aria-label={col.nome} data-cor={col.cor ?? undefined}>
             <div className={c.colTopo}>
               <span className={c.colIcone}><Icone nome={col.icone} tamanho={16} /></span>
               <span className={c.colNome} title={col.nome}>{col.nome}</span>

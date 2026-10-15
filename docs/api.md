@@ -103,7 +103,7 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
 
 ## Acompanhamento de protocolo (migração 025, 14/10)
 - Fica no próprio contato: `protocolo` (`em_analise`, `em_protocolo`, `em_acompanhamento`, `encerrado`; vazio ou `null` = fora de protocolo), `protocolo_obs` (até 500 caracteres), `protocolo_em` e `protocolo_por`.
-- A equipe marca pela aba **Protocolos** do CRM ou pela ficha do contato (quem edita o quadro). A IA marca com `PATCH /api/v1/contatos/{id}` e `{"protocolo": "em_analise", "protocolo_obs": "..."}` (escopo `crm`). Valor fora da lista: 400.
+- A equipe marca pela tela **Protocolos** do menu ou pela ficha do contato (quem edita o quadro). A IA marca com `PATCH /api/v1/contatos/{id}` e `{"protocolo": "em_analise", "protocolo_obs": "..."}` (escopo `crm`). Valor fora da lista: 400.
 - Quando a situação muda, a API grava `protocolo_em = agora` e, se `protocolo_por` não veio, o nome da chave (ou da pessoa no painel). Mandar a mesma situação de novo não muda a data.
 - `GET /api/v1/contatos?protocolo=em_protocolo` lista por situação. A ficha (`GET /api/v1/ficha`) traz em cada pessoa `protocolo: {situacao, obs, desde, por}` ou `null`.
 - O histórico de cada mudança fica na auditoria (`painel_auditoria`), como todo o CRM.

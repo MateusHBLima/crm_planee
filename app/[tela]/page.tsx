@@ -12,6 +12,8 @@ import { exigirUsuario, pode, podeArquivar } from '@/lib/sessao';
 import { hostDeCabecalhos } from '@/lib/empresa';
 import { assuntosParaAvisos, lerConfigCrm } from '@/lib/painel/crm';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
+import { ProtocolosTela } from '@/components/crm/Protocolo';
+import { fuso } from '@/lib/painel/crm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
 import { listarEmpresas, listarEquipe, listarLinksConvite } from '@/lib/painel/gestao';
@@ -60,6 +62,15 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
       <Shell atual={atual.id} usuario={usuario} largo>
         <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
           podeConfig={usuario.nivel === 'master'} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+      </Shell>
+    );
+  }
+
+  // Acompanhamento de protocolo (15/10): tela própria no menu; a lista chega pela leitura GET (lib/painel/protocolo.ts).
+  if (atual.id === 'protocolos' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario} largo>
+        <ProtocolosTela key={usuario.empresa.id} fuso={fuso()} podeEditar={pode(usuario, 'crm.editar')} />
       </Shell>
     );
   }

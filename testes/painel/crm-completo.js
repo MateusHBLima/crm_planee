@@ -401,6 +401,14 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.click('[data-fases] button[data-fase="esperando"]'); await p.waitForTimeout(300);
   const textosE = await p.locator('article').allTextContents();
   ok('filtro "Esperando a equipe" mostra só os da IA sem resposta', textosE.some((t) => t.includes('ESPERA-1')) && !textosE.some((t) => t.includes('ESPERA-2')), String(textosE.length));
+  // Uma coluna por vez (15/10): escolher o assunto deixa só a coluna dele no quadro.
+  await p.click('[data-fases] button[data-fase="esperando"]'); await p.waitForTimeout(200);
+  await p.selectOption('[data-filtro-coluna]', 'receita'); await p.waitForTimeout(300);
+  const secoes = await p.locator('section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')).filter((n) => n !== 'Ficha do contato'));
+  ok('filtro de coluna mostra só a coluna escolhida', secoes.length === 1 && secoes[0] === 'Receita' && (await p.locator('article', { hasText: 'ESPERA-1' }).count()) === 1, secoes.join(','));
+  await p.selectOption('[data-filtro-coluna]', ''); await p.waitForTimeout(300);
+  const secoesTodas = await p.locator('section[aria-label]').count();
+  ok('"Todas as colunas" volta o quadro inteiro', (await p.locator('section[aria-label="Receita"]').count()) === 1 && secoesTodas > 2, String(secoesTodas));
   await cardE.getByRole('button', { name: 'Ester Espera Ficticia' }).click(); await p.locator('[data-abrir-inbox]').waitFor({ timeout: 5000 });
   ok('detalhe tem o link para a conversa na Inbox', (await p.getAttribute('[data-abrir-inbox]', 'href')) === `/inbox?tel=${TELE}`);
   await p.keyboard.press('Escape'); await ctx.close();
@@ -440,7 +448,8 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   // ---------- Acompanhamento de protocolo (14/10) ----------
   ({ ctx, p } = await nova());
   await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
-  await p.click('button[role=tab][data-aba="protocolos"]'); await p.locator('[data-filtro-protocolo]').waitFor({ timeout: 8000 });
+  ok('Protocolos é uma tela do menu', (await p.locator('nav a[href="/protocolos"]').count()) === 1);
+  await p.click('nav a[href="/protocolos"]'); await p.locator('[data-filtro-protocolo]').waitFor({ timeout: 8000 });
   await p.click('[data-novo-protocolo]'); await p.fill('#prot-busca', 'Ester Espera'); await p.click(`[data-escolher-contato="${contE}"]`);
   await p.selectOption('#prot-situacao', 'em_protocolo'); await p.fill('#prot-obs', 'Começou o protocolo injetável.');
   await p.click('form[aria-label="Colocar em protocolo"] button[type=submit]'); await p.waitForTimeout(1500);
@@ -455,6 +464,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   ok('filtro Encerrado esconde quem está em acompanhamento', (await p.locator(`[data-linha-protocolo="${contE}"]`).count()) === 0);
   await p.screenshot({ path: out + '18c_protocolos.png' });
   // Na ficha do contato aparece a mesma situação; "Tirar do protocolo" limpa.
+  await p.click('nav a[href="/crm"]'); await p.waitForTimeout(1200);
   await p.click('role=tab[name="Contatos"]'); await p.waitForTimeout(1000);
   await p.locator('section[aria-label="Lista de contatos"] button', { hasText: 'Ester Espera Ficticia' }).first().click(); await p.waitForTimeout(800);
   const fichaP = p.locator('section[aria-label="Ficha do contato"]');

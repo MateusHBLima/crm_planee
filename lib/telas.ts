@@ -40,6 +40,7 @@ export const ICONES: Record<string, string> = {
   registro: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
   passar: 'M4 12h14M13 7l5 5-5 5',
   sino: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
+  protocolo: 'M9 3h6v4H9zM9 5H6v16h12V5h-3M9 14l2 2 4-4',
 };
 
 // Telas do painel (decisão 26). Cada uma aparece para quem tem a permissão dela na empresa escolhida;
@@ -48,6 +49,7 @@ export const ICONES: Record<string, string> = {
 const TELAS: Tela[] = [
   { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
+  { id: 'protocolos', nome: 'Protocolos', icone: 'protocolo', descricao: 'Acompanhamento de protocolo: quem está em análise, em protocolo, em acompanhamento ou encerrado.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'agenda', nome: 'Agenda', icone: 'agenda', descricao: 'Agendamentos do dia: o espelho da agenda da clínica e os que a Sara marcou.', exige: (u) => pode(u, 'pagamentos.ver') },
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },
   { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4. Só a Planee.', exige: (u) => u.nivel === 'master' && Boolean(u.empresa) },
