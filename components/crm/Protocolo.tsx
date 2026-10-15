@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { marcarProtocolo } from '@/lib/painel/acoes';
-import { carregarContatos, carregarProtocolos } from '@/lib/painel/leitura-cliente';
-import type { Protocolos as TProtocolos } from '@/lib/painel/protocolo';
+import { carregarContatos, carregarProtocoloDoContato, carregarProtocolos } from '@/lib/painel/leitura-cliente';
+import type { Alvo, ProtocoloContato, ProtocoloDoContato, Protocolos as TProtocolos } from '@/lib/painel/protocolo';
 import { SITUACOES, nomeSituacao, type Situacao } from '@/lib/protocolo-nomes';
 import { Icone } from '@/components/Icone';
 import { Janela, Campo } from './Formularios';
@@ -14,21 +14,25 @@ import c from './crm.module.css';
 // ficha do contato. A equipe marca à mão a situação (em análise, em protocolo, em acompanhamento, encerrado) e uma
 // observação; o painel guarda desde quando e quem marcou. A IA também pode marcar pela API.
 
-export type ProtocoloDoContato = { situacao: string; obs: string | null; desde: string | null; por: string | null } | null;
+export type { ProtocoloDoContato };
+type Salvo = { lista: TProtocolos; contato: ProtocoloContato };
 
 const diaBonito = (iso: string | null, fuso: string) =>
   iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: fuso, day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 
 // Bloco com os botões da situação e a observação. Clicar numa situação grava na hora (mantém a observação).
-export function BlocoProtocolo({ contatoId, atual, fuso, podeEditar, onSalvo, onErro }: {
-  contatoId: string; atual: ProtocoloDoContato; fuso: string; podeEditar: boolean;
-  onSalvo: (d: TProtocolos, texto: string) => void; onErro: (t: string) => void;
+// alvo: { id } do contato, ou { telefone, nome } da conversa da Inbox (o primeiro clique cria o contato se faltar).
+export function BlocoProtocolo({ alvo, atual, fuso, podeEditar, onSalvo, onErro }: {
+  alvo: Alvo; atual: ProtocoloDoContato; fuso: string; podeEditar: boolean;
+  onSalvo: (d: Salvo, texto: string) => void; onErro: (t: string) => void;
 }) {
+  const chave = alvo.id ?? alvo.telefone ?? '';
+  const contatoId = chave.replace(/[^0-9a-z-]/gi, '');
   const [obs, setObs] = useState(atual?.obs ?? '');
   const [salvando, iniciar] = useTransition();
-  useEffect(() => { setObs(atual?.obs ?? ''); }, [atual?.obs, contatoId]);
+  useEffect(() => { setObs(atual?.obs ?? ''); }, [atual?.obs, chave]);
   const gravar = (situacao: Situacao | null, novaObs: string | undefined, texto: string) => iniciar(async () => {
-    const r = await marcarProtocolo(contatoId, situacao, novaObs);
+    const r = await marcarProtocolo(alvo, situacao, novaObs);
     if (!r.ok) { if (r.sair) { window.location.href = '/entrar?motivo=sessao'; return; } onErro(r.erro); return; }
     onSalvo(r.dados, texto);
   });
@@ -83,7 +87,7 @@ export function Protocolos({ busca, fuso, podeEditar, onAviso, onErro }: {
     });
   }, []);
 
-  const salvo = (d: TProtocolos, texto: string) => { setDados(d); onAviso(texto); };
+  const salvo = (d: Salvo, texto: string) => { setDados(d.lista); onAviso(texto); };
   if (erro) return <div className={c.vazioTela}>{erro}</div>;
   if (!dados) return <div className={c.vazioTela}>Carregando os protocolos…</div>;
   if (!dados.instalado) return <div className={c.vazioTela} data-protocolo-sem-migracao>O acompanhamento de protocolo ainda não foi instalado no banco desta empresa (migração 025).</div>;
@@ -127,7 +131,7 @@ export function Protocolos({ busca, fuso, podeEditar, onAviso, onErro }: {
             {x.obs && aberto !== x.id && <p className={c.obsProtocolo}>{x.obs}</p>}
             {aberto === x.id && (
               <div className={c.itemProtocoloCorpo}>
-                <BlocoProtocolo contatoId={x.id} atual={x} fuso={fuso} podeEditar={podeEditar} onSalvo={salvo} onErro={onErro} />
+                <BlocoProtocolo alvo={{ id: x.id }} atual={x} fuso={fuso} podeEditar={podeEditar} onSalvo={salvo} onErro={onErro} />
                 {x.telefone && <a className={c.linkBotao} href={`/inbox?tel=${String(x.telefone).replace(/\D/g, '')}`}><Icone nome="conversa" tamanho={13} /> Abrir a conversa na Inbox</a>}
                 {x.abertos > 0 && <p className={c.detMeta}>{x.abertos} atendimento{x.abertos > 1 ? 's' : ''} em aberto no quadro.</p>}
               </div>
@@ -144,7 +148,7 @@ export function Protocolos({ busca, fuso, podeEditar, onAviso, onErro }: {
 type ContatoCurto = { id: string; nome: string | null; telefone: string | null };
 
 // Escolhe um contato do CRM e a situação. Quem já está em protocolo aparece marcado (muda pela lista).
-function NovoProtocolo({ ja, onFechar, onPronto }: { ja: Set<string>; onFechar: () => void; onPronto: (d: TProtocolos, texto: string) => void }) {
+function NovoProtocolo({ ja, onFechar, onPronto }: { ja: Set<string>; onFechar: () => void; onPronto: (d: Salvo, texto: string) => void }) {
   const [contatos, setContatos] = useState<ContatoCurto[] | null>(null);
   const [q, setQ] = useState('');
   const [escolhido, setEscolhido] = useState<string | null>(null);
@@ -157,7 +161,7 @@ function NovoProtocolo({ ja, onFechar, onPronto }: { ja: Set<string>; onFechar: 
   const nomeEscolhido = contatos?.find((k) => k.id === escolhido);
   const salvar = () => iniciar(async () => {
     if (!escolhido) { setErro('Escolha o contato.'); return; }
-    const r = await marcarProtocolo(escolhido, situacao, obs);
+    const r = await marcarProtocolo({ id: escolhido }, situacao, obs);
     if (!r.ok) { if (r.sair) { window.location.href = '/entrar?motivo=sessao'; return; } setErro(r.erro); return; }
     onPronto(r.dados, `${nomeEscolhido?.nome || 'Contato'}: ${nomeSituacao(situacao)}.`);
   });
@@ -227,6 +231,38 @@ export function ProtocolosTela({ fuso, podeEditar }: { fuso: string; podeEditar:
       </div>
       <Protocolos busca={busca} fuso={fuso} podeEditar={podeEditar}
         onAviso={(texto) => setAviso({ tipo: 'ok', texto })} onErro={(texto) => setAviso({ tipo: 'erro', texto })} />
+    </div>
+  );
+}
+
+// Protocolo de um contato só, para o cartão do CRM e a conversa da Inbox (15/10): carrega a situação e mostra os botões.
+// Na Inbox, o número sem contato no CRM ganha o contato no primeiro clique (com o nome da conversa).
+export function ProtocoloRapido({ alvo, fuso, podeEditar, onAviso, onErro }: {
+  alvo: Alvo; fuso: string; podeEditar: boolean; onAviso: (t: string) => void; onErro: (t: string) => void;
+}) {
+  const [dados, setDados] = useState<ProtocoloContato | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const chave = `${alvo.id ?? ''}|${alvo.telefone ?? ''}`;
+  useEffect(() => {
+    let vivo = true;
+    setDados(null); setErro(null);
+    void carregarProtocoloDoContato(alvo).then((r) => {
+      if (!vivo) return;
+      if (r.ok) setDados(r.dados);
+      else if (r.sair) window.location.href = '/entrar?motivo=sessao';
+      else setErro(r.erro);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
+  if (erro) return <p className={c.detMeta} role="alert">{erro}</p>;
+  if (!dados) return <p className={c.detMeta}>Carregando o protocolo…</p>;
+  const alvoAtual: Alvo = dados.contatoId ? { id: dados.contatoId } : { telefone: alvo.telefone, nome: alvo.nome };
+  return (
+    <div data-protocolo-rapido>
+      {!dados.contatoId && <p className={c.detMeta}>Este número ainda não tem contato no CRM: escolher uma situação cria o contato.</p>}
+      <BlocoProtocolo alvo={alvoAtual} atual={dados.protocolo} fuso={fuso} podeEditar={podeEditar} onErro={onErro}
+        onSalvo={(d, texto) => { setDados(d.contato); onAviso(texto); }} />
     </div>
   );
 }

@@ -36,6 +36,8 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   contatos: (u) => crm.lerContatos(u),
   // Acompanhamento de protocolo (14/10): quem está em análise, em protocolo, em acompanhamento ou encerrado.
   protocolos: (u) => prot.lerProtocolos(u),
+  // Protocolo de um contato (cartão do CRM: ?id=; conversa da Inbox: ?tel=&nome=).
+  protocolo_contato: (u, q) => prot.protocoloDoContato(u, { id: q.get('id'), telefone: q.get('tel'), nome: q.get('nome') }),
   atendimentos_contato: (u, q) => crm.lerAtendimentosDoContato(u, exigir(q, 'id')),
   notas_contato: (u, q) => crm.notasDoContato(u, exigir(q, 'id')),
   historico: (u, q) => sv.historicoContato(u, exigir(q, 'id')),

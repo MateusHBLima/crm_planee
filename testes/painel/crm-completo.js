@@ -411,6 +411,9 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   ok('"Todas as colunas" volta o quadro inteiro', (await p.locator('section[aria-label="Receita"]').count()) === 1 && secoesTodas > 2, String(secoesTodas));
   await cardE.getByRole('button', { name: 'Ester Espera Ficticia' }).click(); await p.locator('[data-abrir-inbox]').waitFor({ timeout: 5000 });
   ok('detalhe tem o link para a conversa na Inbox', (await p.getAttribute('[data-abrir-inbox]', 'href')) === `/inbox?tel=${TELE}`);
+  await p.locator('[data-protocolo-cartao] button[data-situacao]').first().waitFor({ timeout: 8000 });
+  ok('cartão do CRM tem os botões de protocolo do contato', (await p.locator('[data-protocolo-cartao] button[data-situacao]').count()) === 4
+    && (await p.locator('[data-protocolo-cartao] [data-protocolo="nenhum"]').count()) === 1);
   await p.keyboard.press('Escape'); await ctx.close();
   // A equipe responde pelo celular (sem o 9, como a Meta manda): sai da lista
   sql(`insert into wa_conversas (numero_id, wa_id, ultima_em) values ('100000000000001', '554755550001', now()) on conflict do nothing;
@@ -436,6 +439,11 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.click(`[data-finalizar-um="${cartE}"]`); await p.waitForTimeout(1500);
   ok('finalizar pela conversa finaliza no CRM com quem clicou', sql(`select etapa || '|' || coalesce(responsavel, '') || '|' || (finalizado_em is not null) from atendimentos where id = '${cartE}'`) === 'finalizado|Amanda Teste|true'
     && ((await p.textContent('[data-finalizar-conversa]')) || '').trim() === 'Finalizar');
+  // Protocolo direto da conversa (15/10): botão no cabeçalho, marca o contato dono do número.
+  await p.click('[data-protocolo-conversa]'); await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"]').waitFor({ timeout: 8000 });
+  await p.click('[data-painel-protocolo] button[data-situacao="em_analise"]'); await p.waitForTimeout(1500);
+  ok('marcar protocolo pela conversa grava no contato do número', sql(`select protocolo || '|' || protocolo_por from contatos where id = '${contE}'`) === 'em_analise|Amanda Teste'
+    && (await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"][aria-pressed="true"]').count()) === 1);
   sql(`update wa_conversas set nao_lidas = 0, lida_ate = now() where wa_id = '554755550001'`);
   await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
   ok('marcar como não lida volta a contar e fecha a conversa', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id = '554755550001'`) === '1|true'

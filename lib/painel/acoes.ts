@@ -144,9 +144,10 @@ export async function salvarDiasSemIa(dias: { prof: number | null; data: string;
 }
 
 // ---- Acompanhamento de protocolo (14/10): quem edita o quadro marca a situação e a observação ----
-// situacao null tira a pessoa do protocolo; obs undefined mantém a observação. Devolve a lista atualizada.
-export async function marcarProtocolo(contatoId: string, situacao: string | null, obs?: string) {
-  return comUsuario((u) => prot.marcarProtocolo(u, contatoId, situacao, obs));
+// alvo: { id } do contato ou { telefone, nome } da conversa (cria o contato se faltar). situacao null tira a pessoa do
+// protocolo; obs undefined mantém a observação. Devolve a lista e o contato atualizados.
+export async function marcarProtocolo(alvo: prot.Alvo, situacao: string | null, obs?: string) {
+  return comUsuario((u) => prot.marcarProtocoloDe(u, alvo, situacao, obs));
 }
 
 // ---- Histórico do paciente, agendamentos e comprovantes (migração 013) ----

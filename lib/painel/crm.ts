@@ -563,7 +563,7 @@ function textoOpcional(v: unknown, max: number): string | null {
 }
 
 // Acha o contato pelo telefone (com ou sem o 9) ou cria um novo. Nome novo só preenche contato sem nome.
-async function garantirContato(u: Usuario, telefone: unknown, nome: unknown): Promise<string> {
+export async function garantirContato(u: Usuario, telefone: unknown, nome: unknown): Promise<string> {
   const tel = normalizarTelefone(telefone);
   const n = textoOpcional(nome, 120);
   const achado = await contatoPorTelefone(u, tel);
