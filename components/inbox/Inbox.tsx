@@ -11,6 +11,8 @@ import { Icone } from '@/components/Icone';
 import { telefoneBonito } from '@/components/crm/util';
 import { AvisarPlanee, type AlvoAviso } from '@/components/planee/AvisarPlanee';
 import sp from '@/components/planee/planee.module.css';
+import cc from '@/components/crm/crm.module.css';
+import { ProtocoloRapido } from '@/components/crm/Protocolo';
 import c from './inbox.module.css';
 
 // Inbox (fases 1.1, 2.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
@@ -110,6 +112,8 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   const [abertos, setAbertos] = useState<{ wa: string; lista: AbertoDaConversa[] } | null>(null);
   const [escolhendoFinalizar, setEscolhendoFinalizar] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  // Protocolo do contato direto da conversa (15/10): painel abaixo do cabeçalho.
+  const [protocoloAberto, setProtocoloAberto] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -252,7 +256,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     if (r.ok && mesma(abertaRef.current, k)) setAbertos({ wa: k.wa_id, lista: r.dados });
   }, [podeFinalizar]);
   useEffect(() => {
-    setAbertos(null); setEscolhendoFinalizar(false);
+    setAbertos(null); setEscolhendoFinalizar(false); setProtocoloAberto(false);
     if (aberta) void buscarAbertos(aberta);
   }, [aberta, buscarAbertos]);
 
@@ -459,6 +463,10 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     </span>
                   </div>
                   <div className={c.acoesCabeca}>
+                  {podeFinalizar && (
+                    <button type="button" className={c.botaoDono} aria-expanded={protocoloAberto} data-protocolo-conversa
+                      onClick={() => setProtocoloAberto((x) => !x)} title="Acompanhamento de protocolo deste contato">Protocolo</button>
+                  )}
                   {podeFinalizar && abertosAgora.length > 0 && (
                     <button type="button" className={c.botaoDonoForte} disabled={finalizando} data-finalizar-conversa
                       aria-expanded={abertosAgora.length > 1 ? escolhendoFinalizar : undefined}
@@ -499,6 +507,14 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                 </>
               )}
             </header>
+            {protocoloAberto && atual && podeFinalizar && (
+              <div className={c.finalizarLista} data-painel-protocolo>
+                <div className={cc.tela} style={{ flexGrow: 0 }}>
+                  <ProtocoloRapido alvo={{ telefone: atual.wa_id, nome: atual.nome }} fuso={lista.fuso} podeEditar={podeFinalizar}
+                    onAviso={(t) => setOk(t)} onErro={(t) => setAviso(t)} />
+                </div>
+              </div>
+            )}
             {escolhendoFinalizar && abertosAgora.length > 1 && (
               <div className={c.finalizarLista} role="group" aria-label="Atendimentos em aberto no CRM" data-lista-finalizar>
                 <ul>

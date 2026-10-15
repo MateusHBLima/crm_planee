@@ -9,16 +9,17 @@ import { Icone } from '@/components/Icone';
 import { Acoes, EtapaPill, Relativo } from './Quadro';
 import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
 import { HistoricoPaciente } from './Historico';
+import { ProtocoloRapido } from './Protocolo';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
 export type DadosPassar = { topico: string; pessoa: { id: string; nome: string } | null; recado: string };
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, passarAberto = false, onPassar }: {
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, onAviso, passarAberto = false, onPassar }: {
   cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onMover: (id: string, e: Etapa) => void;
-  onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void;
+  onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void; onAviso?: (t: string) => void;
   passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void;
 }) {
   const [passando, setPassando] = useState(passarAberto);
@@ -92,6 +93,14 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
               {k.lead && <div className={c.detLinha}><span className={c.metaRot}>Funil</span><span>Ligado a uma oportunidade</span></div>}
             </div>
           </section>
+
+          {/* Acompanhamento de protocolo direto no cartão (15/10): a situação do contato deste atendimento. */}
+          {k.contato_id && !k.sombra && (
+            <section className={c.detBloco} data-protocolo-cartao>
+              <h3 className={c.rotuloSec}>Protocolo</h3>
+              <ProtocoloRapido alvo={{ id: k.contato_id }} fuso={quadro.fuso} podeEditar={podeEditar} onErro={onErro} onAviso={onAviso ?? (() => undefined)} />
+            </section>
+          )}
 
           <section className={c.detBloco}>
             <h3 className={c.rotuloSec}>O que foi pedido</h3>

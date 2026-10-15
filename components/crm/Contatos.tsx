@@ -89,10 +89,9 @@ export function Contatos({ busca, quadro, podeEditar, podeConferir, mascarado, o
               </div>
               {/* Acompanhamento de protocolo (14/10): a situação volta da lista atualizada (sem a pessoa = fora). */}
               <h3 className={c.rotuloSec}>Protocolo</h3>
-              <BlocoProtocolo contatoId={atual.id} atual={atual.protocolo} fuso={quadro.fuso} podeEditar={podeEditar} onErro={onErro}
+              <BlocoProtocolo alvo={{ id: atual.id }} atual={atual.protocolo} fuso={quadro.fuso} podeEditar={podeEditar} onErro={onErro}
                 onSalvo={(d, texto) => {
-                  const x = d.lista.find((p) => p.id === atual.id);
-                  setLista((l) => l && l.map((k) => (k.id === atual.id ? { ...k, protocolo: x ? { situacao: x.situacao, obs: x.obs, desde: x.desde, por: x.por } : null } : k)));
+                  setLista((l) => l && l.map((k) => (k.id === atual.id ? { ...k, protocolo: d.contato.protocolo } : k)));
                   onAviso(texto);
                 }} />
               <HistoricoPaciente key={atual.id} contatoId={atual.id} fmt={fmt} podeConferir={podeConferir} onAbrirAtendimento={onAbrir} onErro={onErro} />

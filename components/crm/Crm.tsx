@@ -330,7 +330,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       {cartaoAberto && (
         <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
           onFechar={fechar} onMover={acoes.mover} onAssunto={acoes.assunto}
-          onArquivar={acoes.arquivar} onErro={avisarErro} passarAberto={passarAberto} onPassar={acoes.passar} />
+          onArquivar={acoes.arquivar} onErro={avisarErro} onAviso={avisarOk} passarAberto={passarAberto} onPassar={acoes.passar} />
       )}
     </div>
   );

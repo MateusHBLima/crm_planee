@@ -37,6 +37,8 @@ export const carregarDetalhe = (id: string): R<typeof crm.lerDetalhe> => ler('de
 export const carregarComercial = (): R<typeof crm.lerComercial> => ler('comercial');
 export const carregarContatos = (): R<typeof crm.lerContatos> => ler('contatos');
 export const carregarProtocolos = (): R<typeof prot.lerProtocolos> => ler('protocolos');
+export const carregarProtocoloDoContato = (alvo: { id?: string | null; telefone?: string | null; nome?: string | null }): R<typeof prot.protocoloDoContato> =>
+  ler('protocolo_contato', { id: alvo.id, tel: alvo.telefone, nome: alvo.nome });
 export const carregarAtendimentosDoContato = (id: string): R<typeof crm.lerAtendimentosDoContato> => ler('atendimentos_contato', { id });
 export const carregarNotasDoContato = (id: string): R<typeof crm.notasDoContato> => ler('notas_contato', { id });
 export const carregarHistorico = (id: string): R<typeof sv.historicoContato> => ler('historico', { id });
