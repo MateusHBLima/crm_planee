@@ -6,7 +6,7 @@ import { carregarAgenda } from '@/lib/painel/leitura-cliente';
 import { sincronizarAgendaAgora } from '@/lib/painel/acoes-planee';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import { Esqueleto } from '@/components/Esqueleto';
-import { telefoneBonito } from '@/components/crm/util';
+import { telefoneBonito, nomeBonito } from '@/components/crm/util';
 import { FiltroData } from '@/components/FiltroData';
 import { hojeNoFuso } from '@/lib/periodo';
 import c from './agenda.module.css';
@@ -121,7 +121,7 @@ export function Agenda({ empresaId, master }: { empresaId: string; master: boole
               <li key={i.id} className={c.item} data-situacao={i.situacao} data-agendamento={i.id}>
                 <span className={c.hora}>{i.inicio ? fmt.hora.format(new Date(i.inicio)) : '—'}</span>
                 <span className={c.corpo}>
-                  <span className={c.nome}>{i.contato.nome || (i.contato.telefone ? telefoneBonito(i.contato.telefone) : 'Paciente sem nome')}</span>
+                  <span className={c.nome}>{nomeBonito(i.contato.nome) || (i.contato.telefone ? telefoneBonito(i.contato.telefone) : 'Paciente sem nome')}</span>
                   <span className={c.meta}>{[i.tipo, i.local, i.contato.telefone ? telefoneBonito(i.contato.telefone) : null].filter(Boolean).join(' · ')}</span>
                 </span>
                 <span className={c.etiquetas}>

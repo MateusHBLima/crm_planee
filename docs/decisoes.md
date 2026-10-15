@@ -168,6 +168,12 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 
 42. **Finalizar em massa (15/10, pedido do Mateus).** Botão "Selecionar" no quadro (quem edita): cada cartão em aberto ganha a caixa de marcar, e a barra tem "Selecionar todos da tela", "Limpar" e "Finalizar selecionados" (com confirmação). "Todos da tela" respeita busca, origem, fase, coluna e o Período (para finalizar por dia, escolher o dia no Período). Um comando só no banco, até 500 por vez, auditoria em cada cartão (`em_massa: true`). **Não avisa o n8n**: é limpeza do quadro, e o aviso faria a Sara retomar dezenas de conversas de uma vez.
 
+43. **Limpeza do front (15/10, revisão geral pedida pelo Mateus).**
+    - **Contraste:** o reset de botão das telas passa a não ter peso (`:where`) na Inbox: o "Finalizar" e o "Ouvir áudio" da equipe ficavam com o texto da cor do fundo.
+    - **Cartão do quadro:** atraso vira faixa na lateral (o cartão inteiro vermelho deixava o quadro todo vermelho); a etapa só aparece quando não é "aguardando"; telefone e CPF ficam só no detalhe; nomes em CAIXA ALTA aparecem com iniciais maiúsculas.
+    - **Barra do quadro:** fases; seletor "Ver" (esperando a equipe / equipe já respondeu); coluna; período; Selecionar; menu "Mais" (finalizados de hoje, avisos, Dias sem IA); o resumo da fila foi para baixo do título.
+    - **Inbox:** sem o selo "24h" na lista e sem "Janela aberta" no cabeçalho (só aparece "fechada"); etiqueta de linha só para conversas que não são do número principal; Protocolo, Não lida e Abrir no WhatsApp no menu "⋯ Mais"; o prefixo "[AUTOMÁTICA · …]" sai do texto da bolha.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

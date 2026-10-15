@@ -131,7 +131,8 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('Amanda abre a Inbox', p.url().endsWith('/inbox'), p.url());
   ok('lista mostra as conversas pelo nome salvo', (await item(p, 'Beatriz Ficticia').count()) === 1 && (await item(p, 'Carlos Ficticio').count()) === 1);
   ok('conversa com 3 não lidas mostra o contador', (await item(p, 'Beatriz Ficticia').locator('[aria-label="3 não lidas"]').textContent().catch(() => '')) === '3');
-  ok('indicador da janela de 24 h só onde o contato escreveu há pouco', (await item(p, 'Beatriz Ficticia').getByText('24h', { exact: true }).count()) === 1
+  // 15/10: a lista não mostra mais o selo "24h"; o cabeçalho só avisa quando a janela está fechada (teste mais abaixo).
+  ok('lista sem o selo "24h"', (await item(p, 'Beatriz Ficticia').getByText('24h', { exact: true }).count()) === 0
     && (await item(p, 'Carlos Ficticio').getByText('24h', { exact: true }).count()) === 0);
   ok('ordem: a mais recente primeiro', ((await p.locator('section[aria-label="Conversas"] li').first().textContent()) || '').includes('Beatriz'));
   ok('sem inbox.responder: aviso de somente leitura', (await p.getByText('Somente leitura: sua conta não tem a permissão para responder pelo painel.').count()) === 1);
@@ -207,8 +208,15 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   sql(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome) values ('${NUM}', 'teste', 'Principal'), ('100000000000009', 'teste', 'Número de teste')
        on conflict (phone_number_id) do update set nome = excluded.nome, empresa_id = excluded.empresa_id`);
   await p.waitForTimeout(11000);
-  ok('com dois números, cada conversa mostra a linha', ((await item(p, 'Beatriz Ficticia').locator('[data-linha]').textContent().catch(() => '')) || '') === 'Principal');
-  sql(`delete from whatsapp_numeros where phone_number_id in ('${NUM}', '100000000000009')`);
+  // 15/10: o número com mais conversas é o principal e não ganha etiqueta; conversa de outro número mostra a linha.
+  sql(`insert into wa_conversas (numero_id, wa_id, ultima_em, ultima_resumo, ultima_direcao) values ('100000000000009', '554788880099', now() - interval '2 days', 'oi', 'entrada') on conflict do nothing;
+       insert into wa_contatos (numero_id, wa_id, nome_salvo) values ('100000000000009', '554788880099', 'Linha Dois Ficticia') on conflict do nothing;`);
+  await p.waitForTimeout(11000);
+  ok('com dois números: conversa do principal sem etiqueta, a do outro número com a linha',
+    (await item(p, 'Beatriz Ficticia').locator('[data-linha]').count()) === 0
+    && ((await item(p, 'Linha Dois Ficticia').locator('[data-linha]').textContent().catch(() => '')) || '') === 'Número de teste');
+  sql(`delete from wa_contatos where wa_id = '554788880099'; delete from wa_conversas where wa_id = '554788880099';
+       delete from whatsapp_numeros where phone_number_id in ('${NUM}', '100000000000009')`);
 
   // Atualização automática: mensagem nova chega sem recarregar
   sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em) values ('${NUM}', '${BIA}', 'wamid.TI11', 'entrada', 'contato', 'text', 'Chegou agora durante o teste', now());
@@ -403,7 +411,8 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('fora da janela: botão "Abrir no WhatsApp" leva ao WhatsApp Web oficial na conversa do contato',
     (await linkFora.getAttribute('href').catch(() => '')) === `https://web.whatsapp.com/send?phone=${CARLOS}`
     && (await linkFora.getAttribute('target').catch(() => '')) === 'whatsapp-clinica'
-    && (await conversa(p).locator('header a', { hasText: 'Abrir no WhatsApp' }).count()) === 1);
+    && await (async () => { await conversa(p).locator('[data-menu-mais]').click(); const n = await conversa(p).locator('header a', { hasText: 'Abrir no WhatsApp' }).count(); await p.keyboard.press('Escape'); return n === 1; })()
+    && (await conversa(p).getByText('Janela de 24 h fechada').count()) === 1);
   ok('fora da janela: caixa desligada com a explicação', (await p.locator('#resposta-inbox').isDisabled())
     && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.').count()) === 1
     && (await p.getByRole('button', { name: 'Enviar', exact: true }).isDisabled()));
