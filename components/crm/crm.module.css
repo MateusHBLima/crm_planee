@@ -295,3 +295,9 @@
 .corCampo select { flex-grow: 1; }
 .corAmostra { width: 18px; height: 18px; flex-shrink: 0; border-radius: 6px; border: 1px solid var(--line-strong); }
 .corAmostra[data-sem-cor] { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 3px, var(--line) 3px, var(--line) 5px); }
+
+/* Dias sem marcação pela IA (14/10) */
+.listaDias { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.listaDias li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.listaDias small { color: var(--ink-3); }
+.notaJanela { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }

@@ -85,6 +85,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
                   <span className={c.mono}>{telefoneBonito(k.telefone)}</span>
                   <button type="button" className={c.linkBotao} onClick={() => copiar(k.telefone ?? '')}>Copiar</button>
                   {wa && <a className={c.linkBotao} href={wa} target="_blank" rel="noreferrer"><Icone nome="conversa" tamanho={13} /> Abrir no WhatsApp</a>}
+                  <a className={c.linkBotao} href={`/inbox?tel=${String(k.telefone).replace(/\D/g, '')}`} data-abrir-inbox><Icone nome="inbox" tamanho={13} /> Abrir na Inbox</a>
                 </div>
               )}
               {k.documento && <div className={c.detLinha}><span className={c.metaRot}>CPF</span><span className={c.mono}>{cpfBonito(k.documento)}</span></div>}

@@ -4,6 +4,7 @@ import { ErroApi } from '@/lib/db';
 import { comUsuario } from './resposta';
 import * as crm from './crm';
 import * as sv from './servicos';
+import * as diasIa from './dias-sem-ia';
 import { definirAssuntosAviso } from './gestao';
 import { esquecerSessoes } from '@/lib/sessao';
 
@@ -131,6 +132,14 @@ export async function salvarNomesDasEtapas(nomes: Record<string, string>) {
 
 export async function salvarPrazosDoAtendimento(prazos: Record<string, Record<string, number>>) {
   return comUsuario(async (u) => { soPlanee(u); await crm.salvarPrazos(u, prazos); return crm.lerConfigCrm(u); });
+}
+
+// ---- Dias sem marcação pela IA (14/10): quem edita o quadro fecha e reabre dias ----
+export async function carregarDiasSemIa() {
+  return comUsuario((u) => diasIa.lerDiasSemIa(u));
+}
+export async function salvarDiasSemIa(dias: { prof: number | null; data: string; motivo: string }[]) {
+  return comUsuario((u) => diasIa.salvarDiasSemIa(u, dias));
 }
 
 // ---- Histórico do paciente, agendamentos e comprovantes (migração 013) ----

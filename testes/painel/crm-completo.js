@@ -357,6 +357,64 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.screenshot({ path: out + '17_dados_comprovante.png' });
   await ctx.close();
 
+  // ---------- Dias sem marcação pela IA (14/10) ----------
+  sql(`insert into crm_config (chave, valor) values ('agenda_profissionais', '[{"id":1,"nome":"Dr. Ficticio"},{"id":3,"nome":"Dra. Ficticia"}]')
+       on conflict (chave) do update set valor = excluded.valor;
+       insert into crm_config (chave, valor) values ('agenda_fechada', '[{"prof":1,"data":"2020-01-02","motivo":"passado"}]')
+       on conflict (chave) do update set valor = excluded.valor;`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
+  await p.click('[data-dias-sem-ia]'); await p.locator('#dia-data').waitFor({ timeout: 8000 });
+  ok('Dias sem IA: aviso e dia passado escondido', ((await p.textContent('[data-aviso-dias]')) || '').includes('não desmarca quem já está marcado')
+    && (await p.locator('[data-dia-fechado]').count()) === 0);
+  const diaFut = new Date(Date.now() + 9 * 86400_000).toISOString().slice(0, 10);
+  await p.selectOption('#dia-prof', '1'); await p.fill('#dia-data', diaFut); await p.fill('#dia-motivo', 'Atende em outra cidade');
+  await p.click('form[aria-label="Fechar um dia"] button[type=submit]'); await p.waitForTimeout(1500);
+  ok('fechar o dia grava a lista na config (sem o dia passado) e audita', sql("select valor::text from crm_config where chave='agenda_fechada'") === `[{"data": "${diaFut}", "prof": 1, "motivo": "Atende em outra cidade"}]`
+    && (await p.locator(`[data-dia-fechado="${diaFut}"]`).count()) === 1 && sql("select count(*) from painel_auditoria where alvo_id = 'agenda_fechada'") !== '0',
+    sql("select valor::text from crm_config where chave='agenda_fechada'"));
+  await p.selectOption('#dia-prof', ''); await p.fill('#dia-data', diaFut); await p.click('form[aria-label="Fechar um dia"] button[type=submit]'); await p.waitForTimeout(1500);
+  ok('dia para todos os profissionais fica sem "prof"', sql("select jsonb_array_length(valor) || '|' || (select count(*) from jsonb_array_elements(valor) e where not e ? 'prof') from crm_config where chave='agenda_fechada'") === '2|1');
+  await p.locator(`[data-dia-fechado="${diaFut}"]`).first().locator('button:has-text("Reabrir")').click(); await p.waitForTimeout(1500);
+  ok('reabrir tira o dia da lista', sql("select jsonb_array_length(valor) from crm_config where chave='agenda_fechada'") === '1');
+  await p.keyboard.press('Escape'); await ctx.close();
+  sql(`insert into painel_usuarios (email, nome) values ('semacesso@teste.local', 'Leitor Teste') on conflict do nothing;
+       insert into painel_vinculos (usuario_id, empresa_id, nivel, permissoes) select id, 'teste', 'membro', array['crm.ver'] from painel_usuarios where email='semacesso@teste.local' on conflict do nothing;`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'semacesso@teste.local'); await p.waitForTimeout(800);
+  ok('só leitura não vê "Dias sem IA"', p.url().endsWith('/crm') && (await p.locator('[data-dias-sem-ia]').count()) === 0);
+  await ctx.close();
+  sql(`delete from painel_vinculos where usuario_id in (select id from painel_usuarios where email='semacesso@teste.local');
+       delete from painel_usuarios where email='semacesso@teste.local';
+       delete from crm_config where chave in ('agenda_fechada', 'agenda_profissionais');`);
+
+  // ---------- Esperando a equipe (14/10): aberto pela IA e sem resposta da equipe ----------
+  const TELE = '5547955550001';
+  const contE = sql(`insert into contatos (nome, telefone) values ('Ester Espera Ficticia', '${TELE}') returning id`);
+  const cartE = sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por, aberto_em) values ('${contE}', 'receita', 'ESPERA-1 pediu receita', 'IA', now() - interval '3 hours') returning id`);
+  sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por, aberto_em) values ('${contE}', 'receita', 'ESPERA-2 aberto pela equipe', 'Amanda Teste', now() - interval '2 hours')`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
+  const cardE = p.locator('article', { hasText: 'ESPERA-1' });
+  ok('cartão da IA sem resposta da equipe tem o selo', (await cardE.locator('[data-esperando]').count()) === 1
+    && (await p.locator('article', { hasText: 'ESPERA-2' }).locator('[data-esperando]').count()) === 0);
+  await p.click('[data-fases] button[data-fase="esperando"]'); await p.waitForTimeout(300);
+  const textosE = await p.locator('article').allTextContents();
+  ok('filtro "Esperando a equipe" mostra só os da IA sem resposta', textosE.some((t) => t.includes('ESPERA-1')) && !textosE.some((t) => t.includes('ESPERA-2')), String(textosE.length));
+  await cardE.getByRole('button', { name: 'Ester Espera Ficticia' }).click(); await p.locator('[data-abrir-inbox]').waitFor({ timeout: 5000 });
+  ok('detalhe tem o link para a conversa na Inbox', (await p.getAttribute('[data-abrir-inbox]', 'href')) === `/inbox?tel=${TELE}`);
+  await p.keyboard.press('Escape'); await ctx.close();
+  // A equipe responde pelo celular (sem o 9, como a Meta manda): sai da lista
+  sql(`insert into wa_conversas (numero_id, wa_id, ultima_em) values ('100000000000001', '554755550001', now()) on conflict do nothing;
+       insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em)
+       values ('100000000000001', '554755550001', 'wamid.ESPERA1', 'saida', 'celular', 'text', 'Oi, já vejo sua receita', now() - interval '1 hour');`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
+  ok('resposta da equipe pelo celular tira o selo', (await p.locator('article', { hasText: 'ESPERA-1' }).locator('[data-esperando]').count()) === 0);
+  await ctx.close();
+  sql(`update atendimentos set arquivado = true where contato_id = '${contE}'; delete from wa_mensagens where wamid = 'wamid.ESPERA1';
+       delete from wa_conversas where wa_id = '554755550001';`);
+
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);

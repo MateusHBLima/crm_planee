@@ -8,6 +8,7 @@ export const TIPOS_AUTOMATICA: Record<string, string> = {
   followup_d1: 'Follow-up dia seguinte',
   followup_tarde: 'Follow-up à tarde',
   followup_transferencia: 'Follow-up após transferência',
+  followup_urgencia: 'Retorno depois da urgência',
   followup_3d: 'Follow-up 3 dias',
   followup_7d: 'Follow-up 7 dias',
   followup_14d: 'Follow-up 14 dias',

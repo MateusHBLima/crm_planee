@@ -13,6 +13,7 @@ import { Detalhe } from './Detalhe';
 import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
 import { NovoAtendimento } from './Formularios';
+import { DiasSemIa } from './DiasSemIa';
 import { useAvisos } from './avisos';
 import { atraso, criarFormatos, ha } from './util';
 import c from './crm.module.css';
@@ -61,6 +62,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [falhouAtualizar, setFalhouAtualizar] = useState(false);
   const [novo, setNovo] = useState(false);
+  const [diasIa, setDiasIa] = useState(false);
   const avisos = useAvisos(quadro);
   const [ocupado, iniciar] = useTransition();
   const ocupadoRef = useRef(false);
@@ -186,6 +188,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const amarelos = niveis.filter((n) => n === 'amarelo').length;
   const verFinalEfetivo = verFinal || Boolean(quadro.periodo);
   const contagem = (e: Etapa) => quadro.cartoes.filter((k) => k.etapa === e && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
+  const esperando = quadro.cartoes.filter((k) => k.esperandoEquipe && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
   const fechar = useCallback(() => { setAberto(null); setPassarAberto(false); }, []);
   const avisarErro = useCallback((t: string) => setAviso({ tipo: 'erro', texto: t }), []);
@@ -240,6 +243,10 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                   </span>
                 </button>
               ))}
+              <button type="button" aria-pressed={fase === 'esperando'} className={c.segItem} data-fase="esperando"
+                title="Abertos pela IA e sem nenhuma resposta da equipe ao contato" onClick={() => setFase((f) => (f === 'esperando' ? 'todas' : 'esperando'))}>
+                <span className={c.faseItem}>Esperando a equipe <strong>{esperando}</strong></span>
+              </button>
             </div>
             {agora !== null && (
               <div className={c.fila} aria-live="polite" data-fila>
@@ -275,6 +282,9 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               <MeusAssuntos quadro={quadro} onSalvo={(assuntos) => { setQuadroBruto((q) => ({ ...q, eu: { ...q.eu, assuntos } })); avisarOk('Avisos salvos.'); }} onErro={avisarErro} />
             )}
             {podeEditar && (
+              <button type="button" className={c.botaoSec} data-dias-sem-ia onClick={() => setDiasIa(true)} title="Fechar dias da agenda para a IA não marcar">Dias sem IA</button>
+            )}
+            {podeEditar && (
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
           </div>
@@ -289,6 +299,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
         <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
           onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
       )}
+      {diasIa && <DiasSemIa onFechar={() => setDiasIa(false)} onSalvo={avisarOk} />}
       {novo && (
         <NovoAtendimento quadro={quadro} onFechar={() => setNovo(false)}
           onPronto={(q) => { setQuadro(q); setNovo(false); avisarOk('Atendimento aberto.'); }} />
