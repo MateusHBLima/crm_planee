@@ -24,7 +24,7 @@ async function entrar(p, email, senha='senha123') {
   await entrar(p, 'semacesso@teste.local'); ok('e-mail sem acesso é barrado', (await p.textContent('[role=alert]')||'').includes('não tem acesso'));
   await entrar(p, 'amanda@teste.local'); ok('Amanda entra e cai no CRM', p.url().endsWith('/crm'), p.url());
   await p.screenshot({ path: out + '01_quadro_claro.png' });
-  const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox, CRM e Planee (avisos)', nav.join(',') === 'Inbox,CRM,Planee', nav.join(','));
+  const nav = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('secretaria vê só Inbox, CRM, Protocolos e Planee (avisos)', nav.join(',') === 'Inbox,CRM,Protocolos,Planee', nav.join(','));
   const cols = await p.$$eval('section[aria-label]', (s) => s.map((x) => x.getAttribute('aria-label'))); ok('colunas por assunto', cols.includes('Receita') && cols.includes('Valores e pagamento'), cols.join('|'));
   ok('secretária não tem filtro de sombra (cartão sombra é só da Planee)', (await p.locator('button:has-text("Só sombra")').count()) === 0);
   // Sem "Assumir" (13/10): cartão aguardando tem Finalizar e Passar
@@ -109,7 +109,7 @@ async function entrar(p, email, senha='senha123') {
   await p.goto(B + '/crm'); await p.waitForTimeout(800);
   const txtJ = await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent();
   ok('Planee vê CPF mascarado (campo e texto)', !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
-  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 9 telas', navP.join(',') === 'Inbox,CRM,Agenda,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
+  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 10 telas', navP.join(',') === 'Inbox,CRM,Protocolos,Agenda,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
   await p.goto(B + '/configuracoes'); ok('Configurações abre a do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
   await p.goto(B + '/resultados'); await p.locator('[data-kpi="quadro"]').waitFor({ timeout: 8000 }).catch(() => undefined);
   ok('Resultados abre com os números do quadro', ((await p.textContent('[data-kpi="quadro"]').catch(() => '')) || '').trim() !== '');

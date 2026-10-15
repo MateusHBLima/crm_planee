@@ -317,3 +317,7 @@
 .seloProtocolo[data-situacao='em_acompanhamento'] { --e-bg: var(--pd-bg); --e-ink: var(--pd-ink); }
 .seloProtocolo[data-situacao='encerrado'] { --e-bg: var(--fn-bg); --e-ink: var(--fn-ink); }
 @media (max-width: 760px) { .listaProtocolo { padding: 0 16px 20px; } .obsProtocolo { padding-left: 12px; } }
+
+/* Uma coluna por vez (15/10): o filtro no topo e a coluna escolhida mais larga. */
+.filtroColuna select { height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 550; color: var(--ink); max-width: 240px; }
+.colunaSo { flex: 1 1 auto !important; max-width: 760px; }

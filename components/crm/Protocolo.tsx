@@ -10,8 +10,8 @@ import { Janela, Campo } from './Formularios';
 import { casaBusca, telefoneBonito } from './util';
 import c from './crm.module.css';
 
-// Acompanhamento de protocolo (14/10, pedido da Letícia): a aba "Protocolos" do CRM e o bloco "Protocolo" da ficha
-// do contato. A equipe marca à mão a situação (em análise, em protocolo, em acompanhamento, encerrado) e uma
+// Acompanhamento de protocolo (14/10, pedido da Letícia): a tela "Protocolos" do menu (15/10) e o bloco "Protocolo" da
+// ficha do contato. A equipe marca à mão a situação (em análise, em protocolo, em acompanhamento, encerrado) e uma
 // observação; o painel guarda desde quando e quem marcou. A IA também pode marcar pela API.
 
 export type ProtocoloDoContato = { situacao: string; obs: string | null; desde: string | null; por: string | null } | null;
@@ -65,7 +65,7 @@ export function BlocoProtocolo({ contatoId, atual, fuso, podeEditar, onSalvo, on
 
 type Filtro = 'ativos' | Situacao;
 
-// Aba "Protocolos": todo mundo que está em protocolo, com filtro por situação. "Ativos" = tudo menos encerrado.
+// Lista de protocolos: todo mundo que está em protocolo, com filtro por situação. "Ativos" = tudo menos encerrado.
 export function Protocolos({ busca, fuso, podeEditar, onAviso, onErro }: {
   busca: string; fuso: string; podeEditar: boolean; onAviso: (t: string) => void; onErro: (t: string) => void;
 }) {
@@ -193,3 +193,40 @@ function NovoProtocolo({ ja, onFechar, onPronto }: { ja: Set<string>; onFechar: 
   );
 }
 
+
+// Tela própria "Protocolos" no menu (15/10, pedido do Mateus): título, busca e a lista. Mesma permissão do CRM
+// (crm.ver para ver, crm.editar para marcar). Os avisos de sucesso e erro aparecem no topo, como no CRM.
+export function ProtocolosTela({ fuso, podeEditar }: { fuso: string; podeEditar: boolean }) {
+  const [busca, setBusca] = useState('');
+  const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
+  useEffect(() => {
+    if (!aviso || aviso.tipo !== 'ok') return;
+    const t = window.setTimeout(() => setAviso(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [aviso]);
+  return (
+    <div className={c.tela}>
+      <header className={c.topo}>
+        <div className={c.titulos}>
+          <h1 className={c.titulo}>Acompanhamento de protocolo</h1>
+          <p className={c.sub}>Quem está em análise, em protocolo, em acompanhamento ou encerrado com o Doutor.</p>
+        </div>
+        <label className={c.busca}>
+          <span className={c.visivelLeitor}>Buscar</span>
+          <Icone nome="busca" tamanho={16} />
+          <input id="busca-protocolo" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome, telefone ou observação" />
+        </label>
+      </header>
+      <div className={c.aviso} role="status" aria-live="polite">
+        {aviso && (
+          <span className={aviso.tipo === 'erro' ? c.avisoErro : c.avisoOk}>
+            {aviso.texto}
+            <button type="button" aria-label="Fechar aviso" onClick={() => setAviso(null)}><Icone nome="fechar" tamanho={13} /></button>
+          </span>
+        )}
+      </div>
+      <Protocolos busca={busca} fuso={fuso} podeEditar={podeEditar}
+        onAviso={(texto) => setAviso({ tipo: 'ok', texto })} onErro={(texto) => setAviso({ tipo: 'erro', texto })} />
+    </div>
+  );
+}

@@ -14,13 +14,12 @@ import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
 import { NovoAtendimento } from './Formularios';
 import { DiasSemIa } from './DiasSemIa';
-import { Protocolos } from './Protocolo';
 import { useAvisos } from './avisos';
 import { atraso, criarFormatos, ha } from './util';
 import c from './crm.module.css';
 
-type Aba = 'atendimento' | 'comercial' | 'contatos' | 'protocolos';
-const NOME_ABA: Record<Aba, string> = { atendimento: 'Atendimento', comercial: 'Comercial', contatos: 'Contatos', protocolos: 'Protocolos' };
+type Aba = 'atendimento' | 'comercial' | 'contatos';
+const NOME_ABA: Record<Aba, string> = { atendimento: 'Atendimento', comercial: 'Comercial', contatos: 'Contatos' };
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
@@ -59,6 +58,8 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [origem, setOrigem] = useState<Origem>('todos');
   const [verFinal, setVerFinal] = useState(false);
   const [fase, setFase] = useState<Fase>('todas');
+  // Ver uma coluna (assunto) por vez (15/10). null = todas as colunas.
+  const [coluna, setColuna] = useState<string | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [passarAberto, setPassarAberto] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
@@ -212,7 +213,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
           </p>
         </div>
         <div className={c.segmentado} role="tablist" aria-label="Partes do CRM">
-          {(['atendimento', 'comercial', 'contatos', 'protocolos'] as Aba[]).map((a) => (
+          {(['atendimento', 'comercial', 'contatos'] as Aba[]).map((a) => (
             <button key={a} type="button" role="tab" aria-selected={aba === a} className={c.segItem} data-aba={a} onClick={() => setAba(a)}>
               {NOME_ABA[a]}
             </button>
@@ -258,6 +259,17 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 <span className={c.faseItem}>Equipe já respondeu, falta finalizar <strong>{respondidos}</strong></span>
               </button>
             </div>
+            {/* Filtro de coluna (15/10): escolhe um assunto e o quadro mostra só a coluna dele. */}
+            <label className={c.filtroColuna}>
+              <span className={c.visivelLeitor}>Coluna</span>
+              <select id="coluna-crm" value={coluna ?? ''} onChange={(e) => setColuna(e.target.value || null)} data-filtro-coluna>
+                <option value="">Todas as colunas</option>
+                {quadro.topicos.map((t) => {
+                  const n = quadro.cartoes.filter((k) => k.topico_id === t.id && k.etapa !== 'finalizado' && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
+                  return <option key={t.id} value={t.id}>{t.nome}{n ? ` (${n})` : ''}</option>;
+                })}
+              </select>
+            </label>
             {agora !== null && (
               <div className={c.fila} aria-live="polite" data-fila>
                 {maisAntigo
@@ -299,7 +311,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
             )}
           </div>
           {quadro.periodo && <p className={c.nota} data-nota-periodo>Atendimentos abertos neste período, em todas as etapas{quadro.cartoes.length >= 1000 ? ' (os 1.000 primeiros)' : ''}.</p>}
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={coluna && quadro.topicos.some((t) => t.id === coluna) ? coluna : null} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onMover={acoes.mover}
             onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
         </>
@@ -309,7 +321,6 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
         <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
           onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
       )}
-      {aba === 'protocolos' && <Protocolos busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} onAviso={avisarOk} onErro={avisarErro} />}
       {diasIa && <DiasSemIa onFechar={() => setDiasIa(false)} onSalvo={avisarOk} />}
       {novo && (
         <NovoAtendimento quadro={quadro} onFechar={() => setNovo(false)}
