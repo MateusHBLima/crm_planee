@@ -323,14 +323,15 @@ export async function marcarLida(u: Usuario, numeroId: string, waId: string) {
 
 // "Marcar como não lida" (14/10, pedido da Letícia): a conversa volta a contar como não lida, para lembrar de
 // voltar nela. A tela fecha a conversa logo depois (aberta, a atualização automática marcaria como lida de novo).
-// O master não mexe nas não lidas da clínica.
+// O master também pode (15/10, pedido do Mateus): marcar não lida só soma, nunca esconde nada da clínica, e fica na
+// auditoria central. Abrir a conversa pelo master continua sem marcar como lida.
 export async function marcarNaoLida(u: Usuario, numeroId: string, waId: string): Promise<Conversa> {
   validar(numeroId, waId);
   const banco = db(u);
-  if (u.master) throw new ErroApi(403, 'A visão da Planee não muda as não lidas da clínica.');
   const r = await consultar(() => banco.query(
     `update wa_conversas set nao_lidas = greatest(nao_lidas, 1), lida_ate = null where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
   if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
+  if (u.master) await auditar(central(), u, u.empresa!.id, 'marcar_nao_lida', `${numeroId}:${waId.slice(-4)}`, undefined);
   return lerConversaResumo(u, numeroId, waId);
 }
 

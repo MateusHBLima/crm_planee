@@ -384,7 +384,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
               title="Só as conversas não lidas (inclusive as marcadas como não lidas)">Não lidas{naoLidas ? ` · ${naoLidas}` : ''}</button>
           </div>
           {falhouAtualizar && <p className={c.subErro}>Sem conexão com o banco agora. Tentando de novo.</p>}
-          {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado, acesso registrado e as não lidas da clínica não mudam.</p>}
+          {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado e acesso registrado. Abrir uma conversa não a marca como lida para a clínica.</p>}
         </div>
         <ul className={c.itens}>
           {visiveis.map((k) => (
@@ -479,24 +479,20 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     </button>
                   )}
                   {/* Menu "Mais" (15/10): Protocolo, Não lida e Abrir no WhatsApp saem do cabeçalho para despoluir. */}
-                  {(podeFinalizar || !mascarado || podeResponder) && (
-                    <MenuMais>
-                      {podeFinalizar && (
-                        <button type="button" data-protocolo-conversa onClick={() => setProtocoloAberto((x) => !x)}
-                          title="Acompanhamento de protocolo deste contato">{protocoloAberto ? 'Fechar protocolo' : 'Protocolo'}</button>
-                      )}
-                      {!mascarado && (
-                        <button type="button" data-nao-lida onClick={naoLida}
-                          title="Volta a contar como não lida, para lembrar de responder depois">Marcar como não lida</button>
-                      )}
-                      {podeResponder && (
-                        <a href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
-                          title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
-                          Abrir no WhatsApp
-                        </a>
-                      )}
-                    </MenuMais>
-                  )}
+                  <MenuMais>
+                    {podeFinalizar && (
+                      <button type="button" data-protocolo-conversa onClick={() => setProtocoloAberto((x) => !x)}
+                        title="Acompanhamento de protocolo deste contato">{protocoloAberto ? 'Fechar protocolo' : 'Protocolo'}</button>
+                    )}
+                    <button type="button" data-nao-lida onClick={naoLida}
+                      title="Volta a contar como não lida, para lembrar de responder depois">Marcar como não lida</button>
+                    {podeResponder && (
+                      <a href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
+                        title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
+                        Abrir no WhatsApp
+                      </a>
+                    )}
+                  </MenuMais>
                   {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
                       onClick={() => (atual.dono === 'humano' ? trocarDono('ia') : setEscolhendoPrazo(true))}
