@@ -110,7 +110,7 @@ async function entrar(p, email, senha='senha123') {
   // 15/10: o CPF saiu do cartão e fica no detalhe; o texto do cartão continua sem o CPF inteiro.
   const txtCartaoJ = (await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent()) || '';
   await p.locator('article', { hasText: 'Jorge Ficticio' }).first().locator('button', { hasText: 'Jorge Ficticio' }).click(); await p.waitForTimeout(1000);
-  const txtJ = (await p.locator('aside').first().textContent()) || '';
+  const txtJ = (await p.locator('aside[role=dialog]').first().textContent()) || '';
   ok('Planee vê CPF mascarado (campo e texto)', !txtCartaoJ.includes('111.222.333') && !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
   await p.keyboard.press('Escape'); await p.waitForTimeout(300);
   const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 10 telas', navP.join(',') === 'Inbox,CRM,Protocolos,Agenda,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
