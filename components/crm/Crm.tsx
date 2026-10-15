@@ -14,11 +14,13 @@ import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
 import { NovoAtendimento } from './Formularios';
 import { DiasSemIa } from './DiasSemIa';
+import { Protocolos } from './Protocolo';
 import { useAvisos } from './avisos';
 import { atraso, criarFormatos, ha } from './util';
 import c from './crm.module.css';
 
-type Aba = 'atendimento' | 'comercial' | 'contatos';
+type Aba = 'atendimento' | 'comercial' | 'contatos' | 'protocolos';
+const NOME_ABA: Record<Aba, string> = { atendimento: 'Atendimento', comercial: 'Comercial', contatos: 'Contatos', protocolos: 'Protocolos' };
 export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
@@ -152,6 +154,8 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
           ...k, etapa, responsavel: etapa !== 'aguardando' && !k.responsavel ? nome : k.responsavel,
           assumido_em: etapa !== 'aguardando' ? (k.assumido_em ?? agoraIso()) : k.assumido_em,
           finalizado_em: etapa === 'finalizado' ? agoraIso() : null,
+          // Finalizado sai dos filtros "Esperando a equipe" e "Equipe já respondeu" na hora.
+          ...(etapa === 'finalizado' ? { esperandoEquipe: false, respondidoEquipe: false } : {}),
         }))(q);
         return etapa === 'finalizado' && de !== 'finalizado' ? { ...n, finalizadosHoje: n.finalizadosHoje + 1 } : n;
       }, () => moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`);
@@ -189,6 +193,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const verFinalEfetivo = verFinal || Boolean(quadro.periodo);
   const contagem = (e: Etapa) => quadro.cartoes.filter((k) => k.etapa === e && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const esperando = quadro.cartoes.filter((k) => k.esperandoEquipe && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
+  const respondidos = quadro.cartoes.filter((k) => k.respondidoEquipe && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
   const fechar = useCallback(() => { setAberto(null); setPassarAberto(false); }, []);
   const avisarErro = useCallback((t: string) => setAviso({ tipo: 'erro', texto: t }), []);
@@ -207,9 +212,9 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
           </p>
         </div>
         <div className={c.segmentado} role="tablist" aria-label="Partes do CRM">
-          {(['atendimento', 'comercial', 'contatos'] as Aba[]).map((a) => (
-            <button key={a} type="button" role="tab" aria-selected={aba === a} className={c.segItem} onClick={() => setAba(a)}>
-              {a === 'atendimento' ? 'Atendimento' : a === 'comercial' ? 'Comercial' : 'Contatos'}
+          {(['atendimento', 'comercial', 'contatos', 'protocolos'] as Aba[]).map((a) => (
+            <button key={a} type="button" role="tab" aria-selected={aba === a} className={c.segItem} data-aba={a} onClick={() => setAba(a)}>
+              {NOME_ABA[a]}
             </button>
           ))}
         </div>
@@ -246,6 +251,11 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               <button type="button" aria-pressed={fase === 'esperando'} className={c.segItem} data-fase="esperando"
                 title="Abertos pela IA e sem nenhuma resposta da equipe ao contato" onClick={() => setFase((f) => (f === 'esperando' ? 'todas' : 'esperando'))}>
                 <span className={c.faseItem}>Esperando a equipe <strong>{esperando}</strong></span>
+              </button>
+              <button type="button" aria-pressed={fase === 'respondido'} className={c.segItem} data-fase="respondido"
+                title="A equipe já respondeu o contato no WhatsApp, mas o cartão continua aberto: se resolveu, clique em Finalizar"
+                onClick={() => setFase((f) => (f === 'respondido' ? 'todas' : 'respondido'))}>
+                <span className={c.faseItem}>Equipe já respondeu, falta finalizar <strong>{respondidos}</strong></span>
               </button>
             </div>
             {agora !== null && (
@@ -299,6 +309,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
         <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
           onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
       )}
+      {aba === 'protocolos' && <Protocolos busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} onAviso={avisarOk} onErro={avisarErro} />}
       {diasIa && <DiasSemIa onFechar={() => setDiasIa(false)} onSalvo={avisarOk} />}
       {novo && (
         <NovoAtendimento quadro={quadro} onFechar={() => setNovo(false)}

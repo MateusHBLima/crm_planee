@@ -49,8 +49,11 @@ export const RECURSOS: Record<string, Recurso> = {
       documento: 'CPF ou CNPJ, só dígitos',
       tipo_documento: 'cpf | cnpj',
       empresa: 'empresa, quando for cliente PJ',
+      protocolo: 'acompanhamento de protocolo (migração 025): em_analise | em_protocolo | em_acompanhamento | encerrado (vazio = fora de protocolo). Mudar grava protocolo_em sozinho',
+      protocolo_obs: 'observação do protocolo, até 500 caracteres',
+      protocolo_por: 'quem marcou o protocolo (o painel preenche com o nome de quem clicou; a IA manda "IA")',
     },
-    filtros: ['telefone', 'documento', 'arquivado'], ordem: 'criado_em desc',
+    filtros: ['telefone', 'documento', 'protocolo', 'arquivado'], ordem: 'criado_em desc',
   },
   oportunidades: {
     nome: 'oportunidades', tabela: 'oportunidades', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',

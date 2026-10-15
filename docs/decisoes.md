@@ -159,6 +159,13 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Dias sem marcação pela IA:** botão no CRM para quem edita o quadro (crm.editar), não em Configurações (que é só da Planee). Grava `agenda_fechada` pela API, com auditoria; os profissionais vêm de `agenda_profissionais` (nada de nome de cliente no código).
     - **Esperando a equipe:** filtro no quadro e selo no cartão. É o cartão aberto pela IA, ainda aguardando, sem nenhuma mensagem da equipe (celular ou painel) para o número depois que abriu. Os assuntos do quadro fazem o papel do motivo; o detalhe ganhou "Abrir na Inbox".
 
+41. **Pedidos da Letícia de 14/10 (`PARA_CHAT_PAINEL_pedidos_leticia_14-10.md`).**
+    - **Acompanhamento de protocolo:** situação manual no contato (migração 025), não um funil novo: em análise, em protocolo, em acompanhamento, encerrado, com observação, desde quando e quem marcou. Aba **Protocolos** no CRM (filtro por situação; "Ativos" = tudo menos encerrado) e bloco na ficha do contato. Quem edita o quadro marca; a IA pode marcar pela API.
+    - **Assumir / Devolver pra Sara** já existiam na Inbox (decisão do item 11 de `docs/whatsapp.md`): a IA pergunta ao receptor (`GET /whatsapp/atendimento`) antes de responder. Não foi para a ficha do CRM: a fonte é a conversa, e o receptor já responde com e sem o 9.
+    - **Marcar como não lida:** botão "Não lida" no cabeçalho da conversa; a conversa fecha (aberta, seria lida de novo) e volta a contar. Filtro "Não lidas" na lista. O master não mexe nas não lidas da clínica.
+    - **Finalizar pela conversa:** quem edita o quadro vê "Finalizar" no cabeçalho da Inbox quando o número tem atendimento em aberto no CRM (o dono do número e as pessoas ligadas a ele). Com mais de um, escolhe qual ou "Finalizar todos". Mesma regra do quadro (avisa o n8n).
+    - **Equipe já respondeu, falta finalizar:** filtro e selo no quadro para o cartão em aberto (qualquer etapa) com mensagem da equipe para o número depois que abriu.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

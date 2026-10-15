@@ -8,10 +8,11 @@ import { Icone } from '@/components/Icone';
 import { EtapaPill } from './Quadro';
 import { FormContato, NovoAtendimento } from './Formularios';
 import { HistoricoPaciente } from './Historico';
+import { BlocoProtocolo, type ProtocoloDoContato } from './Protocolo';
 import { casaBusca, cpfBonito, criarFormatos, linkWhatsApp, telefoneBonito } from './util';
 import c from './crm.module.css';
 
-type Contato = { id: string; nome: string | null; telefone: string | null; documento: string | null; abertos: number; total: number; ultimo: string | null };
+type Contato = { id: string; nome: string | null; telefone: string | null; documento: string | null; abertos: number; total: number; ultimo: string | null; protocolo: ProtocoloDoContato };
 type Nota = { id: string; texto: string; autor: string | null; criado_em: string };
 
 export function Contatos({ busca, quadro, podeEditar, podeConferir, mascarado, onAbrir, onQuadro, onAviso, onErro }: {
@@ -86,6 +87,14 @@ export function Contatos({ busca, quadro, podeEditar, podeConferir, mascarado, o
                   {linkWhatsApp(atual.telefone) && <a className={c.linkBotao} href={linkWhatsApp(atual.telefone)!} target="_blank" rel="noreferrer"><Icone nome="conversa" tamanho={13} /> Abrir no WhatsApp</a>}</div>
                 {atual.documento && <div className={c.detLinha}><span className={c.metaRot}>CPF</span><span className={c.mono}>{cpfBonito(atual.documento)}</span></div>}
               </div>
+              {/* Acompanhamento de protocolo (14/10): a situação volta da lista atualizada (sem a pessoa = fora). */}
+              <h3 className={c.rotuloSec}>Protocolo</h3>
+              <BlocoProtocolo contatoId={atual.id} atual={atual.protocolo} fuso={quadro.fuso} podeEditar={podeEditar} onErro={onErro}
+                onSalvo={(d, texto) => {
+                  const x = d.lista.find((p) => p.id === atual.id);
+                  setLista((l) => l && l.map((k) => (k.id === atual.id ? { ...k, protocolo: x ? { situacao: x.situacao, obs: x.obs, desde: x.desde, por: x.por } : null } : k)));
+                  onAviso(texto);
+                }} />
               <HistoricoPaciente key={atual.id} contatoId={atual.id} fmt={fmt} podeConferir={podeConferir} onAbrirAtendimento={onAbrir} onErro={onErro} />
               <h3 className={c.rotuloSec}>Atendimentos</h3>
               {atends === null ? <p className={c.detMeta}>Carregando…</p> : !atends.length ? <p className={c.detMeta}>Nenhum atendimento.</p> : (

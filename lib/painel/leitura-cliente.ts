@@ -9,6 +9,7 @@ import type * as pl from './planee';
 import type * as rs from './resultados';
 import type * as ag from './agenda';
 import type * as rg from './registro';
+import type * as prot from './protocolo';
 import type { Intervalo } from '@/lib/periodo';
 
 type R<F extends (...a: never[]) => Promise<unknown>> = Promise<Resposta<Awaited<ReturnType<F>>>>;
@@ -35,10 +36,12 @@ export const carregarRegistro = (f: { de: string; ate: string; pessoa?: string; 
 export const carregarDetalhe = (id: string): R<typeof crm.lerDetalhe> => ler('detalhe', { id });
 export const carregarComercial = (): R<typeof crm.lerComercial> => ler('comercial');
 export const carregarContatos = (): R<typeof crm.lerContatos> => ler('contatos');
+export const carregarProtocolos = (): R<typeof prot.lerProtocolos> => ler('protocolos');
 export const carregarAtendimentosDoContato = (id: string): R<typeof crm.lerAtendimentosDoContato> => ler('atendimentos_contato', { id });
 export const carregarNotasDoContato = (id: string): R<typeof crm.notasDoContato> => ler('notas_contato', { id });
 export const carregarHistorico = (id: string): R<typeof sv.historicoContato> => ler('historico', { id });
 export const carregarServico = (id: string): R<typeof sv.detalheServico> => ler('servico', { id });
+export const carregarAbertosDaConversa = (waId: string): R<typeof crm.abertosDoTelefone> => ler('abertos_conversa', { wa: waId });
 export const carregarConversas = (busca?: string, filtro?: string | null): R<typeof inbox.listarConversas> => ler('conversas', { busca, filtro });
 // previa: leitura antecipada (o mouse parou em cima da conversa na lista): não marca como lida.
 export const abrirConversa = (numeroId: string, waId: string, antesDeId?: string | null, previa = false): R<typeof inbox.lerConversa> =>

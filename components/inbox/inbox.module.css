@@ -51,7 +51,7 @@
 /* Conversa */
 .conversa { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .semConversa { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); font-size: 15px; }
-.cabeca { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.cabeca { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .voltar { display: none; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 500; align-items: center; gap: 6px; flex-shrink: 0; }
 .cabecaTexto { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .cabecaNome { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -164,3 +164,12 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
   .rodape { padding: 10px 16px 12px; }
   .compositor { padding: 10px 16px 12px; }
 }
+
+/* Cabeçalho da conversa: botões agrupados (quebram linha em tela estreita). Finalizar pela conversa (14/10). */
+.acoesCabeca { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.finalizarLista { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 22px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.finalizarLista ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.finalizarLista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-2); }
+.finalizarLista li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finalizarLista strong { color: var(--ink); }
+@media (max-width: 760px) { .finalizarLista { padding: 10px 16px; } .acoesCabeca { justify-content: flex-start; } }

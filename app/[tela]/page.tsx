@@ -50,7 +50,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'inbox' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} nome={usuario.nome} />
+        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} nome={usuario.nome} />
       </Shell>
     );
   }
