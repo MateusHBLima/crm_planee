@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { arquivarAtendimento, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
 import type { Intervalo } from '@/lib/periodo';
@@ -343,6 +343,15 @@ function MeusAssuntos({ quadro, onSalvo, onErro }: { quadro: TQuadro; onSalvo: (
   const [marcados, setMarcados] = useState<string[] | null>(quadro.eu.assuntos);
   const [salvando, iniciar] = useTransition();
   const caixa = useRef<HTMLDivElement>(null);
+  // Com a barra quebrando linha, o botão pode ficar à esquerda: alinhado à direita, o painel ficaria sob o menu lateral.
+  const painel = useRef<HTMLDivElement>(null);
+  const [aEsquerda, setAEsquerda] = useState(false);
+  useLayoutEffect(() => {
+    if (!aberto) { setAEsquerda(false); return; }
+    const p = painel.current; if (!p || getComputedStyle(p).position !== 'absolute') return;
+    const limite = caixa.current?.closest('main')?.getBoundingClientRect().left ?? 0;
+    if (p.getBoundingClientRect().left < limite) setAEsquerda(true);
+  }, [aberto]);
   useEffect(() => {
     if (!aberto) return;
     const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false); };
@@ -372,7 +381,7 @@ function MeusAssuntos({ quadro, onSalvo, onErro }: { quadro: TQuadro; onSalvo: (
         <Icone nome="sino" tamanho={13} /> Avisar: {nomeAtual}
       </button>
       {aberto && (
-        <div className={c.meusAvisosPainel} role="dialog" aria-label="Avisos por assunto">
+        <div className={c.meusAvisosPainel} role="dialog" aria-label="Avisos por assunto" ref={painel} data-lado={aEsquerda ? 'esquerda' : undefined}>
           <p className={c.meusAvisosTitulo}>Me avisar de cartão novo em:</p>
           <label className={c.meusAvisosLinha}>
             <input type="checkbox" checked={todos} onChange={(e) => setMarcados(e.target.checked ? null : [])} /> <strong>Todos os assuntos</strong>
