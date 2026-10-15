@@ -334,6 +334,27 @@ export async function mover(u: Usuario, id: string, etapa: Etapa, de?: Etapa) {
   if (etapa === 'finalizado') void avisarFinalizado(u, id, x.telefone ?? null);
 }
 
+// Finalizar em massa (15/10): os cartões escolhidos no quadro, num comando só (um por um levaria ~0,2 s cada).
+// Mesma regra do finalizar de um: sombra e arquivado ficam de fora, quem não tem responsável fica com quem clicou, e
+// cada cartão vai para a auditoria. Não avisa o n8n: é limpeza do quadro, e o aviso faria a Sara retomar dezenas
+// de conversas de uma vez. Devolve quantos foram finalizados.
+export const MAX_EM_MASSA = 500;
+export async function finalizarVarios(u: Usuario, ids: unknown): Promise<number> {
+  const banco = exigirEditar(u);
+  const lista = Array.isArray(ids) ? [...new Set(ids.map(String).filter((x) => UUID.test(x)))] : [];
+  if (!lista.length) throw new ErroApi(400, 'Selecione pelo menos um atendimento.');
+  if (lista.length > MAX_EM_MASSA) throw new ErroApi(400, `No máximo ${MAX_EM_MASSA} atendimentos por vez.`);
+  const r = await banco.query(
+    `with upd as (update atendimentos a set etapa = 'finalizado', responsavel = coalesce(a.responsavel, $2),
+                         assumido_em = coalesce(a.assumido_em, now()), finalizado_em = now(), atualizado_em = now()
+                   where a.id = any($1::uuid[]) and not a.arquivado and a.etapa <> 'finalizado' and not ${SQL_E_SOMBRA}
+                 returning a.id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $3::uuid, 'atualizar', 'atendimentos', upd.id::text, jsonb_build_object('etapa', 'finalizado', 'em_massa', true) from upd)
+     select count(*)::int as n from upd`, [lista, u.nome, u.id]).catch(traduzir);
+  return Number(r.rows[0]?.n) || 0;
+}
+
 export async function mudarAssunto(u: Usuario, id: string, topico: string) {
   const banco = exigirEditar(u);
   if (!UUID.test(String(id))) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);

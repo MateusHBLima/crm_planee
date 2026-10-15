@@ -30,6 +30,11 @@ export async function moverAtendimento(id: string, etapa: crm.Etapa, de?: crm.Et
   return comUsuario(async (u) => { await crm.mover(u, id, etapa, de); return crm.lerQuadro(u); });
 }
 
+// Finalizar em massa (15/10): devolve quantos foram e o quadro atualizado.
+export async function finalizarAtendimentos(ids: string[]) {
+  return comUsuario(async (u) => { const n = await crm.finalizarVarios(u, ids); return { n, quadro: await crm.lerQuadro(u) }; });
+}
+
 export async function mudarAssunto(id: string, topico: string) {
   return comUsuario(async (u) => { await crm.mudarAssunto(u, id, topico); return crm.lerQuadro(u); });
 }

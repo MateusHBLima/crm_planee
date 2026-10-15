@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import { arquivarAtendimento, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
+import { arquivarAtendimento, finalizarAtendimentos, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
 import type { Intervalo } from '@/lib/periodo';
 import { FiltroData } from '@/components/FiltroData';
 import { carregarQuadro } from '@/lib/painel/leitura-cliente';
 import { lembrar } from '@/lib/painel/memoria-cliente';
 import { Icone } from '@/components/Icone';
-import { Quadro, type Fase } from './Quadro';
+import { Quadro, filtrar, selecionavel, type Fase } from './Quadro';
 import { Detalhe } from './Detalhe';
 import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
@@ -60,6 +60,11 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [fase, setFase] = useState<Fase>('todas');
   // Ver uma coluna (assunto) por vez (15/10). null = todas as colunas.
   const [coluna, setColuna] = useState<string | null>(null);
+  // Finalizar em massa (15/10): modo Selecionar, os escolhidos e a confirmação.
+  const [selecionando, setSelecionando] = useState(false);
+  const [selecionados, setSelecionados] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirmarMassa, setConfirmarMassa] = useState(false);
+  const [finalizandoMassa, setFinalizandoMassa] = useState(false);
   const [aberto, setAberto] = useState<string | null>(null);
   const [passarAberto, setPassarAberto] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
@@ -196,6 +201,31 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const esperando = quadro.cartoes.filter((k) => k.esperandoEquipe && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const respondidos = quadro.cartoes.filter((k) => k.respondidoEquipe && (origem === 'todos' || (origem === 'sombra') === k.sombra)).length;
   const cartaoAberto = aberto ? quadro.cartoes.find((k) => k.id === aberto) ?? null : null;
+  // O que está na tela agora (busca, origem, fase, coluna e período): "Selecionar todos" marca só isso.
+  const colunaValida = coluna && quadro.topicos.some((t) => t.id === coluna) ? coluna : null;
+  const marcaveis = filtrar(quadro.cartoes, busca, origem, verFinalEfetivo, fase)
+    .filter((k) => selecionavel(k) && (!colunaValida || k.topico_id === colunaValida));
+  const escolhidos = marcaveis.filter((k) => selecionados.has(k.id));
+  const sairDaSelecao = () => { setSelecionando(false); setSelecionados(new Set()); setConfirmarMassa(false); };
+  const alternarSelecao = (id: string) => {
+    setConfirmarMassa(false);
+    setSelecionados((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+  const finalizarEscolhidos = async () => {
+    const ids = escolhidos.map((k) => k.id);
+    if (!ids.length) return;
+    setFinalizandoMassa(true);
+    versao.current++; emVoo.current++;
+    let r: Awaited<ReturnType<typeof finalizarAtendimentos>>;
+    try { r = await finalizarAtendimentos(ids); } catch { r = { ok: false, erro: 'Sem conexão com o painel agora. Tente de novo.' }; }
+    emVoo.current--;
+    setFinalizandoMassa(false);
+    const d = tratar(r);
+    if (!d) return;
+    versao.current++; setQuadro(d.quadro);
+    sairDaSelecao();
+    avisarOk(d.n === 1 ? '1 atendimento finalizado.' : `${d.n} atendimentos finalizados.`);
+  };
   const fechar = useCallback(() => { setAberto(null); setPassarAberto(false); }, []);
   const avisarErro = useCallback((t: string) => setAviso({ tipo: 'erro', texto: t }), []);
   const avisarOk = useCallback((t: string) => setAviso({ tipo: 'ok', texto: t }), []);
@@ -304,14 +334,43 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               <MeusAssuntos quadro={quadro} onSalvo={(assuntos) => { setQuadroBruto((q) => ({ ...q, eu: { ...q.eu, assuntos } })); avisarOk('Avisos salvos.'); }} onErro={avisarErro} />
             )}
             {podeEditar && (
+              <button type="button" className={c.botaoSec} aria-pressed={selecionando} data-selecionar
+                onClick={() => (selecionando ? sairDaSelecao() : setSelecionando(true))}
+                title="Marcar vários cartões e finalizar de uma vez (dá para filtrar por dia no Período)">
+                {selecionando ? 'Sair da seleção' : 'Selecionar'}
+              </button>
+            )}
+            {podeEditar && (
               <button type="button" className={c.botaoSec} data-dias-sem-ia onClick={() => setDiasIa(true)} title="Fechar dias da agenda para a IA não marcar">Dias sem IA</button>
             )}
             {podeEditar && (
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
           </div>
+          {selecionando && (
+            <div className={c.barraSelecao} role="group" aria-label="Finalizar em massa" data-barra-selecao>
+              <span><strong>{escolhidos.length}</strong> {escolhidos.length === 1 ? 'selecionado' : 'selecionados'} de {marcaveis.length} em aberto na tela</span>
+              <button type="button" className={c.acaoSec} disabled={!marcaveis.length || finalizandoMassa} data-selecionar-todos
+                onClick={() => { setConfirmarMassa(false); setSelecionados(new Set(marcaveis.map((k) => k.id))); }}>Selecionar todos da tela</button>
+              <button type="button" className={c.acaoSec} disabled={!escolhidos.length || finalizandoMassa}
+                onClick={() => { setConfirmarMassa(false); setSelecionados(new Set()); }}>Limpar</button>
+              {!confirmarMassa ? (
+                <button type="button" className={c.acaoPri} disabled={!escolhidos.length || finalizandoMassa} data-finalizar-selecionados
+                  onClick={() => setConfirmarMassa(true)}>Finalizar selecionados</button>
+              ) : (
+                <>
+                  <span>Finalizar {escolhidos.length} {escolhidos.length === 1 ? 'atendimento' : 'atendimentos'}?</span>
+                  <button type="button" className={c.acaoPri} disabled={finalizandoMassa} data-confirmar-massa onClick={finalizarEscolhidos}>
+                    {finalizandoMassa ? 'Finalizando…' : 'Confirmar'}
+                  </button>
+                  <button type="button" className={c.acaoSec} disabled={finalizandoMassa} onClick={() => setConfirmarMassa(false)}>Voltar</button>
+                </>
+              )}
+              <small className={c.detMeta}>Dica: escolha o dia em Período para pegar só os cartões daquele dia.</small>
+            </div>
+          )}
           {quadro.periodo && <p className={c.nota} data-nota-periodo>Atendimentos abertos neste período, em todas as etapas{quadro.cartoes.length >= 1000 ? ' (os 1.000 primeiros)' : ''}.</p>}
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={coluna && quadro.topicos.some((t) => t.id === coluna) ? coluna : null} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={colunaValida} selecao={selecionando ? { ids: selecionados, alternar: alternarSelecao } : undefined} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onMover={acoes.mover}
             onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
         </>

@@ -496,6 +496,25 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
        update atendimentos set arquivado = true where contato_id = '${contE}'; delete from wa_mensagens where wamid = 'wamid.ESPERA1';
        delete from wa_conversas where wa_id = '554755550001';`);
 
+  // ---------- Finalizar em massa (15/10) ----------
+  const contM = sql(`insert into contatos (nome, telefone) values ('Mara Massa Ficticia', '5547955550077') returning id`);
+  const idsM = [1, 2, 3].map((n) => sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por, aberto_em) values ('${contM}', 'receita', 'MASSA-${n} pedido', 'IA', now() - interval '${n} hours') returning id`));
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
+  await p.click('[data-selecionar]'); await p.locator('[data-barra-selecao]').waitFor({ timeout: 5000 });
+  await p.click(`[data-marcar="${idsM[0]}"]`); await p.click(`[data-marcar="${idsM[1]}"]`);
+  await p.click('[data-finalizar-selecionados]'); await p.click('[data-confirmar-massa]'); await p.waitForTimeout(2000);
+  ok('finalizar em massa finaliza só os selecionados, com quem clicou e auditoria',
+    sql(`select string_agg(etapa || ':' || coalesce(responsavel, ''), ',' order by aberto_em desc) from atendimentos where contato_id = '${contM}'`) === 'finalizado:Amanda Teste,finalizado:Amanda Teste,aguardando:'
+    && sql(`select count(*) from painel_auditoria where detalhe->>'em_massa' = 'true' and alvo_id in ('${idsM[0]}', '${idsM[1]}')`) === '2'
+    && (await p.locator('[data-barra-selecao]').count()) === 0);
+  await p.fill('#busca-crm', 'MASSA'); await p.click('[data-selecionar]'); await p.click('[data-selecionar-todos]');
+  ok('"Selecionar todos da tela" marca só o que a busca mostra', ((await p.textContent('[data-barra-selecao]')) || '').includes('1 selecionado de 1'));
+  await p.click('[data-finalizar-selecionados]'); await p.click('[data-confirmar-massa]'); await p.waitForTimeout(2000);
+  ok('o restante também finaliza', sql(`select count(*) from atendimentos where contato_id = '${contM}' and etapa <> 'finalizado'`) === '0');
+  await ctx.close();
+  sql(`update atendimentos set arquivado = true where contato_id = '${contM}'`);
+
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));
   console.log(res.join('\n')); await b.close();
   const falhas = res.filter((l) => l.startsWith('FALHA')).length; console.log(`\n${res.length - falhas} de ${res.length} passaram`); if (falhas) process.exit(1);

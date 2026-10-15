@@ -166,6 +166,8 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Finalizar pela conversa:** quem edita o quadro vê "Finalizar" no cabeçalho da Inbox quando o número tem atendimento em aberto no CRM (o dono do número e as pessoas ligadas a ele). Com mais de um, escolhe qual ou "Finalizar todos". Mesma regra do quadro (avisa o n8n).
     - **Equipe já respondeu, falta finalizar:** filtro e selo no quadro para o cartão em aberto (qualquer etapa) com mensagem da equipe para o número depois que abriu.
 
+42. **Finalizar em massa (15/10, pedido do Mateus).** Botão "Selecionar" no quadro (quem edita): cada cartão em aberto ganha a caixa de marcar, e a barra tem "Selecionar todos da tela", "Limpar" e "Finalizar selecionados" (com confirmação). "Todos da tela" respeita busca, origem, fase, coluna e o Período (para finalizar por dia, escolher o dia no Período). Um comando só no banco, até 500 por vez, auditoria em cada cartão (`em_massa: true`). **Não avisa o n8n**: é limpeza do quadro, e o aviso faria a Sara retomar dezenas de conversas de uma vez.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).
