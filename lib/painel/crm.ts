@@ -35,6 +35,9 @@ export type Cartao = {
   // "Esperando a equipe" (14/10, pedido da Letícia): cartão aberto pela IA, ainda aguardando, sem nenhuma mensagem
   // da equipe (celular ou painel) para o contato depois que abriu. Fora disso (ou banco sem a Inbox), fica de fora.
   esperandoEquipe?: boolean;
+  // "Equipe já respondeu, falta finalizar" (14/10, pedido da Letícia): cartão em aberto (não finalizado) com mensagem
+  // da equipe (celular ou painel) para o contato depois que abriu. Lembra de clicar em Finalizar.
+  respondidoEquipe?: boolean;
 };
 export type Automatica = { tipo: string; nome: string; quando: string };
 // Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
@@ -175,23 +178,28 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
   };
 }
 
-// Marca os cartões que estão esperando a equipe: abertos pela IA, ainda em "aguardando", e sem mensagem da equipe
-// (origem celular ou painel) para o mesmo número depois que o cartão abriu. Uma ida a mais ao banco, só com os
-// cartões candidatos. Banco sem as tabelas da Inbox (migração 008): nada é marcado.
+// Marca os cartões pela resposta da equipe no WhatsApp (mensagem de origem celular ou painel para o mesmo número
+// depois que o cartão abriu), numa ida só ao banco com os cartões em aberto:
+// - esperandoEquipe: aberto pela IA, ainda em "aguardando" e sem resposta da equipe;
+// - respondidoEquipe: em aberto (qualquer etapa menos finalizado) e a equipe já respondeu — falta finalizar.
+// Banco sem as tabelas da Inbox (migração 008): nada é marcado.
 async function marcarEsperandoEquipe(banco: ReturnType<typeof db>, cartoes: Cartao[]) {
-  const candidatos = cartoes.filter((k) => k.etapa === 'aguardando' && !k.sombra && k.contato_id && /^ia$/i.test(String(k.aberto_por ?? '')));
-  if (!candidatos.length) return;
+  const abertos = cartoes.filter((k) => k.etapa !== 'finalizado' && !k.sombra && k.contato_id && k.telefone);
+  if (!abertos.length) return;
   try {
     const r = await banco.query(
       `select a.id from atendimentos a join contatos c on c.id = a.contato_id
         where a.id = any($1::uuid[])
           and exists (select 1 from wa_conversas cv join wa_mensagens m on m.numero_id = cv.numero_id and m.wa_id = cv.wa_id
-                       where substr(cv.wa_id, 3, 2) = substr(regexp_replace(c.telefone, '\D', '', 'g'), 3, 2)
-                         and right(cv.wa_id, 8) = right(regexp_replace(c.telefone, '\D', '', 'g'), 8)
+                       where substr(cv.wa_id, 3, 2) = substr(regexp_replace(c.telefone, '\\D', '', 'g'), 3, 2)
+                         and right(cv.wa_id, 8) = right(regexp_replace(c.telefone, '\\D', '', 'g'), 8)
                          and m.direcao = 'saida' and m.origem in ('celular', 'painel') and m.enviada_em > a.aberto_em)`,
-      [candidatos.map((k) => k.id)]);
+      [abertos.map((k) => k.id)]);
     const respondidos = new Set(r.rows.map((x) => String(x.id)));
-    for (const k of candidatos) k.esperandoEquipe = !respondidos.has(k.id) && Boolean(k.telefone);
+    for (const k of abertos) {
+      k.respondidoEquipe = respondidos.has(k.id);
+      if (k.etapa === 'aguardando' && /^ia$/i.test(String(k.aberto_por ?? ''))) k.esperandoEquipe = !respondidos.has(k.id);
+    }
   } catch (e) {
     if ((e as { code?: string }).code !== '42P01') throw e;
   }
@@ -463,6 +471,8 @@ export async function lerComercial(u: Usuario) {
 export async function lerContatos(u: Usuario) {
   const r = await db(u).query(
     `select c.id, c.nome, c.telefone, c.documento, c.criado_em,
+            to_jsonb(c) ->> 'protocolo' as protocolo, to_jsonb(c) ->> 'protocolo_obs' as protocolo_obs,
+            to_jsonb(c) ->> 'protocolo_em' as protocolo_em, to_jsonb(c) ->> 'protocolo_por' as protocolo_por,
             (select count(*) from atendimentos a where a.contato_id = c.id and not a.arquivado and a.etapa <> 'finalizado')::int as abertos,
             (select count(*) from atendimentos a where a.contato_id = c.id and not a.arquivado)::int as total,
             (select max(a.aberto_em) from atendimentos a where a.contato_id = c.id and not a.arquivado) as ultimo
@@ -472,12 +482,61 @@ export async function lerContatos(u: Usuario) {
     id: c.id as string, nome: c.nome as string | null, telefone: c.telefone as string | null,
     documento: u.master ? mascararDoc(c.documento) : (c.documento as string | null),
     abertos: c.abertos as number, total: c.total as number, ultimo: c.ultimo ? new Date(c.ultimo).toISOString() : null,
+    // Acompanhamento de protocolo (migração 025; banco sem ela = null). to_jsonb: a lista não quebra sem a coluna.
+    protocolo: c.protocolo ? {
+      situacao: String(c.protocolo), obs: c.protocolo_obs ? (u.master ? mascararTexto(String(c.protocolo_obs)) : String(c.protocolo_obs)) : null,
+      desde: c.protocolo_em ? new Date(c.protocolo_em).toISOString() : null, por: (c.protocolo_por as string | null) ?? null,
+    } : null,
   }));
 }
 
 export async function lerAtendimentosDoContato(u: Usuario, contatoId: string) {
   const r = await db(u).query(`${SELECT_CARTAO} where a.contato_id = $1 and not a.arquivado order by a.aberto_em desc limit 100`, [contatoId]);
   return r.rows.map((x) => limparCartao(u, x)).filter((c) => u.master || !c.sombra);
+}
+
+// ---- Finalizar pela conversa da Inbox (14/10, pedido da Letícia) ----
+// Atendimentos em aberto do número da conversa: o dono do número (contatos.telefone) e as pessoas ligadas a ele
+// (contato_telefones, migração 024). Sem cartão sombra. Quem não vê o CRM recebe a lista vazia (o botão não aparece).
+export type AbertoDaConversa = { id: string; etapa: Etapa; assunto: string | null; resumo: string; aberto_em: string; responsavel: string | null; nome: string | null };
+
+export async function abertosDoTelefone(u: Usuario, telefone: string): Promise<AbertoDaConversa[]> {
+  if (!u.empresa || !pode(u, 'crm.ver')) return [];
+  const dig = String(telefone ?? '').replace(/\D/g, '');
+  if (dig.length < 10) return [];
+  let tel: string;
+  try { tel = normalizarTelefone(dig); } catch { return []; }
+  const [ddd, fim] = chaveTelefone(tel);
+  const banco = db(u);
+  const sql = (comLigados: boolean) => `
+    select a.id, a.etapa, left(a.resumo, 300) as resumo, a.aberto_em, a.responsavel, t.nome as assunto, c.nome
+      from atendimentos a join contatos c on c.id = a.contato_id left join crm_topicos t on t.id = a.topico_id
+     where not a.arquivado and a.etapa <> 'finalizado' and ${SQL_SEM_SOMBRA} and not c.arquivado
+       and (${SQL_MESMO_TELEFONE('c.telefone', 1, 2)}
+            ${comLigados ? `or c.id in (select contato_id from contato_telefones where not arquivado and substr(telefone, 3, 2) = $1 and right(telefone, 8) = $2)` : ''})
+     order by a.aberto_em limit 20`;
+  let r;
+  try { r = await banco.query(sql(true), [ddd, fim]); } catch (e) {
+    if ((e as { code?: string }).code !== '42P01') throw e;
+    r = await banco.query(sql(false), [ddd, fim]);
+  }
+  return r.rows.map((x) => ({
+    id: String(x.id), etapa: x.etapa as Etapa, assunto: (x.assunto as string | null) ?? null,
+    resumo: u.master ? mascararTexto(String(x.resumo ?? '')) : String(x.resumo ?? ''), aberto_em: iso(x.aberto_em) as string,
+    responsavel: (x.responsavel as string | null) ?? null, nome: (x.nome as string | null) ?? null,
+  }));
+}
+
+// Finaliza os atendimentos escolhidos, só os que são mesmo deste número (mesma regra do quadro: avisa o n8n).
+export async function finalizarDoTelefone(u: Usuario, telefone: string, ids: unknown): Promise<AbertoDaConversa[]> {
+  exigirEditar(u);
+  const pedidos = Array.isArray(ids) ? ids.map(String).filter((x) => UUID.test(x)) : [];
+  if (!pedidos.length) throw new ErroApi(400, 'Escolha o atendimento para finalizar.');
+  const daConversa = new Set((await abertosDoTelefone(u, telefone)).map((x) => x.id));
+  const alvo = pedidos.filter((x) => daConversa.has(x));
+  if (!alvo.length) throw new ErroApi(409, 'Esse atendimento já foi finalizado ou não é desta conversa. A lista foi atualizada.');
+  for (const id of alvo) await mover(u, id, 'finalizado');
+  return abertosDoTelefone(u, telefone);
 }
 
 // ---- Criação e edição pelo painel (CRM completo) ----

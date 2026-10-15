@@ -53,8 +53,24 @@ function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
     if (!corValida(saida.cor)) throw new ErroApi(400, `Cor inválida. Use uma destas: ${CORES.map((c) => c.id).join(', ')} (ou vazio).`);
     saida.cor = limparCor(saida.cor);
   }
+  // Acompanhamento de protocolo (migração 025): só as situações conhecidas; vazio tira a pessoa do protocolo.
+  if (r.nome === 'contatos') {
+    if ('protocolo' in saida) {
+      const p = saida.protocolo === null || saida.protocolo === undefined ? '' : String(saida.protocolo).trim();
+      if (p && !(PROTOCOLOS as readonly string[]).includes(p)) throw new ErroApi(400, `protocolo inválido. Use: ${PROTOCOLOS.join(', ')} (ou vazio).`);
+      saida.protocolo = p || null;
+    }
+    if ('protocolo_obs' in saida) {
+      const o = saida.protocolo_obs === null || saida.protocolo_obs === undefined ? '' : String(saida.protocolo_obs).trim();
+      if (o.length > 500) throw new ErroApi(400, 'protocolo_obs pode ter até 500 caracteres.');
+      saida.protocolo_obs = o || null;
+    }
+    if ('protocolo_por' in saida) saida.protocolo_por = saida.protocolo_por ? String(saida.protocolo_por).trim().slice(0, 80) || null : null;
+  }
   return saida;
 }
+
+export const PROTOCOLOS = ['em_analise', 'em_protocolo', 'em_acompanhamento', 'encerrado'] as const;
 
 function traduzErroBanco(e: unknown): never {
   const err = e as { code?: string; detail?: string; message?: string; constraint?: string };
@@ -123,6 +139,7 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
   const r = exigirRecurso(nome);
   exigirEscopo(chave, r.escrita);
   const dados = limparDados(r, corpo);
+  if (r.nome === 'contatos' && dados.protocolo) { dados.protocolo_em = new Date().toISOString(); if (!('protocolo_por' in dados)) dados.protocolo_por = chave.nome; }
   const cols = Object.keys(dados);
   const vals = Object.values(dados);
   if (r.idObrigatorioNaCriacao) {
@@ -151,13 +168,23 @@ export async function atualizar(chave: Chave, nome: string, id: string, corpo: u
   const cols = Object.keys(dados);
   if (!cols.length) throw new ErroApi(400, 'Nenhum campo para atualizar.');
   const sets = cols.map((k, i) => `${k} = $${i + 2}`);
+  const vals: unknown[] = [id, ...Object.values(dados)];
   sets.push('atualizado_em = now()');
   if (r.nome === 'atendimentos' && 'etapa' in dados) {
     sets.push(`finalizado_em = case when $${cols.indexOf('etapa') + 2} = 'finalizado' then now() else null end`);
   }
+  // Protocolo (migração 025): mudou a situação → grava quando e, se não veio, quem (o nome da chave ou da pessoa).
+  if (r.nome === 'contatos' && 'protocolo' in dados) {
+    const p = `$${cols.indexOf('protocolo') + 2}::text`;
+    sets.push(`protocolo_em = case when protocolo is distinct from ${p} then now() else protocolo_em end`);
+    if (!('protocolo_por' in dados)) {
+      vals.push(chave.nome);
+      sets.push(`protocolo_por = case when protocolo is distinct from ${p} then $${vals.length}::text else protocolo_por end`);
+    }
+  }
   try {
     return await transacao(async (c) => {
-      const res = await c.query(`update ${r.tabela} set ${sets.join(', ')} where id = $1 returning *`, [id, ...Object.values(dados)]);
+      const res = await c.query(`update ${r.tabela} set ${sets.join(', ')} where id = $1 returning *`, vals);
       if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
       await auditar(c, chave, 'atualizar', r.nome, id, dados);
       return protegerDoc(r.tabela, res.rows[0]);
@@ -278,6 +305,12 @@ export async function ficha(chave: Chave, telefone: unknown) {
   ]);
   // Mensagens automáticas (migração 017): se pode enviar e os últimos envios. A IA confere antes de cada envio.
   const automaticas = await resumoParaFicha(db, ids);
+  // Acompanhamento de protocolo (migração 025): banco sem a coluna devolve protocolo null.
+  const prot = new Map<string, Record<string, unknown>>();
+  try {
+    const p = await db.query(`select id, protocolo, protocolo_obs, protocolo_em, protocolo_por from contatos where id = any($1) and protocolo is not null`, [ids]);
+    for (const x of p.rows) prot.set(String(x.id), { situacao: x.protocolo, obs: x.protocolo_obs, desde: x.protocolo_em, por: x.protocolo_por });
+  } catch (e) { if ((e as { code?: string }).code !== '42703') throw e; }
   return {
     encontrado: true,
     telefone: tel,
@@ -287,6 +320,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
     contatos: cont.rows.map((c) => ({
       id: c.id, nome: c.nome, contato_desde: c.criado_em, papel: c.papel, dono_do_numero: c.dono,
       cpf_final: c.documento ? String(c.documento).replace(/\D/g, '').slice(-3) : null,
+      protocolo: prot.get(String(c.id)) ?? null,
     })),
     atendimentos_abertos: atend.rows.filter((a) => a.etapa !== 'finalizado'),
     atendimentos_recentes: atend.rows.filter((a) => a.etapa === 'finalizado'),

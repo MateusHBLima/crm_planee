@@ -411,8 +411,71 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   ({ ctx, p } = await nova());
   await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(1200);
   ok('resposta da equipe pelo celular tira o selo', (await p.locator('article', { hasText: 'ESPERA-1' }).locator('[data-esperando]').count()) === 0);
+  // "Equipe já respondeu, falta finalizar" (14/10): os dois cartões em aberto tiveram resposta depois que abriram.
+  ok('cartões respondidos têm o selo "equipe respondeu"', (await p.locator('article', { hasText: 'ESPERA-1' }).locator('[data-respondido]').count()) === 1
+    && (await p.locator('article', { hasText: 'ESPERA-2' }).locator('[data-respondido]').count()) === 1);
+  await p.click('[data-fases] button[data-fase="respondido"]'); await p.waitForTimeout(300);
+  const textosR = await p.locator('article').allTextContents();
+  ok('filtro "Equipe já respondeu, falta finalizar" mostra os respondidos', textosR.length === 2 && textosR.every((t) => t.includes('ESPERA-')), String(textosR.length));
   await ctx.close();
-  sql(`update atendimentos set arquivado = true where contato_id = '${contE}'; delete from wa_mensagens where wamid = 'wamid.ESPERA1';
+
+  // ---------- Inbox (14/10): Finalizar pela conversa e marcar como não lida ----------
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(600);
+  await p.goto(B + `/inbox?tel=${TELE}`); await p.locator('[data-finalizar-conversa]').waitFor({ timeout: 10000 });
+  ok('Inbox mostra "Finalizar (2)" para os dois atendimentos em aberto do número', ((await p.textContent('[data-finalizar-conversa]')) || '').includes('Finalizar (2)'));
+  await p.click('[data-finalizar-conversa]'); await p.locator('[data-lista-finalizar]').waitFor({ timeout: 5000 });
+  await p.click(`[data-finalizar-um="${cartE}"]`); await p.waitForTimeout(1500);
+  ok('finalizar pela conversa finaliza no CRM com quem clicou', sql(`select etapa || '|' || coalesce(responsavel, '') || '|' || (finalizado_em is not null) from atendimentos where id = '${cartE}'`) === 'finalizado|Amanda Teste|true'
+    && ((await p.textContent('[data-finalizar-conversa]')) || '').trim() === 'Finalizar');
+  sql(`update wa_conversas set nao_lidas = 0, lida_ate = now() where wa_id = '554755550001'`);
+  await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
+  ok('marcar como não lida volta a contar e fecha a conversa', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id = '554755550001'`) === '1|true'
+    && (await p.locator('[data-nao-lida]').count()) === 0);
+  await p.click('[data-filtro-nao-lidas]'); await p.waitForTimeout(300);
+  ok('filtro "Não lidas" mostra a conversa marcada', (await p.locator('button[data-wa="554755550001"]').count()) === 1);
+  await p.screenshot({ path: out + '18b_inbox_finalizar_nao_lida.png' });
+  await ctx.close();
+
+  // ---------- Acompanhamento de protocolo (14/10) ----------
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
+  await p.click('button[role=tab][data-aba="protocolos"]'); await p.locator('[data-filtro-protocolo]').waitFor({ timeout: 8000 });
+  await p.click('[data-novo-protocolo]'); await p.fill('#prot-busca', 'Ester Espera'); await p.click(`[data-escolher-contato="${contE}"]`);
+  await p.selectOption('#prot-situacao', 'em_protocolo'); await p.fill('#prot-obs', 'Começou o protocolo injetável.');
+  await p.click('form[aria-label="Colocar em protocolo"] button[type=submit]'); await p.waitForTimeout(1500);
+  ok('colocar em protocolo grava situação, observação, quando e quem', sql(`select protocolo || '|' || protocolo_obs || '|' || protocolo_por || '|' || (protocolo_em is not null) from contatos where id = '${contE}'`) === 'em_protocolo|Começou o protocolo injetável.|Amanda Teste|true'
+    && (await p.locator(`[data-linha-protocolo="${contE}"]`).count()) === 1);
+  const emAntes = sql(`select protocolo_em from contatos where id = '${contE}'`);
+  await p.click(`[data-linha-protocolo="${contE}"] button[aria-expanded]`);
+  await p.click(`[data-linha-protocolo="${contE}"] button[data-situacao="em_acompanhamento"]`); await p.waitForTimeout(1500);
+  ok('trocar a situação muda a data e mantém a observação', sql(`select protocolo || '|' || protocolo_obs from contatos where id = '${contE}'`) === 'em_acompanhamento|Começou o protocolo injetável.'
+    && sql(`select protocolo_em <> '${emAntes}'::timestamptz from contatos where id = '${contE}'`) === 't');
+  await p.click('[data-filtro-protocolo] button[data-filtro="encerrado"]'); await p.waitForTimeout(300);
+  ok('filtro Encerrado esconde quem está em acompanhamento', (await p.locator(`[data-linha-protocolo="${contE}"]`).count()) === 0);
+  await p.screenshot({ path: out + '18c_protocolos.png' });
+  // Na ficha do contato aparece a mesma situação; "Tirar do protocolo" limpa.
+  await p.click('role=tab[name="Contatos"]'); await p.waitForTimeout(1000);
+  await p.locator('section[aria-label="Lista de contatos"] button', { hasText: 'Ester Espera Ficticia' }).first().click(); await p.waitForTimeout(800);
+  const fichaP = p.locator('section[aria-label="Ficha do contato"]');
+  ok('ficha do contato mostra o protocolo', (await fichaP.locator('button[data-situacao="em_acompanhamento"][aria-pressed="true"]').count()) === 1);
+  await fichaP.locator('[data-tirar-protocolo]').click(); await p.waitForTimeout(1500);
+  ok('tirar do protocolo limpa situação e observação', sql(`select coalesce(protocolo, '-') || '|' || coalesce(protocolo_obs, '-') from contatos where id = '${contE}'`) === '-|-'
+    && (await fichaP.locator('[data-protocolo="nenhum"]').count()) === 1);
+  await ctx.close();
+  // Pela API (a IA): valor fora da lista é recusado; a mudança grava quem (nome da chave), o filtro e a ficha trazem.
+  r = await api(`/api/v1/contatos/${contE}`, { method: 'PATCH', body: JSON.stringify({ protocolo: 'talvez' }) });
+  ok('API recusa situação de protocolo desconhecida', r.status === 400 && String(r.json && r.json.erro).includes('em_analise'), JSON.stringify(r.json));
+  r = await api(`/api/v1/contatos/${contE}`, { method: 'PATCH', body: JSON.stringify({ protocolo: 'em_analise', protocolo_obs: 'Doutor indicou protocolo.' }) });
+  ok('API marca o protocolo e grava quem marcou', r.status === 200 && r.json.protocolo === 'em_analise' && r.json.protocolo_por === 'Sara teste' && Boolean(r.json.protocolo_em), JSON.stringify(r.json));
+  r = await api('/api/v1/contatos?protocolo=em_analise');
+  const listaP = (r.json && (r.json.dados || r.json.itens || r.json)) || [];
+  ok('API filtra contatos por protocolo', r.status === 200 && JSON.stringify(listaP).includes(contE), JSON.stringify(r.json).slice(0, 200));
+  r = await api(`/api/v1/ficha?telefone=${TELE}`);
+  const pessoaP = r.json && r.json.contatos && r.json.contatos.find((x) => x.id === contE);
+  ok('ficha traz o protocolo da pessoa', Boolean(pessoaP && pessoaP.protocolo && pessoaP.protocolo.situacao === 'em_analise' && pessoaP.protocolo.obs === 'Doutor indicou protocolo.'), JSON.stringify(pessoaP));
+  sql(`update contatos set protocolo = null, protocolo_obs = null, protocolo_em = null, protocolo_por = null where id = '${contE}';
+       update atendimentos set arquivado = true where contato_id = '${contE}'; delete from wa_mensagens where wamid = 'wamid.ESPERA1';
        delete from wa_conversas where wa_id = '554755550001';`);
 
   ok('sem erro no console', erros.length === 0, erros.join(' | ').slice(0, 300));

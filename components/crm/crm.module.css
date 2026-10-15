@@ -194,6 +194,8 @@
 
 @media (max-width: 760px) {
   .topo { padding: 16px 16px 10px; }
+  .segmentado { max-width: 100%; overflow-x: auto; }
+  .segmentado .segItem { padding: 0 10px; }
   .busca, .busca input { width: 100%; }
   .aviso, .barra, .nota { padding-left: 16px; padding-right: 16px; }
   .quadro { padding: 4px 16px 20px; }
@@ -301,3 +303,17 @@
 .listaDias li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; }
 .listaDias small { color: var(--ink-3); }
 .notaJanela { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+
+/* Acompanhamento de protocolo (14/10) */
+.listaProtocolo { display: flex; flex-direction: column; gap: 8px; padding: 0 28px 24px; overflow-y: auto; min-height: 0; }
+.itemProtocolo { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.itemProtocoloTopo { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; background: none; text-align: left; font-size: 13px; color: var(--ink); }
+.itemProtocoloTopo:hover { background: var(--surface-2); border-radius: 12px; }
+.itemProtocoloCorpo { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 14px; }
+.obsProtocolo { margin: 0; padding: 0 12px 10px 50px; font-size: 12.5px; color: var(--ink-2); white-space: pre-wrap; }
+.seloProtocolo { flex-shrink: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--e-bg); color: var(--e-ink); }
+.seloProtocolo[data-situacao='em_analise'] { --e-bg: var(--ag-bg); --e-ink: var(--ag-ink); }
+.seloProtocolo[data-situacao='em_protocolo'] { --e-bg: var(--eq-bg); --e-ink: var(--eq-ink); }
+.seloProtocolo[data-situacao='em_acompanhamento'] { --e-bg: var(--pd-bg); --e-ink: var(--pd-ink); }
+.seloProtocolo[data-situacao='encerrado'] { --e-bg: var(--fn-bg); --e-ink: var(--fn-ink); }
+@media (max-width: 760px) { .listaProtocolo { padding: 0 16px 20px; } .obsProtocolo { padding-left: 12px; } }

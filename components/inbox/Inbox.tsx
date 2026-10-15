@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, renomearContato } from '@/lib/painel/acoes-inbox';
-import { abrirConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
+import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, finalizarPelaConversa, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
+import { abrirConversa, carregarAbertosDaConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
+import type { AbertoDaConversa } from '@/lib/painel/crm';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
@@ -79,9 +80,10 @@ function criarDatas(fuso: string) {
   };
 }
 
-export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; nome: string; empresaId?: string };
+// podeFinalizar (crm.editar): botão Finalizar no cabeçalho, para os atendimentos em aberto do número (14/10).
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; nome: string; empresaId?: string };
 
-export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' }: PropsInbox) {
+export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
   const inicialRef = useRef(inicial);
   // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
@@ -102,6 +104,12 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
   const [avisando, setAvisando] = useState<AlvoAviso | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [escolhendoPrazo, setEscolhendoPrazo] = useState(false);
+  // Só mostrar as não lidas (14/10). A conversa aberta continua na lista mesmo depois de lida.
+  const [soNaoLidas, setSoNaoLidas] = useState(false);
+  // Atendimentos em aberto no CRM para o número da conversa aberta (botão Finalizar, 14/10).
+  const [abertos, setAbertos] = useState<{ wa: string; lista: AbertoDaConversa[] } | null>(null);
+  const [escolhendoFinalizar, setEscolhendoFinalizar] = useState(false);
+  const [finalizando, setFinalizando] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -237,6 +245,40 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
     atualizarLinha(d);
   }, [tratar, atualizarLinha]);
 
+  // Atendimentos em aberto do número (só para quem finaliza). Erro aqui não atrapalha a conversa: o botão só some.
+  const buscarAbertos = useCallback(async (k: Chave) => {
+    if (!podeFinalizar) return;
+    const r = await carregarAbertosDaConversa(k.wa_id);
+    if (r.ok && mesma(abertaRef.current, k)) setAbertos({ wa: k.wa_id, lista: r.dados });
+  }, [podeFinalizar]);
+  useEffect(() => {
+    setAbertos(null); setEscolhendoFinalizar(false);
+    if (aberta) void buscarAbertos(aberta);
+  }, [aberta, buscarAbertos]);
+
+  const finalizar = useCallback(async (ids: string[]) => {
+    const k = abertaRef.current;
+    if (!k || !ids.length) return;
+    setFinalizando(true); setAviso(null);
+    const r = await finalizarPelaConversa(k.wa_id, ids);
+    setFinalizando(false);
+    if (!r.ok) { tratar(r); void buscarAbertos(k); return; }
+    if (!mesma(abertaRef.current, k)) return;
+    setAbertos({ wa: k.wa_id, lista: r.dados }); setEscolhendoFinalizar(false);
+    setOk(ids.length === 1 ? 'Atendimento finalizado no CRM.' : `${ids.length} atendimentos finalizados no CRM.`);
+  }, [tratar, buscarAbertos]);
+
+  // Marcar como não lida (14/10): volta a contar nas não lidas e a conversa fecha (aberta, ela seria lida de novo).
+  const naoLida = useCallback(async () => {
+    const k = abertaRef.current;
+    if (!k) return;
+    const d = tratar(await marcarNaoLida(k.numero_id, k.wa_id));
+    if (!d) return;
+    atualizarLinha(d);
+    if (mesma(abertaRef.current, k)) { setAberta(null); setDados(null); }
+    setOk('Conversa marcada como não lida.');
+  }, [tratar, atualizarLinha]);
+
   // Link direto para uma conversa (/inbox?numero=...&wa=...): o Interno Planee abre o aviso na conversa certa.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -275,6 +317,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
     return () => window.clearTimeout(t);
   }, [busca, soFollowup, tratar]);
 
+  const buscarAbertosRef = useRef(buscarAbertos);
+  buscarAbertosRef.current = buscarAbertos;
   // Atualização automática da lista e da conversa aberta, só com a aba do navegador visível.
   useEffect(() => {
     let parado = false;
@@ -290,6 +334,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
       else if (l.sair) { window.location.href = '/entrar?motivo=sessao'; return; }
       else setFalhouAtualizar(true);
       if (conv && conv.ok && mesma(abertaRef.current, k)) aplicarAtualizacao(conv.dados);
+      if (k) void buscarAbertosRef.current(k);
     };
     const id = window.setInterval(tick, ATUALIZA_MS);
     const vis = () => { if (!document.hidden) tick(); };
@@ -300,6 +345,8 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
   }, [aplicarAtualizacao]);
 
   const total = lista.conversas.length;
+  const visiveis = soNaoLidas ? lista.conversas.filter((k) => k.nao_lidas > 0 || mesma(k, aberta)) : lista.conversas;
+  const abertosAgora = abertos && aberta && abertos.wa === aberta.wa_id ? abertos.lista : [];
   const naoLidas = lista.conversas.reduce((s, k) => s + (k.nao_lidas > 0 ? 1 : 0), 0);
   const atual = dados?.conversa ?? (aberta ? lista.conversas.find((k) => mesma(k, aberta)) ?? null : null);
   const meusPendentes = aberta && dados ? pendentes.filter((p) => p.chave === chaveDe(aberta)) : [];
@@ -322,12 +369,14 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
           <div className={c.filtros}>
             <button type="button" className={c.filtro} aria-pressed={soFollowup} onClick={() => setSoFollowup((x) => !x)}
               title="Contatos que receberam follow-up da Sara e ainda não responderam">Em follow-up</button>
+            <button type="button" className={c.filtro} aria-pressed={soNaoLidas} data-filtro-nao-lidas onClick={() => setSoNaoLidas((x) => !x)}
+              title="Só as conversas não lidas (inclusive as marcadas como não lidas)">Não lidas{naoLidas ? ` · ${naoLidas}` : ''}</button>
           </div>
           {falhouAtualizar && <p className={c.subErro}>Sem conexão com o banco agora. Tentando de novo.</p>}
           {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado, acesso registrado e as não lidas da clínica não mudam.</p>}
         </div>
         <ul className={c.itens}>
-          {lista.conversas.map((k) => (
+          {visiveis.map((k) => (
             <li key={k.numero_id + ':' + k.wa_id}>
               <button type="button" className={c.item} aria-current={mesma(k, aberta) ? 'true' : undefined} data-wa={k.wa_id} onClick={() => abrir(k)}
                 onMouseEnter={() => previa(k)} onMouseLeave={cancelarPrevia} onFocus={() => previa(k)}>
@@ -355,6 +404,7 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
             </li>
           ))}
         </ul>
+        {total > 0 && !visiveis.length && <div className={c.vazio}>Nenhuma conversa não lida.</div>}
         {!total && (
           <div className={c.vazio}>
             {soFollowup ? 'Ninguém em follow-up sem resposta agora.' : busca.trim() ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda. Quando o WhatsApp da empresa receber mensagens, elas aparecem aqui.'}
@@ -408,6 +458,21 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                       )}
                     </span>
                   </div>
+                  <div className={c.acoesCabeca}>
+                  {podeFinalizar && abertosAgora.length > 0 && (
+                    <button type="button" className={c.botaoDonoForte} disabled={finalizando} data-finalizar-conversa
+                      aria-expanded={abertosAgora.length > 1 ? escolhendoFinalizar : undefined}
+                      onClick={() => (abertosAgora.length === 1 ? finalizar([abertosAgora[0].id]) : setEscolhendoFinalizar((x) => !x))}
+                      title={abertosAgora.length === 1
+                        ? `Finaliza no CRM: ${abertosAgora[0].assunto ?? 'Sem assunto'} · ${abertosAgora[0].resumo.slice(0, 120)}`
+                        : 'Escolha qual atendimento finalizar no CRM'}>
+                      {finalizando ? 'Finalizando…' : abertosAgora.length === 1 ? 'Finalizar' : `Finalizar (${abertosAgora.length})`}
+                    </button>
+                  )}
+                  {!mascarado && (
+                    <button type="button" className={c.botaoDono} data-nao-lida onClick={naoLida}
+                      title="Volta a contar como não lida, para lembrar de responder depois">Não lida</button>
+                  )}
                   {podeResponder && (
                     <a className={c.botaoDono} href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
                       title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
@@ -430,9 +495,26 @@ export function Inbox({ inicial, mascarado, podeResponder, nome, empresaId = '' 
                       <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoPrazo(false)}>Cancelar</button>
                     </span>
                   )}
+                  </div>
                 </>
               )}
             </header>
+            {escolhendoFinalizar && abertosAgora.length > 1 && (
+              <div className={c.finalizarLista} role="group" aria-label="Atendimentos em aberto no CRM" data-lista-finalizar>
+                <ul>
+                  {abertosAgora.map((a) => (
+                    <li key={a.id}>
+                      <span><strong>{a.assunto ?? 'Sem assunto'}</strong>{a.nome && atual && a.nome !== atual.nome ? ` · ${a.nome}` : ''} · {a.resumo}</span>
+                      <button type="button" className={c.botaoDono} disabled={finalizando} data-finalizar-um={a.id} onClick={() => finalizar([a.id])}>Finalizar</button>
+                    </li>
+                  ))}
+                </ul>
+                <div className={c.prazoDono}>
+                  <button type="button" className={c.botaoDonoForte} disabled={finalizando} onClick={() => finalizar(abertosAgora.map((a) => a.id))}>Finalizar todos</button>
+                  <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoFinalizar(false)}>Cancelar</button>
+                </div>
+              </div>
+            )}
             <div className={c.mensagens} ref={rolagem}>
               {carregando && <p className={c.carregando}>Carregando a conversa…</p>}
               {dados?.temMais && (

@@ -101,6 +101,13 @@ O relógio dos envios (aniversário, lembretes, follow-up) fica no n8n da Sara. 
 - Os profissionais que aparecem para escolher vêm de `agenda_profissionais`: `[{"id": 1, "nome": "Dr. Fulano"}]` (o `id` é o do sistema da agenda). Sem ela, só dá para fechar o dia para todos.
 - Fechar o dia não desmarca ninguém.
 
+## Acompanhamento de protocolo (migração 025, 14/10)
+- Fica no próprio contato: `protocolo` (`em_analise`, `em_protocolo`, `em_acompanhamento`, `encerrado`; vazio ou `null` = fora de protocolo), `protocolo_obs` (até 500 caracteres), `protocolo_em` e `protocolo_por`.
+- A equipe marca pela aba **Protocolos** do CRM ou pela ficha do contato (quem edita o quadro). A IA marca com `PATCH /api/v1/contatos/{id}` e `{"protocolo": "em_analise", "protocolo_obs": "..."}` (escopo `crm`). Valor fora da lista: 400.
+- Quando a situação muda, a API grava `protocolo_em = agora` e, se `protocolo_por` não veio, o nome da chave (ou da pessoa no painel). Mandar a mesma situação de novo não muda a data.
+- `GET /api/v1/contatos?protocolo=em_protocolo` lista por situação. A ficha (`GET /api/v1/ficha`) traz em cada pessoa `protocolo: {situacao, obs, desde, por}` ou `null`.
+- O histórico de cada mudança fica na auditoria (`painel_auditoria`), como todo o CRM.
+
 ## Várias pessoas no mesmo número (migração 024)
 
 Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com `contatos.telefone` igual (quem conversa; funil e Inbox ficam nele). As outras pessoas são contatos próprios, sem telefone, ligados ao número em `contato_telefones` com o papel.
@@ -149,8 +156,8 @@ Variável `DATABASE_URL` na stack `painel` do Portainer: a string do "connection
 
 As telas do painel leem por `GET /api/painel/ler/<recurso>`, com o login da pessoa (cookie), não com chave. Não serve para integração: use a API acima. Os recursos estão em `lib/painel/leituras.ts`:
 
-- **CRM:** `quadro`, `detalhe`, `comercial`, `contatos`, `atendimentos_contato`, `notas_contato`, `historico`, `servico`.
-- **Inbox:** `conversas`, `conversa`.
+- **CRM:** `quadro`, `detalhe`, `comercial`, `contatos`, `atendimentos_contato`, `notas_contato`, `historico`, `servico`, `protocolos`.
+- **Inbox:** `conversas`, `conversa`, `abertos_conversa` (atendimentos em aberto do número, para o Finalizar).
 - **Avisos para a Planee e Interno:** `planee_empresa`, `faixa`, `avisos`, `aviso`, `saude`, `saude_empresa`, `novidades`, `integracoes`. Do `avisos` em diante, só o master.
 
 Gravar continua por ações do servidor. As rotas GET rodam em paralelo, então a atualização automática não segura o clique da pessoa. O cabeçalho `Server-Timing` mostra o tempo da sessão e do banco em cada pedido.

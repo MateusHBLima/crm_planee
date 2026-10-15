@@ -5,6 +5,7 @@ import { comUsuario } from './resposta';
 import * as crm from './crm';
 import * as sv from './servicos';
 import * as diasIa from './dias-sem-ia';
+import * as prot from './protocolo';
 import { definirAssuntosAviso } from './gestao';
 import { esquecerSessoes } from '@/lib/sessao';
 
@@ -140,6 +141,12 @@ export async function carregarDiasSemIa() {
 }
 export async function salvarDiasSemIa(dias: { prof: number | null; data: string; motivo: string }[]) {
   return comUsuario((u) => diasIa.salvarDiasSemIa(u, dias));
+}
+
+// ---- Acompanhamento de protocolo (14/10): quem edita o quadro marca a situação e a observação ----
+// situacao null tira a pessoa do protocolo; obs undefined mantém a observação. Devolve a lista atualizada.
+export async function marcarProtocolo(contatoId: string, situacao: string | null, obs?: string) {
+  return comUsuario((u) => prot.marcarProtocolo(u, contatoId, situacao, obs));
 }
 
 // ---- Histórico do paciente, agendamentos e comprovantes (migração 013) ----

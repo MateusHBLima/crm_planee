@@ -2,6 +2,7 @@
 
 import { comUsuario } from './resposta';
 import * as inbox from './inbox';
+import * as crm from './crm';
 
 // Ações da Inbox. Cada uma confere a sessão, a empresa e a permissão (inbox.ver; para enviar, inbox.responder) no servidor.
 
@@ -39,4 +40,15 @@ export async function renomearContato(numeroId: string, waId: string, nome: stri
 // Link curto (10 min) para ouvir, ver ou baixar a mídia de uma mensagem.
 export async function abrirMidia(numeroId: string, waId: string, mensagemId: string) {
   return comUsuario((u) => inbox.linkDaMidia(u, numeroId, waId, mensagemId), 'inbox');
+}
+
+// Marcar como não lida (14/10): a conversa volta a contar nas não lidas. Devolve a linha da lista atualizada.
+export async function marcarNaoLida(numeroId: string, waId: string) {
+  return comUsuario((u) => inbox.marcarNaoLida(u, numeroId, waId), 'inbox');
+}
+
+// Finalizar pela conversa (14/10): os atendimentos em aberto do número no CRM (quem edita o quadro).
+// Devolve o que continua em aberto.
+export async function finalizarPelaConversa(waId: string, ids: string[]) {
+  return comUsuario((u) => crm.finalizarDoTelefone(u, waId, ids), 'inbox');
 }

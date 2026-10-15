@@ -9,6 +9,7 @@ import * as pl from './planee';
 import * as rs from './resultados';
 import * as ag from './agenda';
 import * as rg from './registro';
+import * as prot from './protocolo';
 import { lerIntervalo } from '@/lib/periodo';
 
 // Leituras das telas, servidas por GET /api/painel/ler/<recurso> (rota em app/api/painel/ler).
@@ -33,11 +34,15 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   detalhe: (u, q) => crm.lerDetalhe(u, exigir(q, 'id')),
   comercial: (u) => crm.lerComercial(u),
   contatos: (u) => crm.lerContatos(u),
+  // Acompanhamento de protocolo (14/10): quem está em análise, em protocolo, em acompanhamento ou encerrado.
+  protocolos: (u) => prot.lerProtocolos(u),
   atendimentos_contato: (u, q) => crm.lerAtendimentosDoContato(u, exigir(q, 'id')),
   notas_contato: (u, q) => crm.notasDoContato(u, exigir(q, 'id')),
   historico: (u, q) => sv.historicoContato(u, exigir(q, 'id')),
   servico: (u, q) => sv.detalheServico(u, exigir(q, 'id')),
   conversas: (u, q) => inbox.listarConversas(u, q.get('busca') ?? undefined, q.get('filtro')),
+  // Atendimentos em aberto do número da conversa (botão Finalizar na Inbox, 14/10). Sem acesso ao CRM: lista vazia.
+  abertos_conversa: (u, q) => crm.abertosDoTelefone(u, exigir(q, 'wa')),
   // Abrir ou atualizar a conversa marca como lida (a equipe; o master só olha). Paginar para trás e a leitura
   // antecipada (previa=1, mouse em cima da conversa na lista) não marcam.
   conversa: (u, q) => {
