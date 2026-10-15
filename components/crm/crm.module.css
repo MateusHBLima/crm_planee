@@ -322,3 +322,11 @@
 /* Uma coluna por vez (15/10): o filtro no topo e a coluna escolhida mais larga. */
 .filtroColuna select { height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 550; color: var(--ink); max-width: 240px; }
 .colunaSo { flex: 1 1 auto !important; max-width: 760px; }
+
+/* Finalizar em massa (15/10): modo Selecionar do quadro. */
+.marcarCartao { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.marcarCartao input { width: 16px; height: 16px; accent-color: var(--ink); cursor: pointer; }
+.cartao[data-marcado='true'] { outline: 2px solid var(--ink); outline-offset: -2px; }
+.barraSelecao { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 28px 10px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); font-size: 13px; }
+.barraSelecao strong { font-weight: 650; }
+@media (max-width: 760px) { .barraSelecao { margin: 0 16px 10px; } }

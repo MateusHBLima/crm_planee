@@ -31,8 +31,12 @@ export function ordenar(a: Cartao, b: Cartao) {
 }
 
 // coluna (15/10): com um assunto escolhido, o quadro mostra só a coluna dele, mais larga. null = todas.
-export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna = null, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
-  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; coluna?: string | null; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
+// selecao (15/10): modo "Selecionar" do quadro; cada cartão em aberto ganha a caixa de marcar e o clique marca.
+export type Selecao = { ids: ReadonlySet<string>; alternar: (id: string) => void };
+export const selecionavel = (k: Cartao) => k.etapa !== 'finalizado' && !k.sombra;
+
+export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna = null, selecao, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
+  quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; coluna?: string | null; selecao?: Selecao; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
   onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal, fase).sort(ordenar);
@@ -61,7 +65,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} selecao={selecao} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : fase === 'esperando' ? 'Ninguém esperando a equipe' : fase === 'respondido' ? 'Nenhum cartão respondido esperando finalizar' : fase !== 'todas' ? `Nada em ${quadro.etapas[fase]}` : 'Nada aberto'}</div>}
           </section>
         );
@@ -97,14 +101,25 @@ function RolagemQuadro({ chave, children }: { chave: number; children: React.Rea
 
 const TEXTO_ATRASO: Record<Exclude<Atraso, 'ok'>, string> = { amarelo: 'Atenção', vermelho: 'Atrasado' };
 
-function CartaoQuadro({ k, quadro, fmt, nivel, ocupado, podeEditar, onAbrir, onMover, onPassar }: {
-  k: Cartao; quadro: TQuadro; fmt: Fmt; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
+function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onAbrir, onMover, onPassar }: {
+  k: Cartao; quadro: TQuadro; fmt: Fmt; selecao?: Selecao; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
   onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
 }) {
   const fim = k.etapa === 'finalizado';
+  const marcavel = Boolean(selecao) && selecionavel(k);
+  const marcado = marcavel && selecao!.ids.has(k.id);
   return (
-    <article className={fim ? c.cartaoFim : c.cartao} data-atraso={nivel === 'ok' ? undefined : nivel}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest('button,a')) onAbrir(k.id); }}>
+    <article className={fim ? c.cartaoFim : c.cartao} data-atraso={nivel === 'ok' ? undefined : nivel} data-marcado={marcado ? 'true' : undefined}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('button,a,input,label')) return;
+        if (marcavel) selecao!.alternar(k.id); else onAbrir(k.id);
+      }}>
+      {marcavel && (
+        <label className={c.marcarCartao}>
+          <input type="checkbox" checked={marcado} onChange={() => selecao!.alternar(k.id)} data-marcar={k.id} />
+          <span>{marcado ? 'Selecionado' : 'Selecionar'}</span>
+        </label>
+      )}
       <div className={c.cartaoTopo}>
         <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
         {nivel !== 'ok' && (
