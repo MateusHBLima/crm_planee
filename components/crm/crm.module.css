@@ -107,17 +107,21 @@
 .cartao:hover, .cartaoFim:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); }
 .cartaoFim { opacity: .72; }
 /* Atraso pelos prazos de Configurações: amarelo chama atenção, vermelho grita. Borda grossa à esquerda + fundo. */
-.cartao[data-atraso='amarelo'] { border-color: var(--ag); border-left-width: 5px; background: linear-gradient(var(--ag-bg), var(--ag-bg)), var(--surface); }
-.cartao[data-atraso='vermelho'] { border-color: var(--rs); border-left-width: 5px; background: linear-gradient(var(--rs-bg), var(--rs-bg)), var(--surface); box-shadow: 0 0 0 1px var(--rs), var(--shadow-1); }
+/* Atraso (15/10): só uma faixa na lateral; o cartão inteiro vermelho deixava o quadro todo vermelho. */
+.cartao[data-atraso='amarelo'] { border-left: 4px solid var(--ag); }
+.cartao[data-atraso='vermelho'] { border-left: 4px solid var(--rs); }
 .seloAtraso { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
-.seloAtraso[data-atraso='amarelo'] { background: var(--ag); color: #1d1300; }
-.seloAtraso[data-atraso='vermelho'] { background: var(--rs); color: #fff; animation: piscaAtraso 2s ease-in-out infinite; }
+.seloAtraso[data-atraso='amarelo'] { background: var(--ag-bg); color: var(--ag-ink); }
+.seloAtraso[data-atraso='vermelho'] { background: var(--rs-bg); color: var(--rs-ink); }
+.seloResposta { display: inline-flex; align-items: center; height: 22px; padding: 0 2px; font-size: 11.5px; font-weight: 550; color: var(--ink-3); white-space: nowrap; }
+.seloResposta[data-respondido] { color: var(--eq-ink); }
 @keyframes piscaAtraso { 50% { opacity: .6; } }
 .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .filaItem { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; background: var(--surface-3); color: var(--ink-2); }
 .filaItem[data-atraso='amarelo'] { background: var(--ag-bg); color: var(--ag-ink); box-shadow: inset 0 0 0 1px var(--ag); }
 .filaItem[data-atraso='vermelho'] { background: var(--rs); color: #fff; }
-.cartaoTopo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+.cartaoTopo { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 6px 8px; }
+.cartaoTopo:empty { display: none; }
 .selo { height: 20px; padding: 0 7px; border-radius: 6px; border: 1px dashed var(--line-strong); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); display: inline-flex; align-items: center; }
 .cartaoNome { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .nomeBotao { padding: 0; border: 0; background: none; text-align: left; font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -330,3 +334,12 @@
 .barraSelecao { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 28px 10px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); font-size: 13px; }
 .barraSelecao strong { font-weight: 650; }
 @media (max-width: 760px) { .barraSelecao { margin: 0 16px 10px; } }
+
+/* Menu "Mais" da barra do quadro e resumo da fila no topo (15/10). */
+.menuMais { position: relative; display: inline-flex; }
+.menuMaisLista { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; min-width: 230px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-2); }
+.menuMaisLista > button, .menuMaisLista > div > button { width: 100%; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; font-size: 13px; font-weight: 550; text-align: left; }
+.menuMaisLista > button:hover, .menuMaisLista > div > button:hover { background: var(--hover); }
+.menuMaisLista > button[aria-pressed='true'] { font-weight: 700; }
+.menuMaisLista .meusAvisos { display: flex; }
+.titulos .fila { margin-top: 6px; }

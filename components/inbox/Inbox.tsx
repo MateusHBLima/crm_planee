@@ -349,6 +349,13 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   }, [aplicarAtualizacao]);
 
   const total = lista.conversas.length;
+  // Número principal = o que tem mais conversas na lista (15/10): só as conversas de outros números ganham a etiqueta.
+  const principal = useMemo(() => {
+    if (!lista.linhas) return null;
+    const n = new Map<string, number>();
+    for (const k of lista.conversas) n.set(k.numero_id, (n.get(k.numero_id) ?? 0) + 1);
+    return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  }, [lista]);
   const visiveis = soNaoLidas ? lista.conversas.filter((k) => k.nao_lidas > 0 || mesma(k, aberta)) : lista.conversas;
   const abertosAgora = abertos && aberta && abertos.wa === aberta.wa_id ? abertos.lista : [];
   const naoLidas = lista.conversas.reduce((s, k) => s + (k.nao_lidas > 0 ? 1 : 0), 0);
@@ -392,7 +399,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                   </span>
                   <span className={c.itemLinha}>
                     <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
-                    {lista.linhas && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
+                    {lista.linhas && k.numero_id !== principal && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
                     {k.dono === 'humano' && (
                       <span className={c.tagEquipe} data-sempre={k.dono_sempre ? 'true' : undefined}
                         data-esperando={k.dono_sempre && esperandoEquipe(k) ? 'true' : undefined}
@@ -400,7 +407,6 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                         {k.dono_sempre ? 'Fixa' : 'Equipe'}
                       </span>
                     )}
-                    {k.janela_aberta && <span className={c.janela} title="Janela de 24 h aberta: o contato escreveu nas últimas 24 horas">24h</span>}
                     {k.nao_lidas > 0 && <span className={c.naoLidas} aria-label={`${k.nao_lidas} não lidas`}>{k.nao_lidas}</span>}
                   </span>
                 </span>
@@ -444,10 +450,9 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     ) : <h2 className={c.cabecaNome}>{nomeDe(atual)}</h2>}
                     <span className={c.cabecaLinha}>
                       <span className={c.mono}>{telefoneBonito(atual.wa_id)}</span>
-                      {lista.linhas && <span className={c.tagLinha} title="Número da empresa desta conversa">{lista.linhas[atual.numero_id] ?? atual.numero_id}</span>}
-                      <span className={c.pilula} data-aberta={atual.janela_aberta ? 'true' : 'false'}>
-                        {atual.janela_aberta ? 'Janela de 24 h aberta' : 'Janela de 24 h fechada'}
-                      </span>
+                      {lista.linhas && atual.numero_id !== principal && <span className={c.tagLinha} title="Número da empresa desta conversa">{lista.linhas[atual.numero_id] ?? atual.numero_id}</span>}
+                      {/* Só o caso que muda o que dá para fazer (15/10): janela fechada = não dá para responder pelo painel. */}
+                      {!atual.janela_aberta && <span className={c.pilula} data-aberta="false">Janela de 24 h fechada</span>}
                       <span className={c.dono} data-dono={atual.dono === 'humano' ? 'equipe' : atual.pausa_ate ? 'pausa' : 'sara'}>
                         {atual.dono === 'humano'
                           ? atual.dono_sempre
@@ -463,10 +468,6 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     </span>
                   </div>
                   <div className={c.acoesCabeca}>
-                  {podeFinalizar && (
-                    <button type="button" className={c.botaoDono} aria-expanded={protocoloAberto} data-protocolo-conversa
-                      onClick={() => setProtocoloAberto((x) => !x)} title="Acompanhamento de protocolo deste contato">Protocolo</button>
-                  )}
                   {podeFinalizar && abertosAgora.length > 0 && (
                     <button type="button" className={c.botaoDonoForte} disabled={finalizando} data-finalizar-conversa
                       aria-expanded={abertosAgora.length > 1 ? escolhendoFinalizar : undefined}
@@ -477,15 +478,24 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                       {finalizando ? 'Finalizando…' : abertosAgora.length === 1 ? 'Finalizar' : `Finalizar (${abertosAgora.length})`}
                     </button>
                   )}
-                  {!mascarado && (
-                    <button type="button" className={c.botaoDono} data-nao-lida onClick={naoLida}
-                      title="Volta a contar como não lida, para lembrar de responder depois">Não lida</button>
-                  )}
-                  {podeResponder && (
-                    <a className={c.botaoDono} href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
-                      title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
-                      Abrir no WhatsApp
-                    </a>
+                  {/* Menu "Mais" (15/10): Protocolo, Não lida e Abrir no WhatsApp saem do cabeçalho para despoluir. */}
+                  {(podeFinalizar || !mascarado || podeResponder) && (
+                    <MenuMais>
+                      {podeFinalizar && (
+                        <button type="button" data-protocolo-conversa onClick={() => setProtocoloAberto((x) => !x)}
+                          title="Acompanhamento de protocolo deste contato">{protocoloAberto ? 'Fechar protocolo' : 'Protocolo'}</button>
+                      )}
+                      {!mascarado && (
+                        <button type="button" data-nao-lida onClick={naoLida}
+                          title="Volta a contar como não lida, para lembrar de responder depois">Marcar como não lida</button>
+                      )}
+                      {podeResponder && (
+                        <a href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
+                          title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
+                          Abrir no WhatsApp
+                        </a>
+                      )}
+                    </MenuMais>
                   )}
                   {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
@@ -782,7 +792,9 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem
       </>
     );
   } else {
-    conteudo = m.texto ? <p className={c.texto}>{m.texto}</p> : <p className={c.semTexto}>Mensagem sem texto</p>;
+    // O selo em cima da bolha já diz que é automática: o "[AUTOMÁTICA · followup_1h]" do texto sai (15/10).
+    const texto = m.texto ? m.texto.replace(/^\s*\[AUTOM[ÁA]TICA[^\]]*\]\s*/i, '') : '';
+    conteudo = texto ? <p className={c.texto}>{texto}</p> : <p className={c.semTexto}>Mensagem sem texto</p>;
   }
   return (
     <div className={c.linha} data-direcao={m.direcao} data-id={m.id}>
@@ -814,6 +826,26 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem
         {st && <span className={c.status} data-status={m.status} title={st.nome} aria-label={st.nome}>{st.marca}</span>}
         {onAvisar && <MenuMensagem lado={m.direcao === 'saida' ? 'direita' : 'esquerda'} onAvisar={onAvisar} />}
       </span>
+    </div>
+  );
+}
+
+// Menu "Mais" do cabeçalho da conversa (15/10): abre e fecha no clique, fecha com Esc, clique fora ou ao escolher.
+function MenuMais({ children }: { children: React.ReactNode }) {
+  const [aberto, setAberto] = useState(false);
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberto(false); };
+    document.addEventListener('mousedown', fora); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+  }, [aberto]);
+  return (
+    <div className={c.menuMais} ref={caixa}>
+      <button type="button" className={c.botaoDono} aria-haspopup="menu" aria-expanded={aberto} data-menu-mais
+        onClick={() => setAberto((x) => !x)} title="Mais ações">⋯ Mais</button>
+      {aberto && <div className={c.menuMaisLista} role="menu" onClick={() => setAberto(false)}>{children}</div>}
     </div>
   );
 }

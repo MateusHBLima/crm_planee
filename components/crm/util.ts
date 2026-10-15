@@ -88,3 +88,11 @@ export function atraso(k: { etapa: string; aberto_em: string; atualizado_em: str
   const min = (agora - new Date(desde).getTime()) / 60000;
   return min >= p.vermelho ? 'vermelho' : min >= p.amarelo ? 'amarelo' : 'ok';
 }
+
+// Nome todo em CAIXA ALTA (vem assim da Feegow) vira "Maria da Silva" (15/10). Nome já com minúsculas fica como está.
+const PARTICULAS = new Set(['da', 'de', 'do', 'das', 'dos', 'e', 'di', 'du']);
+export function nomeBonito(n: string | null | undefined): string {
+  const s = String(n ?? '').trim();
+  if (!s || !/\p{Lu}/u.test(s) || /\p{Ll}/u.test(s)) return s;
+  return s.toLocaleLowerCase('pt-BR').split(/(\s+)/).map((p, i) => (/^\s+$/.test(p) || (i > 0 && PARTICULAS.has(p)) ? p : p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1))).join('');
+}

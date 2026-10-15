@@ -52,7 +52,7 @@ const NUM = '100000000000001'; const BIA = '5547900001001';
   ok('auditoria da ação com a pessoa e o que mudou', sql(`select count(*) from painel_auditoria where recurso = 'atendimentos' and alvo_id = '${alvo}'
       and usuario_id is not null and detalhe->>'etapa' = 'finalizado' and detalhe->>'responsavel' = 'Gestor Teste'`) === '1');
   await p.unroute((u) => u.pathname === '/crm');
-  await p.click('text=/Mostrar finalizados hoje/'); await card.waitFor({ timeout: 5000 });
+  await p.click('[data-menu-crm]'); await p.click('text=/Mostrar finalizados hoje/'); await p.keyboard.press('Escape'); await card.waitFor({ timeout: 5000 });
 
   // Assunto, nota e arquivar pelo caminho novo (um comando só no banco).
   await card.getByRole('button', { name: 'Velocidade Ficticia' }).click(); await p.locator('#det-assunto').waitFor({ timeout: 5000 });

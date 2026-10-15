@@ -87,7 +87,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
     window.__notas = [];
     window.Notification = class { static permission = 'granted'; static requestPermission() { return Promise.resolve('granted'); } constructor(t) { window.__notas.push(t); } };
   });
-  await p.click('#avisos-crm'); await p.waitForTimeout(300);
+  await p.click('[data-menu-crm]'); await p.click('#avisos-crm'); await p.waitForTimeout(300);
   ok('botão de avisos liga e fica salvo', (await p.textContent('#avisos-crm')) === 'Avisos ligados' && (await p.evaluate(() => localStorage.getItem('pp_avisos_crm'))) === '1');
   await p.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); });
   sql("insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000011','agenda','Cartão novo para o aviso','IA')");
@@ -364,7 +364,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
        on conflict (chave) do update set valor = excluded.valor;`);
   ({ ctx, p } = await nova());
   await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
-  await p.click('[data-dias-sem-ia]'); await p.locator('#dia-data').waitFor({ timeout: 8000 });
+  await p.click('[data-menu-crm]'); await p.click('[data-dias-sem-ia]'); await p.locator('#dia-data').waitFor({ timeout: 8000 });
   ok('Dias sem IA: aviso e dia passado escondido', ((await p.textContent('[data-aviso-dias]')) || '').includes('não desmarca quem já está marcado')
     && (await p.locator('[data-dia-fechado]').count()) === 0);
   const diaFut = new Date(Date.now() + 9 * 86400_000).toISOString().slice(0, 10);
@@ -382,6 +382,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
        insert into painel_vinculos (usuario_id, empresa_id, nivel, permissoes) select id, 'teste', 'membro', array['crm.ver'] from painel_usuarios where email='semacesso@teste.local' on conflict do nothing;`);
   ({ ctx, p } = await nova());
   await entrar(p, 'semacesso@teste.local'); await p.waitForTimeout(800);
+  await p.click('[data-menu-crm]');
   ok('só leitura não vê "Dias sem IA"', p.url().endsWith('/crm') && (await p.locator('[data-dias-sem-ia]').count()) === 0);
   await ctx.close();
   sql(`delete from painel_vinculos where usuario_id in (select id from painel_usuarios where email='semacesso@teste.local');
@@ -398,11 +399,11 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   const cardE = p.locator('article', { hasText: 'ESPERA-1' });
   ok('cartão da IA sem resposta da equipe tem o selo', (await cardE.locator('[data-esperando]').count()) === 1
     && (await p.locator('article', { hasText: 'ESPERA-2' }).locator('[data-esperando]').count()) === 0);
-  await p.click('[data-fases] button[data-fase="esperando"]'); await p.waitForTimeout(300);
+  await p.selectOption('[data-filtro-ver]', 'esperando'); await p.waitForTimeout(300);
   const textosE = await p.locator('article').allTextContents();
   ok('filtro "Esperando a equipe" mostra só os da IA sem resposta', textosE.some((t) => t.includes('ESPERA-1')) && !textosE.some((t) => t.includes('ESPERA-2')), String(textosE.length));
   // Uma coluna por vez (15/10): escolher o assunto deixa só a coluna dele no quadro.
-  await p.click('[data-fases] button[data-fase="esperando"]'); await p.waitForTimeout(200);
+  await p.selectOption('[data-filtro-ver]', ''); await p.waitForTimeout(200);
   await p.selectOption('[data-filtro-coluna]', 'receita'); await p.waitForTimeout(300);
   const secoes = await p.locator('section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')).filter((n) => n !== 'Ficha do contato'));
   ok('filtro de coluna mostra só a coluna escolhida', secoes.length === 1 && secoes[0] === 'Receita' && (await p.locator('article', { hasText: 'ESPERA-1' }).count()) === 1, secoes.join(','));
@@ -425,7 +426,7 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   // "Equipe já respondeu, falta finalizar" (14/10): os dois cartões em aberto tiveram resposta depois que abriram.
   ok('cartões respondidos têm o selo "equipe respondeu"', (await p.locator('article', { hasText: 'ESPERA-1' }).locator('[data-respondido]').count()) === 1
     && (await p.locator('article', { hasText: 'ESPERA-2' }).locator('[data-respondido]').count()) === 1);
-  await p.click('[data-fases] button[data-fase="respondido"]'); await p.waitForTimeout(300);
+  await p.selectOption('[data-filtro-ver]', 'respondido'); await p.waitForTimeout(300);
   const textosR = await p.locator('article').allTextContents();
   ok('filtro "Equipe já respondeu, falta finalizar" mostra os respondidos', textosR.length === 2 && textosR.every((t) => t.includes('ESPERA-')), String(textosR.length));
   await ctx.close();
@@ -440,14 +441,14 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   ok('finalizar pela conversa finaliza no CRM com quem clicou', sql(`select etapa || '|' || coalesce(responsavel, '') || '|' || (finalizado_em is not null) from atendimentos where id = '${cartE}'`) === 'finalizado|Amanda Teste|true'
     && ((await p.textContent('[data-finalizar-conversa]')) || '').trim() === 'Finalizar');
   // Protocolo direto da conversa (15/10): botão no cabeçalho, marca o contato dono do número.
-  await p.click('[data-protocolo-conversa]'); await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"]').waitFor({ timeout: 8000 });
+  await p.click('[data-menu-mais]'); await p.click('[data-protocolo-conversa]'); await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"]').waitFor({ timeout: 8000 });
   await p.click('[data-painel-protocolo] button[data-situacao="em_analise"]'); await p.waitForTimeout(1500);
   ok('marcar protocolo pela conversa grava no contato do número', sql(`select protocolo || '|' || protocolo_por from contatos where id = '${contE}'`) === 'em_analise|Amanda Teste'
     && (await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"][aria-pressed="true"]').count()) === 1);
   sql(`update wa_conversas set nao_lidas = 0, lida_ate = now() where wa_id = '554755550001'`);
-  await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
+  await p.click('[data-menu-mais]'); await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
   ok('marcar como não lida volta a contar e fecha a conversa', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id = '554755550001'`) === '1|true'
-    && (await p.locator('[data-nao-lida]').count()) === 0);
+    && (await p.locator('[data-menu-mais]').count()) === 0);
   await p.click('[data-filtro-nao-lidas]'); await p.waitForTimeout(300);
   ok('filtro "Não lidas" mostra a conversa marcada', (await p.locator('button[data-wa="554755550001"]').count()) === 1);
   await p.screenshot({ path: out + '18b_inbox_finalizar_nao_lida.png' });

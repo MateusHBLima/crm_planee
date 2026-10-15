@@ -47,17 +47,17 @@ async function entrar(p, email, senha='senha123') {
   ok('Finalizar tira do quadro', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 0);
   ok('finalizar direto grava quem finalizou como responsável', sql("select etapa || '|' || responsavel || '|' || (finalizado_em is not null) from atendimentos a join contatos c on c.id=a.contato_id where c.nome='Rita Ficticia'") === 'finalizado|Amanda Teste|true');
   ok('auditoria com usuario_id', Number(sql("select count(*) from painel_auditoria p join painel_usuarios u on u.id=p.usuario_id where u.email='amanda@teste.local' and p.acao='atualizar'")) >= 1);
-  await p.click('text=/Mostrar finalizados hoje/'); await p.waitForTimeout(300);
+  await p.click('[data-menu-crm]'); await p.click('text=/Mostrar finalizados hoje/'); await p.waitForTimeout(300);
   ok('Mostrar finalizados traz de volta', (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1);
   ok('finalizado mostra quem finalizou', ((await p.locator('article', { hasText: 'Rita Ficticia' }).textContent()) || '').includes('por Amanda Teste'));
   ok('cartão sem responsável não mostra "ninguém assumiu"', (await p.locator('article', { hasText: 'ninguém assumiu' }).count()) === 0);
-  await p.click('text=/Ocultar finalizados hoje/'); await p.waitForTimeout(300);
+  await p.click('text=/Ocultar finalizados hoje/'); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
   // Filtro por fase (13/10)
   await p.click('[data-fases] button[data-fase="finalizado"]'); await p.waitForTimeout(300);
-  const etapasVistas = await p.$$eval('article [data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
+  const etapasVistas = await p.$$eval('article[data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
   ok('fase Finalizado mostra só os finalizados', etapasVistas.join(',') === 'finalizado' && (await p.locator('article', { hasText: 'Rita Ficticia' }).count()) === 1, etapasVistas.join(','));
   await p.click('[data-fases] button[data-fase="aguardando"]'); await p.waitForTimeout(300);
-  const soAguardando = await p.$$eval('article [data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
+  const soAguardando = await p.$$eval('article[data-etapa]', (es) => [...new Set(es.map((e) => e.getAttribute('data-etapa')))]);
   ok('fase Aguardando mostra só os aguardando', soAguardando.join(',') === 'aguardando', soAguardando.join(','));
   await p.click('[data-fases] button[data-fase="aguardando"]'); await p.waitForTimeout(300);
   ok('clicar de novo na fase volta para Todas', (await p.locator('[data-fases] button[aria-pressed="true"]').textContent()) === 'Todas');
@@ -107,8 +107,12 @@ async function entrar(p, email, senha='senha123') {
   await Promise.all([p.waitForURL(/\/inbox$/), p.selectOption('#trocar-empresa', 'teste')]); await p.waitForTimeout(800);
   ok('escolher a empresa abre a Inbox dela, com a faixa no topo', ((await p.textContent('main [role=note]')) || '').includes('Empresa de teste'));
   await p.goto(B + '/crm'); await p.waitForTimeout(800);
-  const txtJ = await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent();
-  ok('Planee vê CPF mascarado (campo e texto)', !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
+  // 15/10: o CPF saiu do cartão e fica no detalhe; o texto do cartão continua sem o CPF inteiro.
+  const txtCartaoJ = (await p.locator('article', { hasText: 'Jorge Ficticio' }).first().textContent()) || '';
+  await p.locator('article', { hasText: 'Jorge Ficticio' }).first().locator('button', { hasText: 'Jorge Ficticio' }).click(); await p.waitForTimeout(1000);
+  const txtJ = (await p.locator('aside').first().textContent()) || '';
+  ok('Planee vê CPF mascarado (campo e texto)', !txtCartaoJ.includes('111.222.333') && !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
   const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 10 telas', navP.join(',') === 'Inbox,CRM,Protocolos,Agenda,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
   await p.goto(B + '/configuracoes'); ok('Configurações abre a do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
   await p.goto(B + '/resultados'); await p.locator('[data-kpi="quadro"]').waitFor({ timeout: 8000 }).catch(() => undefined);
