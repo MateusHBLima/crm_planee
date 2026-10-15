@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Cartao, Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import type { Origem } from './Crm';
-import { atraso, casaBusca, cpfBonito, duracao, ha, telefoneBonito, type Atraso, type criarFormatos } from './util';
+import { atraso, casaBusca, duracao, ha, nomeBonito, type Atraso, type criarFormatos } from './util';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
@@ -109,7 +109,7 @@ function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onA
   const marcavel = Boolean(selecao) && selecionavel(k);
   const marcado = marcavel && selecao!.ids.has(k.id);
   return (
-    <article className={fim ? c.cartaoFim : c.cartao} data-atraso={nivel === 'ok' ? undefined : nivel} data-marcado={marcado ? 'true' : undefined}
+    <article className={fim ? c.cartaoFim : c.cartao} data-atraso={nivel === 'ok' ? undefined : nivel} data-marcado={marcado ? 'true' : undefined} data-etapa={k.etapa}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('button,a,input,label')) return;
         if (marcavel) selecao!.alternar(k.id); else onAbrir(k.id);
@@ -120,19 +120,21 @@ function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onA
           <span>{marcado ? 'Selecionado' : 'Selecionar'}</span>
         </label>
       )}
+      {/* Topo mais limpo (15/10): a etapa só aparece quando não é "aguardando" (o normal do quadro), e atraso e
+          resposta da equipe viram uma linha só. */}
       <div className={c.cartaoTopo}>
-        <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
+        {k.etapa !== 'aguardando' && <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />}
         {nivel !== 'ok' && (
           <span className={c.seloAtraso} data-atraso={nivel}>
             {k.alerta && k.etapa === 'aguardando' ? 'Alerta' : TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
           </span>
         )}
-        {k.esperandoEquipe && <span className={c.selo} data-esperando title="Aberto pela IA e ninguém da equipe respondeu o contato desde então">sem resposta da equipe</span>}
-        {k.respondidoEquipe && <span className={c.selo} data-respondido title="A equipe já respondeu o contato depois que o cartão abriu. Se resolveu, clique em Finalizar.">equipe respondeu</span>}
+        {k.esperandoEquipe && <span className={c.seloResposta} data-esperando title="Aberto pela IA e ninguém da equipe respondeu o contato desde então">sem resposta</span>}
+        {k.respondidoEquipe && <span className={c.seloResposta} data-respondido title="A equipe já respondeu o contato depois que o cartão abriu. Se resolveu, clique em Finalizar.">equipe respondeu</span>}
         {k.sombra && <span className={c.selo} title="Aberto pela Sara nova no modo sombra (não foi para o paciente)">sombra</span>}
       </div>
       <div className={c.cartaoNome}>
-        <button type="button" className={c.nomeBotao} onClick={() => onAbrir(k.id)}>{k.nome || 'Contato sem nome'}</button>
+        <button type="button" className={c.nomeBotao} onClick={() => onAbrir(k.id)}>{nomeBonito(k.nome) || 'Contato sem nome'}</button>
         <span className={c.resumo}>{k.resumo || 'Sem resumo.'}</span>
       </div>
       <div className={c.cartaoMeta}>
@@ -143,12 +145,13 @@ function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onA
         {k.automatica && <span data-automatica={k.automatica.tipo}><Icone nome="conversa" tamanho={14} /><span><span className={c.metaRot}>{k.automatica.nome}</span> enviado {fmt.quando(k.automatica.quando)}</span></span>}
         {fim && k.finalizado_em && <span><Icone nome="finalizado" tamanho={14} /><span><span className={c.metaRot}>Finalizado</span> {fmt.quando(k.finalizado_em)}{k.responsavel ? ` por ${k.responsavel}` : ''} · total {duracao(k.aberto_em, k.finalizado_em)}</span></span>}
       </div>
-      <div className={c.chips}>
-        {k.telefone && <span className={c.chipNeutro + ' ' + c.mono}>{telefoneBonito(k.telefone)}</span>}
-        {k.documento && <span className={c.chipNeutro + ' ' + c.mono}>CPF {cpfBonito(k.documento)}</span>}
-        {k.notas > 0 && <span className={c.chipNeutro}><Icone nome="nota" tamanho={12} /> {k.notas} {k.notas === 1 ? 'nota' : 'notas'}</span>}
-        {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
-      </div>
+      {/* Telefone e CPF ficam no detalhe (15/10); no cartão só o que ajuda a decidir. A busca continua achando por eles. */}
+      {(k.notas > 0 || k.lead) && (
+        <div className={c.chips}>
+          {k.notas > 0 && <span className={c.chipNeutro}><Icone nome="nota" tamanho={12} /> {k.notas} {k.notas === 1 ? 'nota' : 'notas'}</span>}
+          {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
+        </div>
+      )}
       {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} onPassar={onPassar} />}
     </article>
   );

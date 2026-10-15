@@ -70,6 +70,7 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   // ---------- 2. Avisos por assunto: a Amanda escolhe os dela no CRM ----------
   const a = await nova();
   await entrar(a.p, 'amanda@teste.local');
+  await a.p.locator('[data-menu-crm]').waitFor({ timeout: 10000 }); await a.p.click('[data-menu-crm]');
   await a.p.locator('#meus-assuntos').waitFor({ timeout: 10000 });
   ok('botão de avisos começa em "todos os assuntos"', ((await a.p.textContent('#meus-assuntos')) || '').includes('todos os assuntos'));
   await a.p.click('#meus-assuntos');

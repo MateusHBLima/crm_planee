@@ -241,6 +241,17 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               <Icone nome="atualizar" tamanho={13} /> Atualizar
             </button>
           </p>
+          {agora !== null && aba === 'atendimento' && (
+            <div className={c.fila} aria-live="polite" data-fila>
+              {maisAntigo
+                ? <span className={c.filaItem} data-atraso={atraso(maisAntigo, quadro.prazos, agora)}>
+                    Mais antigo aguardando: <strong>{ha(maisAntigo.aberto_em)}</strong>
+                  </span>
+                : <span className={c.filaItem}>Ninguém aguardando</span>}
+              {vermelhos > 0 && <span className={c.filaItem} data-atraso="vermelho" data-contagem="vermelho"><strong>{vermelhos}</strong> {vermelhos === 1 ? 'atrasado' : 'atrasados'}</span>}
+              {amarelos > 0 && <span className={c.filaItem} data-atraso="amarelo" data-contagem="amarelo"><strong>{amarelos}</strong> em atenção</span>}
+            </div>
+          )}
         </div>
         <div className={c.segmentado} role="tablist" aria-label="Partes do CRM">
           {(['atendimento', 'comercial', 'contatos'] as Aba[]).map((a) => (
@@ -279,16 +290,17 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                   </span>
                 </button>
               ))}
-              <button type="button" aria-pressed={fase === 'esperando'} className={c.segItem} data-fase="esperando"
-                title="Abertos pela IA e sem nenhuma resposta da equipe ao contato" onClick={() => setFase((f) => (f === 'esperando' ? 'todas' : 'esperando'))}>
-                <span className={c.faseItem}>Esperando a equipe <strong>{esperando}</strong></span>
-              </button>
-              <button type="button" aria-pressed={fase === 'respondido'} className={c.segItem} data-fase="respondido"
-                title="A equipe já respondeu o contato no WhatsApp, mas o cartão continua aberto: se resolveu, clique em Finalizar"
-                onClick={() => setFase((f) => (f === 'respondido' ? 'todas' : 'respondido'))}>
-                <span className={c.faseItem}>Equipe já respondeu, falta finalizar <strong>{respondidos}</strong></span>
-              </button>
             </div>
+            {/* "Ver" (15/10): os dois filtros de resposta da equipe saíram dos botões de fase para um seletor. */}
+            <label className={c.filtroColuna}>
+              <span className={c.visivelLeitor}>Ver</span>
+              <select id="ver-crm" data-filtro-ver value={fase === 'esperando' || fase === 'respondido' ? fase : ''}
+                onChange={(e) => setFase((e.target.value as Fase) || 'todas')}>
+                <option value="">Todos os cartões</option>
+                <option value="esperando">Esperando a equipe ({esperando})</option>
+                <option value="respondido">Equipe já respondeu, falta finalizar ({respondidos})</option>
+              </select>
+            </label>
             {/* Filtro de coluna (15/10): escolhe um assunto e o quadro mostra só a coluna dele. */}
             <label className={c.filtroColuna}>
               <span className={c.visivelLeitor}>Coluna</span>
@@ -300,17 +312,6 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 })}
               </select>
             </label>
-            {agora !== null && (
-              <div className={c.fila} aria-live="polite" data-fila>
-                {maisAntigo
-                  ? <span className={c.filaItem} data-atraso={atraso(maisAntigo, quadro.prazos, agora)}>
-                      Mais antigo aguardando: <strong>{ha(maisAntigo.aberto_em)}</strong>
-                    </span>
-                  : <span className={c.filaItem}>Ninguém aguardando</span>}
-                {vermelhos > 0 && <span className={c.filaItem} data-atraso="vermelho" data-contagem="vermelho"><strong>{vermelhos}</strong> {vermelhos === 1 ? 'atrasado' : 'atrasados'}</span>}
-                {amarelos > 0 && <span className={c.filaItem} data-atraso="amarelo" data-contagem="amarelo"><strong>{amarelos}</strong> em atenção</span>}
-              </div>
-            )}
             {temSombra && (
               <div className={c.segmentadoPeq} role="group" aria-label="Origem dos cartões">
                 {([['todos', 'Todos'], ['real', 'Sem sombra'], ['sombra', 'Só sombra']] as [Origem, string][]).map(([v, t]) => (
@@ -319,20 +320,6 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               </div>
             )}
             <FiltroData id="periodo-crm" valor={periodo} onMudar={mudarPeriodo} hoje={quadro.hoje ?? new Date().toISOString().slice(0, 10)} vazio="Abertos agora" rotulo="Período do quadro" />
-            {!quadro.periodo && fase === 'todas' && (
-              <button type="button" className={c.botaoSec} aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
-                {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
-              </button>
-            )}
-            {avisos.suportado && (
-              <button type="button" id="avisos-crm" className={c.botaoSec} aria-pressed={avisos.ligado} onClick={avisos.alternar}
-                title="Som e notificação quando chega atendimento novo em aguardando">
-                {avisos.ligado ? 'Avisos ligados' : 'Ligar avisos'}
-              </button>
-            )}
-            {quadro.eu?.escolhe && (
-              <MeusAssuntos quadro={quadro} onSalvo={(assuntos) => { setQuadroBruto((q) => ({ ...q, eu: { ...q.eu, assuntos } })); avisarOk('Avisos salvos.'); }} onErro={avisarErro} />
-            )}
             {podeEditar && (
               <button type="button" className={c.botaoSec} aria-pressed={selecionando} data-selecionar
                 onClick={() => (selecionando ? sairDaSelecao() : setSelecionando(true))}
@@ -340,9 +327,30 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 {selecionando ? 'Sair da seleção' : 'Selecionar'}
               </button>
             )}
-            {podeEditar && (
-              <button type="button" className={c.botaoSec} data-dias-sem-ia onClick={() => setDiasIa(true)} title="Fechar dias da agenda para a IA não marcar">Dias sem IA</button>
-            )}
+            {/* Menu "Mais" (15/10): o que se usa de vez em quando sai da barra. */}
+            <MenuMaisCrm>
+              {(fechar) => (
+                <>
+                  {!quadro.periodo && fase === 'todas' && (
+                    <button type="button" aria-pressed={verFinal} onClick={() => setVerFinal((v) => !v)}>
+                      {verFinal ? 'Ocultar' : 'Mostrar'} finalizados hoje · {quadro.finalizadosHoje}
+                    </button>
+                  )}
+                  {avisos.suportado && (
+                    <button type="button" id="avisos-crm" aria-pressed={avisos.ligado} onClick={avisos.alternar}
+                      title="Som e notificação quando chega atendimento novo em aguardando">
+                      {avisos.ligado ? 'Avisos ligados' : 'Ligar avisos'}
+                    </button>
+                  )}
+                  {quadro.eu?.escolhe && (
+                    <MeusAssuntos quadro={quadro} onSalvo={(assuntos) => { setQuadroBruto((q) => ({ ...q, eu: { ...q.eu, assuntos } })); avisarOk('Avisos salvos.'); }} onErro={avisarErro} />
+                  )}
+                  {podeEditar && (
+                    <button type="button" data-dias-sem-ia onClick={() => { fechar(); setDiasIa(true); }} title="Fechar dias da agenda para a IA não marcar">Dias sem IA</button>
+                  )}
+                </>
+              )}
+            </MenuMaisCrm>
             {podeEditar && (
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
@@ -457,6 +465,26 @@ function MeusAssuntos({ quadro, onSalvo, onErro }: { quadro: TQuadro; onSalvo: (
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Menu "Mais" da barra do quadro (15/10). Fica aberto enquanto a pessoa mexe nele (ligar avisos, escolher assuntos);
+// fecha no clique fora, com Esc ou quando um item pede (Dias sem IA abre a janela).
+function MenuMaisCrm({ children }: { children: (fechar: () => void) => React.ReactNode }) {
+  const [aberto, setAberto] = useState(false);
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberto(false); };
+    document.addEventListener('mousedown', fora); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+  }, [aberto]);
+  return (
+    <div className={c.menuMais} ref={caixa}>
+      <button type="button" className={c.botaoSec} aria-haspopup="menu" aria-expanded={aberto} data-menu-crm onClick={() => setAberto((x) => !x)}>Mais ▾</button>
+      {aberto && <div className={c.menuMaisLista} role="menu">{children(() => setAberto(false))}</div>}
     </div>
   );
 }
