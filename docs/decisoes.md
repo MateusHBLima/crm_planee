@@ -174,6 +174,8 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Barra do quadro:** fases; seletor "Ver" (esperando a equipe / equipe já respondeu); coluna; período; Selecionar; menu "Mais" (finalizados de hoje, avisos, Dias sem IA); o resumo da fila foi para baixo do título.
     - **Inbox:** sem o selo "24h" na lista e sem "Janela aberta" no cabeçalho (só aparece "fechada"); etiqueta de linha só para conversas que não são do número principal; Protocolo, Não lida e Abrir no WhatsApp no menu "⋯ Mais"; o prefixo "[AUTOMÁTICA · …]" sai do texto da bolha.
 
+44. **Master marca como não lida (15/10, pedido do Mateus).** O "Marcar como não lida" da Inbox vale também para o master: só soma não lida, nunca esconde nada da clínica, e cada marcação fica na auditoria central (`marcar_nao_lida`, número da empresa + 4 últimos dígitos). Abrir uma conversa pelo master continua sem marcar como lida.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

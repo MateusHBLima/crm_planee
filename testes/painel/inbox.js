@@ -460,6 +460,12 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
                     where a.acao = 'abrir_conversa' and u.email = 'planee@teste.local' order by a.id desc limit 1`);
   ok('acesso do master registrado na auditoria central (sem telefone inteiro)', aud === `teste|${NUM}:1001|` && !aud.includes(BIA), aud);
   ok('atualização automática não repete a linha da auditoria', Number(sql(`select count(*) from central_auditoria where acao = 'abrir_conversa'`)) === audAntes + 1);
+  // 15/10: o master também marca como não lida (só soma, nunca esconde nada da clínica) e fica na auditoria.
+  sql(`update wa_conversas set nao_lidas = 0, lida_ate = now() where wa_id = '${BIA}'`);
+  await p.click('[data-menu-mais]'); await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
+  ok('master marca como não lida', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id='${BIA}'`) === '1|true');
+  ok('e a marcação do master fica na auditoria central', sql(`select alvo from central_auditoria a join painel_usuarios u on u.id = a.usuario_id
+                    where a.acao = 'marcar_nao_lida' and u.email = 'planee@teste.local' order by a.id desc limit 1`) === `${NUM}:1001`);
   await ctx.close();
 
   // ---- Outra empresa: banco próprio, não vê as conversas da empresa de teste ----
