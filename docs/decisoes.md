@@ -178,6 +178,8 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 
 45. **Quem leu a conversa (16/10, pedido do Mateus).** Quando alguém da equipe abre uma conversa com algo novo, o painel grava o nome em `wa_conversas.lida_por` (migração 026) e o cabeçalho mostra "Lida por <nome> · hh:mm". Na tela Registro entram "Abriu a conversa" (`ler_conversa`, uma linha por pessoa e conversa a cada 30 min) e "Marcou a conversa como não lida" (`marcar_nao_lida`), da equipe e do master. O master continua sem marcar como lida. Sem a 026 o painel funciona igual, só sem o nome.
 
+46. **Módulos por empresa (16/10, pedido do Mateus).** Cada cliente tem servidor, n8n e banco próprios, e nada de um cliente vai para o banco de outro (a área de legados da SSA nunca entra no banco da clínica). O que só alguns clientes usam vira **módulo**: marcado na tela Empresas (`empresas.modulos`, permissões `m.<módulo>.*`) **e** com o SQL dele rodado no banco daquela empresa (`supabase/modulos/<módulo>/`, registrado em `painel_migracoes`, migração 027). O SQL de módulo começa por `painel_exigir_empresa('<id>')` e aborta sem gravar nada em banco de outra empresa. Desligado: a API responde 404, o catálogo e a ficha não mostram; marcado sem o SQL: 409. O master passa a ter só os módulos que a empresa tem. As tabelas `painel_empresa` e `painel_migracoes` vão para todos os bancos de empresa (clínica e teste incluídos). Como funciona: `docs/modulos.md`.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

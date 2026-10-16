@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { ErroApi, registrarErro } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
+import { ligadosDoEndereco } from '@/lib/modulos-servidor';
 import { catalogo, RECURSOS } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 import * as auto from '@/lib/api/automaticas';
@@ -36,7 +37,7 @@ const ok = (id: Rpc['id'], result: unknown) => ({ jsonrpc: '2.0', id: id ?? null
 const falha = (id: Rpc['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
 async function chamar(chaveTexto: string | null, host: string | null, nome: string, a: Record<string, unknown>) {
-  if (nome === 'descrever_crm') return catalogo();
+  if (nome === 'descrever_crm') return catalogo(await ligadosDoEndereco(host));
   const chave = await autenticar(chaveTexto, host);
   const rec = String(a.recurso ?? '');
   switch (nome) {

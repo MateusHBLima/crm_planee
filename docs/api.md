@@ -131,6 +131,14 @@ Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com
 
 Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
 
+## Módulos por empresa (decisão 46)
+
+Alguns recursos são de **módulo** e só existem na empresa que tem o módulo ligado (`docs/modulos.md`):
+
+- o catálogo `GET /api/v1` lista em `modulos` e em `recursos` só o que está ligado na empresa do endereço chamado;
+- rota de módulo desligado: `404`; marcado sem o SQL no banco da empresa: `409` com `detalhe.codigo = "modulo_sem_migracao"`;
+- na ficha, o bloco do módulo vem dentro de cada contato só com o módulo ligado. Desligado, a chave não aparece.
+
 ## Regras
 
 - Nada é apagado de vez: `DELETE` e `arquivar` marcam `arquivado = true`.

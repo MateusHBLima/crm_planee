@@ -97,3 +97,4 @@ As fases 0 e 1 não tocam o agente em produção. A fase 2 é a única que muda 
 ## Fase 5 — Segundo cliente
 
 - [ ] 5.1 SSA: empresa cadastrada na tela do master, views do modelo padrão sobre `crm_estado`, `clientes_conhecidos` e `clientes_legado` no banco dela, endereço `painel.ssa.planeelabia.com`. Nenhum commit.
+  *Atualizado em 16/10 (decisão 46):* a SSA usa o banco Supabase dela (schema `painel`, como na clínica) e nada vai para o banco da clínica. Ordem: PR 1 (mecanismo de módulos, `docs/modulos.md`) → cadastro da SSA pela skill `cadastrar-cliente-painel` → PR 2 (módulos "Condição comercial" e "Vínculos comerciais") → SQL dos módulos no banco da SSA → carga do Trello → a V2 aponta para `painel.ssa.planeelabia.com/api/v1`. Admin: Augusto; Samuel como membro.

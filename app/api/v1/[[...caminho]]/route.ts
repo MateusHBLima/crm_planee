@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { ErroApi, registrarErro } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
 import { hostDeCabecalhos } from '@/lib/empresa';
+import { ligadosDoEndereco } from '@/lib/modulos-servidor';
 import { catalogo } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 import * as auto from '@/lib/api/automaticas';
@@ -24,7 +25,10 @@ async function corpo(req: NextRequest) {
 async function tratar(req: NextRequest, ctx: Ctx) {
   try {
     const partes = (await ctx.params).caminho ?? [];
-    if (partes.length === 0 && req.method === 'GET') return NextResponse.json(catalogo());
+    // Catálogo sem chave: lista os recursos dos módulos ligados na empresa deste endereço (docs/modulos.md).
+    if (partes.length === 0 && req.method === 'GET') {
+      return NextResponse.json(catalogo(await ligadosDoEndereco(hostDeCabecalhos(req.headers))));
+    }
     const chave = await autenticar(chaveDoCabecalho(req.headers.get('authorization')), hostDeCabecalhos(req.headers));
     const [rec, id, ...resto] = partes;
     // Arquivo do comprovante: GET /api/v1/pagamentos/{id}/arquivo (escopo leitura).

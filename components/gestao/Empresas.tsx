@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { MODELOS, PERMISSOES } from '@/lib/permissoes';
+import { MODULOS, type EstadoModulo } from '@/lib/modulos';
 import {
   adicionarAdmin, adicionarDominio, atualizarEmpresa, carregarEmpresas, criarEmpresa, definirBancoEmpresa, pedirNoNumero,
   removerDominio, salvarNumero,
@@ -15,17 +16,53 @@ import g from './gestao.module.css';
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 
-function Modulos({ valor, onChange, prefixo }: { valor: string[]; onChange: (v: string[]) => void; prefixo: string }) {
+// Situação de um módulo extra na empresa (docs/modulos.md): ligado só com o SQL dele rodado no banco dela.
+const SITUACAO: Record<EstadoModulo, string> = {
+  ligado: 'Instalado no banco da empresa',
+  sem_migracao: 'Marcado, mas falta rodar o SQL no banco da empresa',
+  desligado: 'Desligado',
+};
+const PROBLEMA: Record<string, string> = {
+  sem_027: 'O banco desta empresa ainda não tem a migração 027 (painel_empresa e painel_migracoes).',
+  banco_de_outra_empresa: 'O banco salvo para esta empresa diz que é de OUTRA empresa (painel_empresa). Nenhum módulo vale até corrigir.',
+  banco_indisponivel: 'Não foi possível ler o banco desta empresa agora.',
+};
+
+function Modulos({ valor, onChange, prefixo, estados, problema }: {
+  valor: string[]; onChange: (v: string[]) => void; prefixo: string;
+  estados?: Record<string, EstadoModulo>; problema?: string | null;
+}) {
+  const caixa = (p: { id: string; nome: string }) => (
+    <label key={p.id} className={g.check}>
+      <input type="checkbox" id={`${prefixo}-${p.id}`} checked={valor.includes(p.id)}
+        onChange={(e) => onChange(e.target.checked ? [...valor, p.id] : valor.filter((x) => x !== p.id))} />
+      <span>{p.nome}</span>
+    </label>
+  );
   return (
-    <div className={g.checks}>
-      {PERMISSOES.map((p) => (
-        <label key={p.id} className={g.check}>
-          <input type="checkbox" id={`${prefixo}-${p.id}`} checked={valor.includes(p.id)}
-            onChange={(e) => onChange(e.target.checked ? [...valor, p.id] : valor.filter((x) => x !== p.id))} />
-          <span>{p.nome}</span>
-        </label>
-      ))}
-    </div>
+    <>
+      <div className={g.checks}>{PERMISSOES.filter((p) => !p.modulo).map(caixa)}</div>
+      {MODULOS.length > 0 && (
+        <div className={g.modulosExtras} data-modulos-extras>
+          <p className={g.dica}>Módulos extras: cada um só funciona depois que o SQL dele roda no banco desta empresa (docs/modulos.md).</p>
+          {problema && PROBLEMA[problema] && <p className={g.dica} data-modulos-problema={problema}>{PROBLEMA[problema]}</p>}
+          {MODULOS.map((m) => {
+            const est = estados?.[m.id];
+            return (
+              <div key={m.id} className={g.modulo} data-modulo={m.id} data-estado={est ?? ''}>
+                <strong>{m.nome}</strong>
+                {est && est !== 'desligado' && (
+                  <span className={`${g.selo} ${est === 'ligado' ? g.seloOk : g.seloOff}`}>
+                    {SITUACAO[est]}{est === 'sem_migracao' ? ` (${m.pasta})` : ''}
+                  </span>
+                )}
+                <div className={g.checks}>{m.permissoes.map(caixa)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -170,7 +207,7 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
 
       <div className={g.bloco}>
         <h3 className={g.blocoTitulo}>Módulos liberados</h3>
-        <Modulos prefixo={`mod-${e.id}`} valor={modulos} onChange={setModulos} />
+        <Modulos prefixo={`mod-${e.id}`} valor={modulos} onChange={setModulos} estados={e.modulos_estado} problema={e.modulos_erro} />
         {mudouModulos && (
           <div className={g.linha}>
             <button type="button" className={g.botao} disabled={ocupado}

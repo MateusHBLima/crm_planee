@@ -24,7 +24,7 @@ export async function autenticar(texto: string | null | undefined, host?: string
     [hash],
   );
   if (!res.rowCount) throw new ErroApi(401, 'Chave inválida ou desativada.');
-  return { ...(res.rows[0] as Chave), empresa: empresa ? { id: empresa.id, banco_url_cifrado: empresa.banco_url_cifrado } : null };
+  return { ...(res.rows[0] as Chave), empresa: empresa ? { id: empresa.id, banco_url_cifrado: empresa.banco_url_cifrado, modulos: empresa.modulos } : null };
 }
 
 export function chaveDoCabecalho(h: string | null): string | null {

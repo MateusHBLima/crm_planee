@@ -10,6 +10,7 @@ import { bancoDe, type Chave } from './auth';
 import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { PAPEIS, pessoasDoNumero } from '@/lib/pessoas';
+import { exigirModulo, ligadosDaOperacao, parteDoModulo } from '@/lib/modulos-servidor';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
 
@@ -19,6 +20,13 @@ const ID_TEXTO = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 function exigirRecurso(nome: string): Recurso {
   const r = acharRecurso(nome);
   if (!r) throw new ErroApi(404, `Recurso "${nome}" não existe. Veja GET /api/v1 para a lista.`);
+  return r;
+}
+
+// Recurso pedido pela API ou pela tela: o de módulo só passa com o módulo ligado na empresa (docs/modulos.md).
+async function recursoLigado(chave: Chave, nome: string): Promise<Recurso> {
+  const r = exigirRecurso(nome);
+  if (r.modulo) await exigirModulo(chave.empresa, r.modulo);
   return r;
 }
 
@@ -106,7 +114,7 @@ function protegerDoc<T extends Record<string, unknown> | undefined>(tabela: stri
 
 export async function listar(chave: Chave, nome: string, filtros: Record<string, string> = {}, limite = 50, deslocamento = 0) {
   exigirEscopo(chave, 'leitura');
-  const r = exigirRecurso(nome);
+  const r = await recursoLigado(chave, nome);
   const where: string[] = [];
   const vals: unknown[] = [];
   const f = { ...filtros };
@@ -127,7 +135,7 @@ export async function listar(chave: Chave, nome: string, filtros: Record<string,
 
 export async function obter(chave: Chave, nome: string, id: string) {
   exigirEscopo(chave, 'leitura');
-  const r = exigirRecurso(nome);
+  const r = await recursoLigado(chave, nome);
   validarId(r, id);
   const res = await bancoDe(chave).query(`select * from ${r.tabela} where id = $1`, [id]);
   if (!res.rowCount) throw new ErroApi(404, `${r.nome}/${id} não encontrado.`);
@@ -136,7 +144,7 @@ export async function obter(chave: Chave, nome: string, id: string) {
 
 export async function criar(chave: Chave, nome: string, corpo: unknown) {
   if (nome === 'pagamentos') return criarPagamento(chave, corpo);
-  const r = exigirRecurso(nome);
+  const r = await recursoLigado(chave, nome);
   exigirEscopo(chave, r.escrita);
   const dados = limparDados(r, corpo);
   if (r.nome === 'contatos' && dados.protocolo) { dados.protocolo_em = new Date().toISOString(); if (!('protocolo_por' in dados)) dados.protocolo_por = chave.nome; }
@@ -161,7 +169,7 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
 
 export async function atualizar(chave: Chave, nome: string, id: string, corpo: unknown) {
   if (nome === 'pagamentos') return atualizarPagamento(chave, id, corpo);
-  const r = exigirRecurso(nome);
+  const r = await recursoLigado(chave, nome);
   exigirEscopo(chave, r.escrita);
   validarId(r, id);
   const dados = limparDados(r, corpo);
@@ -216,7 +224,7 @@ export async function assumirAtendimento(chave: Chave, id: string, responsavel: 
 const RECURSO_ATENDIMENTOS = () => exigirRecurso('atendimentos');
 
 export async function arquivar(chave: Chave, nome: string, id: string) {
-  const r = exigirRecurso(nome);
+  const r = await recursoLigado(chave, nome);
   exigirEscopo(chave, r.escrita);
   validarId(r, id);
   return transacao(async (c) => {
@@ -311,6 +319,13 @@ export async function ficha(chave: Chave, telefone: unknown) {
     const p = await db.query(`select id, protocolo, protocolo_obs, protocolo_em, protocolo_por from contatos where id = any($1) and protocolo is not null`, [ids]);
     for (const x of p.rows) prot.set(String(x.id), { situacao: x.protocolo, obs: x.protocolo_obs, desde: x.protocolo_em, por: x.protocolo_por });
   } catch (e) { if ((e as { code?: string }).code !== '42703') throw e; }
+  // Blocos dos módulos ligados nesta empresa (docs/modulos.md). Módulo desligado: a chave nem aparece no contato.
+  const extras = new Map<string, Record<string, unknown>>();
+  for (const id of await ligadosDaOperacao(chave.empresa)) {
+    const parte = parteDoModulo(id);
+    if (!parte?.ficha) continue;
+    for (const [cid, bloco] of await parte.ficha(db, ids)) extras.set(cid, { ...(extras.get(cid) ?? {}), ...bloco });
+  }
   return {
     encontrado: true,
     telefone: tel,
@@ -321,6 +336,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
       id: c.id, nome: c.nome, contato_desde: c.criado_em, papel: c.papel, dono_do_numero: c.dono,
       cpf_final: c.documento ? String(c.documento).replace(/\D/g, '').slice(-3) : null,
       protocolo: prot.get(String(c.id)) ?? null,
+      ...(extras.get(String(c.id)) ?? {}),
     })),
     atendimentos_abertos: atend.rows.filter((a) => a.etapa !== 'finalizado'),
     atendimentos_recentes: atend.rows.filter((a) => a.etapa === 'finalizado'),
