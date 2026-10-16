@@ -460,6 +460,11 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                             : `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}${atual.dono_ate ? ` · até ${datas.prazo(atual.dono_ate)}` : ''}`
                           : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
                       </span>
+                      {atual.lida_por && atual.lida_em && (
+                        <span className={c.lidaPor} data-lida-por title="Quem da equipe abriu a conversa por último">
+                          Lida por {atual.lida_por} · {datas.prazo(atual.lida_em)}
+                        </span>
+                      )}
                       {dados?.selo && (
                         <span className={c.seloAuto} data-selo={dados.selo.tipo} title={`Mensagens automáticas da Sara · desde ${datas.hora(dados.selo.desde)}`}>
                           {dados.selo.texto}

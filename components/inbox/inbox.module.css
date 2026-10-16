@@ -184,3 +184,5 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .menuMaisLista { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 200px; display: flex; flex-direction: column; padding: 6px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-2); }
 .menuMaisLista > button, .menuMaisLista > a { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; font-size: 13px; font-weight: 550; color: var(--ink); text-align: left; text-decoration: none; }
 .menuMaisLista > button:hover, .menuMaisLista > a:hover { background: var(--hover); }
+/* Quem leu por último (16/10): discreto, ao lado de quem atende. */
+.lidaPor { font-size: 12px; color: var(--ink-3); }

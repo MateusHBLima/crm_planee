@@ -176,6 +176,8 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 
 44. **Master marca como não lida (15/10, pedido do Mateus).** O "Marcar como não lida" da Inbox vale também para o master: só soma não lida, nunca esconde nada da clínica, e cada marcação fica na auditoria central (`marcar_nao_lida`, número da empresa + 4 últimos dígitos). Abrir uma conversa pelo master continua sem marcar como lida.
 
+45. **Quem leu a conversa (16/10, pedido do Mateus).** Quando alguém da equipe abre uma conversa com algo novo, o painel grava o nome em `wa_conversas.lida_por` (migração 026) e o cabeçalho mostra "Lida por <nome> · hh:mm". Na tela Registro entram "Abriu a conversa" (`ler_conversa`, uma linha por pessoa e conversa a cada 30 min) e "Marcou a conversa como não lida" (`marcar_nao_lida`), da equipe e do master. O master continua sem marcar como lida. Sem a 026 o painel funciona igual, só sem o nome.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

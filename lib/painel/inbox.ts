@@ -60,6 +60,8 @@ export type Conversa = {
   dono: 'ia' | 'humano'; dono_por: string | null; dono_em: string | null; pausa_ate: string | null;
   // Com a equipe: até quando (assumida por 24 h) ou sempre (até alguém devolver).
   dono_ate: string | null; dono_sempre: boolean;
+  // Quem da equipe leu por último e quando (migração 026). Só com a conversa lida (sem não lidas).
+  lida_por: string | null; lida_em: string | null;
 };
 // linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
 export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null };
@@ -93,12 +95,15 @@ function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
     dono: comEquipe ? 'humano' : 'ia', dono_por: (r.dono_por as string | null) ?? null, dono_em: iso(r.dono_em),
     pausa_ate: pausa > Date.now() ? new Date(pausa).toISOString() : null,
     dono_ate: comEquipe ? iso(r.dono_ate) : null, dono_sempre: comEquipe && !r.dono_ate,
+    lida_por: !Number(r.nao_lidas) && r.lida_ate && r.lida_por ? String(r.lida_por) : null,
+    lida_em: !Number(r.nao_lidas) && r.lida_ate && r.lida_por ? iso(r.lida_ate) : null,
   };
 }
 
 const SELECT_CONVERSA = `
   select c.numero_id, c.wa_id, coalesce(nullif(k.nome_painel, ''), nullif(k.nome_salvo, ''), nullif(k.nome_perfil, '')) as nome,
          c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em, c.dono_ate,
+         c.lida_ate, to_jsonb(c) ->> 'lida_por' as lida_por,
          (select max(m.enviada_em) from wa_mensagens m
            where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
@@ -160,17 +165,19 @@ async function lerConversaResumo(u: Usuario, numeroId: string, waId: string): Pr
   return limparConversa(u, r.rows[0]);
 }
 
-// Acesso do master (Planee) a uma conversa fica na auditoria central: só o número da empresa e os 4 últimos
-// dígitos do contato, nunca o telefone inteiro nem o conteúdo. Uma linha por pessoa e conversa a cada 30 min,
-// para a atualização automática da tela não encher a auditoria.
-async function registrarAcessoDoMaster(u: Usuario, numeroId: string, waId: string) {
-  if (!u.master || !u.empresa) return;
+// Quem abriu cada conversa fica na auditoria central (tela Registro): só o número da empresa e os 4 últimos
+// dígitos do contato, nunca o telefone inteiro nem o conteúdo. O master como "abrir_conversa" (acesso da Planee);
+// a equipe como "ler_conversa" (16/10, pedido do Mateus). Uma linha por pessoa e conversa a cada 30 min, para a
+// atualização automática da tela não encher a auditoria.
+async function registrarAbertura(u: Usuario, numeroId: string, waId: string) {
+  if (!u.empresa) return;
+  const acao = u.master ? 'abrir_conversa' : 'ler_conversa';
   const alvo = `${numeroId}:${waId.slice(-4)}`;
   const c = central();
   const ja = await c.query(
-    `select 1 from central_auditoria where usuario_id = $1 and empresa_id = $2 and acao = 'abrir_conversa' and alvo = $3
-        and quando > now() - interval '30 minutes' limit 1`, [u.id, u.empresa.id, alvo]);
-  if (!ja.rowCount) await auditar(c, u, u.empresa.id, 'abrir_conversa', alvo, undefined);
+    `select 1 from central_auditoria where usuario_id = $1 and empresa_id = $2 and acao = $4 and alvo = $3
+        and quando > now() - interval '30 minutes' limit 1`, [u.id, u.empresa.id, alvo, acao]);
+  if (!ja.rowCount) await auditar(c, u, u.empresa.id, acao, alvo, undefined);
 }
 
 // Abrir a conversa (09/10): uma ida ao banco traz o resumo da conversa, a página de mensagens, as reações e as
@@ -217,16 +224,19 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   // o "lida" da equipe e o registro de acesso do master. Selo e registro são extras: falha neles não derruba a tela.
   // As automáticas são casadas depois do texto da Sara completado (o casamento usa o texto quando falta o wamid).
   const completar = completarFalasDaIa(banco, waId, linhas);
-  const [, seloBruto, , , autos] = await Promise.all([
+  const [, seloBruto, leu, , autos] = await Promise.all([
     completar,
     primeira
       ? seloDoTelefone(banco, waId, entrada ? new Date(entrada as string).toISOString() : null).catch((e) => { registrarErro('selo das automáticas', e); return null; })
       : Promise.resolve(null),
-    marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(),
-    registrarAcessoDoMaster(u, numeroId, waId),
+    marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(false),
+    registrarAbertura(u, numeroId, waId).catch((e) => registrarErro('registro de abertura da conversa', e)),
     completar.then(() => automaticasDaPagina(banco, waId, linhas)).catch((e) => { registrarErro('automáticas na conversa', e); return new Map<string, string>(); }),
   ]);
-  if (marcar) conversa.nao_lidas = 0;
+  if (marcar) {
+    conversa.nao_lidas = 0;
+    if (leu) { conversa.lida_por = u.nome; conversa.lida_em = new Date().toISOString(); }
+  }
   const selo: Selo | null = seloBruto && u.master ? { ...seloBruto, texto: mascararTexto(seloBruto.texto) } : seloBruto;
 
   const porWamid = new Map<string, Mensagem['reacoes']>();
@@ -311,27 +321,37 @@ export async function linkDaMidia(u: Usuario, numeroId: string, waId: string, me
   return { url, mime };
 }
 
-// A equipe da empresa abriu a conversa: zera as não lidas. O master (Planee) só olha: não muda o estado da clínica.
-export async function marcarLida(u: Usuario, numeroId: string, waId: string) {
+// A equipe da empresa abriu a conversa: zera as não lidas e guarda quem leu (migração 026). O master (Planee) só
+// olha: não muda o estado da clínica. Devolve se marcou agora (havia algo novo para ler).
+export async function marcarLida(u: Usuario, numeroId: string, waId: string): Promise<boolean> {
   validar(numeroId, waId);
   const banco = db(u);
-  if (u.master) return;
-  await consultar(() => banco.query(
-    `update wa_conversas set nao_lidas = 0, lida_ate = now()
-      where numero_id = $1 and wa_id = $2 and (nao_lidas <> 0 or lida_ate is null or lida_ate < ultima_em)`, [numeroId, waId]));
+  if (u.master) return false;
+  const onde = `where numero_id = $1 and wa_id = $2 and (nao_lidas <> 0 or lida_ate is null or lida_ate < ultima_em)`;
+  try {
+    // Direto (sem consultar): o 42703 da falta da 026 precisa chegar aqui, não virar o aviso das migrações 009/010/012.
+    const r = await banco.query(`update wa_conversas set nao_lidas = 0, lida_ate = now(), lida_por = $3 ${onde}`, [numeroId, waId, u.nome]);
+    return Boolean(r.rowCount);
+  } catch (e) {
+    // Banco ainda sem a 026: marca como lida sem o nome.
+    if ((e as { code?: string }).code !== '42703') throw e;
+    const r = await consultar(() => banco.query(`update wa_conversas set nao_lidas = 0, lida_ate = now() ${onde}`, [numeroId, waId]));
+    return Boolean(r.rowCount);
+  }
 }
 
 // "Marcar como não lida" (14/10, pedido da Letícia): a conversa volta a contar como não lida, para lembrar de
 // voltar nela. A tela fecha a conversa logo depois (aberta, a atualização automática marcaria como lida de novo).
 // O master também pode (15/10, pedido do Mateus): marcar não lida só soma, nunca esconde nada da clínica, e fica na
-// auditoria central. Abrir a conversa pelo master continua sem marcar como lida.
+// auditoria central. Abrir a conversa pelo master continua sem marcar como lida. Desde 16/10 a marcação da equipe
+// também vai para a auditoria (tela Registro).
 export async function marcarNaoLida(u: Usuario, numeroId: string, waId: string): Promise<Conversa> {
   validar(numeroId, waId);
   const banco = db(u);
   const r = await consultar(() => banco.query(
     `update wa_conversas set nao_lidas = greatest(nao_lidas, 1), lida_ate = null where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
   if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
-  if (u.master) await auditar(central(), u, u.empresa!.id, 'marcar_nao_lida', `${numeroId}:${waId.slice(-4)}`, undefined);
+  await auditar(central(), u, u.empresa!.id, 'marcar_nao_lida', `${numeroId}:${waId.slice(-4)}`, undefined);
   return lerConversaResumo(u, numeroId, waId);
 }
 
