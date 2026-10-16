@@ -1,10 +1,13 @@
 // Permissões do painel (decisão 26). O master libera um conjunto para cada empresa (empresas.modulos);
 // o admin tem tudo o que a empresa tem; o membro tem só o que o admin deu, dentro do que a empresa tem.
 // Este arquivo não importa nada do servidor: as telas também usam a lista.
+// Módulos (16/10, decisão 46): as permissões de cada módulo (lib/modulos.ts) entram no fim da lista, com o grupo
+// do módulo. Elas só valem quando o módulo está ligado na empresa (marcado e com o SQL rodado no banco dela).
+import { MODULOS, ehPermissaoDeModulo, moduloDaPermissao, type PermissaoModulo } from './modulos';
 
 export type Nivel = 'master' | 'admin' | 'membro';
 
-export const PERMISSOES = [
+const BASE = [
   { id: 'inbox.ver', nome: 'Ver a inbox', grupo: 'Atendimento' },
   { id: 'inbox.responder', nome: 'Responder pelo painel', grupo: 'Atendimento' },
   { id: 'crm.ver', nome: 'Ver o CRM', grupo: 'CRM' },
@@ -17,8 +20,14 @@ export const PERMISSOES = [
   { id: 'agente.config', nome: 'Configurar o agente de IA', grupo: 'Gestão' },
 ] as const;
 
-export type Permissao = (typeof PERMISSOES)[number]['id'];
+export type Permissao = (typeof BASE)[number]['id'] | PermissaoModulo;
+export type ItemPermissao = { id: Permissao; nome: string; grupo: string; modulo?: string };
+export const PERMISSOES: ItemPermissao[] = [
+  ...BASE.map((p) => ({ ...p })),
+  ...MODULOS.flatMap((m) => m.permissoes.map((p) => ({ id: p.id, nome: p.nome, grupo: m.nome, modulo: m.id }))),
+];
 export const TODAS: Permissao[] = PERMISSOES.map((p) => p.id);
+const DA_BASE: Permissao[] = BASE.map((p) => p.id);
 
 // Modelos prontos que o admin aplica com um clique.
 export const MODELOS: Record<'secretaria' | 'gestor', { nome: string; permissoes: Permissao[] }> = {
@@ -34,11 +43,18 @@ export function limparPermissoes(lista: unknown): Permissao[] {
   return TODAS.filter((p) => pedidas.has(p));
 }
 
-// O que a pessoa pode fazer de fato nesta empresa.
-export function efetivas(nivel: Nivel, modulosEmpresa: readonly string[], doVinculo: readonly string[]): Permissao[] {
-  if (nivel === 'master') return [...TODAS];
+// O que a pessoa pode fazer de fato nesta empresa. O master tem toda a base, mas módulo só quando a empresa tem
+// (16/10): sem isso a Planee via "Condição comercial" no painel da clínica. Permissão de módulo só vale com o
+// módulo ligado (ligados = ids dos módulos marcados e com o SQL rodado no banco da empresa).
+export function efetivas(nivel: Nivel, modulosEmpresa: readonly string[], doVinculo: readonly string[],
+  ligados: ReadonlySet<string> = new Set()): Permissao[] {
   const empresa = limparPermissoes(modulosEmpresa);
-  if (nivel === 'admin') return empresa;
+  const doModuloLigado = (p: Permissao) => !ehPermissaoDeModulo(p) || ligados.has(moduloDaPermissao(p)?.id ?? '');
+  if (nivel === 'master') {
+    const temNaEmpresa = new Set(empresa);
+    return TODAS.filter((p) => (DA_BASE.includes(p) || temNaEmpresa.has(p)) && doModuloLigado(p));
+  }
+  if (nivel === 'admin') return empresa.filter(doModuloLigado);
   const minhas = new Set(doVinculo);
-  return empresa.filter((p) => minhas.has(p));
+  return empresa.filter((p) => minhas.has(p) && doModuloLigado(p));
 }

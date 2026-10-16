@@ -77,3 +77,7 @@
   .pessoaAcoes { justify-content: flex-start; }
 }
 .visivelLeitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Módulos extras (16/10): um bloco por módulo, com a situação no banco da empresa. */
+.modulosExtras { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.modulo { display: flex; flex-direction: column; gap: 6px; }
+.modulo > strong { font-size: 13px; color: var(--ink); }

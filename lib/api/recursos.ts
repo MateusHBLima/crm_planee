@@ -1,5 +1,7 @@
 // Catálogo do que a API deixa criar e editar (decisão 25).
 // Acrescentar um recurso novo é acrescentar uma entrada aqui (e a tabela na migração).
+// Recurso de módulo (16/10, docs/modulos.md) fica em lib/modulos-servidor.ts e só aparece com o módulo ligado.
+import { modulosComParte, parteDoModulo, recursoDeModulo } from '@/lib/modulos-servidor';
 
 export type Escopo = 'leitura' | 'crm' | 'config';
 
@@ -14,6 +16,7 @@ export type Recurso = {
   campos: Record<string, string>; // campo editável -> descrição
   filtros: string[];
   ordem: string;
+  modulo?: string; // id do módulo dono (lib/modulos.ts); a API confere se está ligado na empresa
 };
 
 export const RECURSOS: Record<string, Recurso> = {
@@ -148,11 +151,14 @@ Object.assign(RECURSOS, {
 } satisfies Record<string, Recurso>);
 
 export function recurso(nome: string): Recurso | undefined {
-  return Object.prototype.hasOwnProperty.call(RECURSOS, nome) ? RECURSOS[nome] : undefined;
+  return Object.prototype.hasOwnProperty.call(RECURSOS, nome) ? RECURSOS[nome] : recursoDeModulo(nome);
 }
 
-// Descrição para quem usa a API (pessoa ou IA).
-export function catalogo() {
+// Descrição para quem usa a API (pessoa ou IA). ligados = módulos ligados na empresa do endereço chamado: os
+// recursos dos outros módulos não aparecem.
+export function catalogo(ligados: ReadonlySet<string> = new Set()) {
+  const deModulos = modulosComParte().filter((m) => ligados.has(m.id));
+  const recursos = [...Object.values(RECURSOS), ...deModulos.flatMap((m) => Object.values(parteDoModulo(m.id)!.recursos))];
   return {
     api: 'Painel Planee — API do CRM',
     versao: 'v1',
@@ -171,8 +177,10 @@ export function catalogo() {
       'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
       'POST /api/v1/automaticas/recusa {"telefone" | "contato_id","parar":true|false,"motivo"?} — para ou libera as mensagens automáticas da pessoa (todos os cadastros do telefone). Marcar de novo mantém a data original. A ficha traz automaticas.permitidas. Escopo crm.',
       'POST /api/v1/automaticas/envios {"telefone","tipo","situacao":"enviado|falhou|cancelado","chave","quando"?,"texto"?,"wamid"?,"motivo"?,"servico"?:{sistema,codigo_externo}} — registra o envio automático na linha do tempo do contato; mesma chave atualiza (repetido=true). Escopo crm.',
+      ...deModulos.flatMap((m) => parteDoModulo(m.id)!.paraIa ?? []),
     ],
-    recursos: Object.values(RECURSOS).map((r) => ({
+    modulos: deModulos.map((m) => ({ id: m.id, nome: m.nome, descricao: m.descricao })),
+    recursos: recursos.map((r) => ({
       nome: r.nome,
       descricao: r.descricao,
       escopo_escrita: r.escrita,

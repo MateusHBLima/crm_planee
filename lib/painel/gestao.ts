@@ -4,6 +4,8 @@ import type { Pool, PoolClient } from 'pg';
 import { central, ErroApi, transacao } from '@/lib/db';
 import { cifrar, cifraConfigurada } from '@/lib/cifra';
 import { limparPermissoes, type Nivel, type Permissao } from '@/lib/permissoes';
+import type { EstadoModulo } from '@/lib/modulos';
+import { estadosDosModulos } from '@/lib/modulos-servidor';
 import type { Usuario } from '@/lib/sessao';
 import { listarNumeros, type NumeroWhats } from './numeros';
 
@@ -64,20 +66,31 @@ async function gerarConvite(c: PoolClient, usuarioId: string): Promise<string> {
 export type LinhaEmpresa = {
   id: string; nome: string; ativo: boolean; modulos: Permissao[]; banco_proprio: boolean;
   dominios: string[]; pessoas: number; admins: string[]; numeros: NumeroWhats[];
+  // Módulos (docs/modulos.md): situação de cada módulo do código nesta empresa e, se houver, o problema do banco
+  // (sem_027, banco_de_outra_empresa, banco_indisponivel).
+  modulos_estado: Record<string, EstadoModulo>; modulos_erro: string | null;
 };
 
 export async function listarEmpresas(u: Usuario): Promise<LinhaEmpresa[]> {
   exigirMaster(u);
   const r = await central().query(`
-    select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado is not null as banco_proprio,
+    select e.id, e.nome, e.ativo, e.modulos, e.banco_url_cifrado, e.banco_url_cifrado is not null as banco_proprio,
            coalesce((select array_agg(d.dominio order by d.dominio) from empresa_dominios d where d.empresa_id = e.id), '{}') as dominios,
            (select count(*)::int from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
              where v.empresa_id = e.id and v.ativo and p.ativo) as pessoas,
            coalesce((select array_agg(p.email order by p.email) from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
              where v.empresa_id = e.id and v.ativo and p.ativo and v.nivel = 'admin'), '{}') as admins
       from empresas e order by e.ativo desc, e.nome`);
-  const numeros = await listarNumeros(u);
-  return r.rows.map((x) => ({ ...x, modulos: limparPermissoes(x.modulos), numeros: numeros.filter((n) => n.empresa_id === x.id) }));
+  const [numeros, estados] = await Promise.all([
+    listarNumeros(u),
+    // Só lê o banco de quem tem módulo marcado; banco que não abre fica como "sem migração", com o motivo.
+    Promise.all(r.rows.map((x) => estadosDosModulos({ id: x.id, banco_url_cifrado: x.banco_url_cifrado, modulos: x.modulos })
+      .catch(() => Object.assign(new Map<string, EstadoModulo>(), { erro: 'banco_indisponivel' })))),
+  ]);
+  return r.rows.map(({ banco_url_cifrado: _url, ...x }, i) => ({
+    ...x, modulos: limparPermissoes(x.modulos), numeros: numeros.filter((n) => n.empresa_id === x.id),
+    modulos_estado: Object.fromEntries(estados[i]), modulos_erro: estados[i].erro ?? null,
+  }));
 }
 
 export async function criarEmpresa(u: Usuario, dados: { id: unknown; nome: unknown; modulos: unknown }) {

@@ -4,6 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { ErroApi, registrarErro } from '@/lib/db';
 import { COOKIE_EMPRESA, empresaPorId } from '@/lib/empresa';
 import { esquecerSessoes, usuarioAtual, type Usuario } from '@/lib/sessao';
+import { esquecerMigracoes } from '@/lib/modulos-servidor';
 import * as g from './gestao';
 import * as n from './numeros';
 import type { Resposta } from './acoes';
@@ -20,8 +21,10 @@ async function comUsuario<T>(fn: (u: Usuario) => Promise<T>): Promise<Resposta<T
     registrarErro('gestao', e);
     return { ok: false, erro: 'Não foi possível concluir agora. Tente de novo em instantes.' };
   } finally {
-    // Empresa, pessoa, vínculo ou permissão pode ter mudado: a próxima tela monta a sessão de novo.
+    // Empresa, pessoa, vínculo, permissão ou módulo pode ter mudado: a próxima tela monta a sessão de novo e relê
+    // o que rodou no banco de cada empresa (módulos).
     esquecerSessoes();
+    esquecerMigracoes();
   }
 }
 

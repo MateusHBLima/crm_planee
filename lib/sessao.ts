@@ -2,7 +2,8 @@ import 'server-only';
 import { cache } from 'react';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { bancoConfigurado, central } from '@/lib/db';
+import { bancoConfigurado, central, registrarErro } from '@/lib/db';
+import { modulosLigados } from '@/lib/modulos-servidor';
 import { COOKIE_ACESSO, mfaExigido, nivelDaSessao, usuarioDoToken } from '@/lib/auth/gotrue';
 import { COOKIE_EMPRESA, hostDeCabecalhos, type Empresa } from '@/lib/empresa';
 import { efetivas, type Nivel, type Permissao } from '@/lib/permissoes';
@@ -117,7 +118,10 @@ async function montarSessao(acesso: string): Promise<Sessao> {
   }
 
   const nivel: Nivel = pessoa.master ? 'master' : vinculo!.nivel;
-  const permissoes = empresa ? efetivas(nivel, empresa.modulos, vinculo?.permissoes_vinculo ?? []) : [];
+  // Módulos (docs/modulos.md): permissão de módulo só vale com o módulo ligado (marcado e com o SQL no banco da
+  // empresa). Empresa sem módulo marcado não lê banco nenhum aqui. Falha ao ler: módulo fica desligado nesta vez.
+  const ligados = empresa ? await modulosLigados(empresa).catch((e) => { registrarErro('módulos: sessão', e); return new Set<string>(); }) : new Set<string>();
+  const permissoes = empresa ? efetivas(nivel, empresa.modulos, vinculo?.permissoes_vinculo ?? [], ligados) : [];
   return {
     usuario: {
       ...pessoa, nivel, permissoes, empresaFixa: Boolean(fixa), empresas: lista,

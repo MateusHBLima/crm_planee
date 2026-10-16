@@ -86,7 +86,7 @@ export function central(): Pool {
   return poolPara(url);
 }
 
-export type RefEmpresa = { id: string; banco_url_cifrado: string | null };
+export type RefEmpresa = { id: string; banco_url_cifrado: string | null; modulos?: readonly string[] | null };
 
 // Empresas que podem ficar no banco padrão do deploy (sem banco próprio). Qualquer outra sem banco é recusada:
 // sem isso, a empresa nova enxergaria os dados de quem já está no banco padrão (auditoria 01/10, S1).
