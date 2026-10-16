@@ -199,6 +199,11 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await p.waitForTimeout(500);
   ok('abrir zera as não lidas no banco', sql(`select nao_lidas || '|' || (lida_ate is not null) from wa_conversas where wa_id='${BIA}'`) === '0|true');
   ok('e a lista tira o contador', (await item(p, 'Beatriz Ficticia').locator('[aria-label$="não lidas"]').count()) === 0);
+  // 16/10: quem leu fica gravado e aparece no cabeçalho; a abertura vai para o Registro (uma linha a cada 30 min).
+  ok('abrir grava quem leu', sql(`select coalesce(lida_por, '') from wa_conversas where wa_id='${BIA}'`) === 'Amanda Teste');
+  ok('cabeçalho mostra "Lida por"', ((await p.locator('[data-lida-por]').textContent()) || '').includes('Lida por Amanda Teste'));
+  ok('abertura da equipe vai para a auditoria (ler_conversa)', sql(`select count(*) from central_auditoria a join painel_usuarios u on u.id = a.usuario_id
+                    where a.acao = 'ler_conversa' and u.email = 'amanda@teste.local' and a.alvo = '${NUM}:1001'`) === '1');
   const tudo = respostas.join('\n');
   ok('caminho da mídia, bruto e erro não vão para o navegador', tudo.includes('Pode ser às 15h?') && !tudo.includes('CAMINHO_SECRETO') && !tudo.includes('BRUTO_SECRETO') && !tudo.includes('ERRO_SECRETO'),
     `${respostas.length} respostas; ` + ['Pode ser às 15h?', 'CAMINHO_SECRETO', 'BRUTO_SECRETO', 'ERRO_SECRETO'].map((k) => k + '=' + tudo.includes(k)).join(' '));

@@ -72,6 +72,8 @@ function textoCentral(acao: string, d: Record<string, unknown>, alvoNome: string
     case 'renomear_contato': return { area: 'inbox', texto: d.limpou ? 'Tirou o nome do contato' : 'Renomeou o contato' };
     case 'abrir_conversa': return { area: 'planee', texto: 'Abriu a conversa (acesso da Planee)' };
     case 'abrir_midia': return { area: 'planee', texto: 'Abriu uma mídia (acesso da Planee)' };
+    case 'ler_conversa': return { area: 'inbox', texto: 'Abriu a conversa' };
+    case 'marcar_nao_lida': return { area: 'inbox', texto: 'Marcou a conversa como não lida' };
     case 'abrir_comprovante': return { area: 'crm', texto: 'Abriu um comprovante' };
     case 'adicionar_pessoa': return { area: 'equipe', texto: 'Adicionou pessoa à equipe' };
     case 'atualizar_pessoa': {

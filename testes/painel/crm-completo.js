@@ -449,6 +449,8 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.click('[data-menu-mais]'); await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
   ok('marcar como não lida volta a contar e fecha a conversa', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id = '554755550001'`) === '1|true'
     && (await p.locator('[data-menu-mais]').count()) === 0);
+  ok('"não lida" da equipe vai para a auditoria', sql(`select count(*) from central_auditoria a join painel_usuarios u on u.id = a.usuario_id
+                    where a.acao = 'marcar_nao_lida' and u.email = 'amanda@teste.local'`) === '1');
   await p.click('[data-filtro-nao-lidas]'); await p.waitForTimeout(300);
   ok('filtro "Não lidas" mostra a conversa marcada', (await p.locator('button[data-wa="554755550001"]').count()) === 1);
   await p.screenshot({ path: out + '18b_inbox_finalizar_nao_lida.png' });
