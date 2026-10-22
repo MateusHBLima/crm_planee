@@ -445,6 +445,18 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.click('[data-painel-protocolo] button[data-situacao="em_analise"]'); await p.waitForTimeout(1500);
   ok('marcar protocolo pela conversa grava no contato do número', sql(`select protocolo || '|' || protocolo_por from contatos where id = '${contE}'`) === 'em_analise|Amanda Teste'
     && (await p.locator('[data-painel-protocolo] button[data-situacao="em_analise"][aria-pressed="true"]').count()) === 1);
+  // Cartões em aberto na lateral (22/10): botão no cabeçalho; cada cartão leva ao CRM com ele aberto.
+  const abertosE = sql(`select id from atendimentos where contato_id = '${contE}' and etapa <> 'finalizado' and not arquivado order by aberto_em`).split('\n').filter(Boolean);
+  ok('botão "Cartões" mostra quantos estão em aberto', ((await p.textContent('[data-cartoes-conversa]')) || '').trim() === `Cartões (${abertosE.length})`, ((await p.textContent('[data-cartoes-conversa]')) || ''));
+  await p.click('[data-cartoes-conversa]'); await p.locator('[data-painel-cartoes] [data-abrir-cartao]').first().waitFor({ timeout: 8000 });
+  const hrefs = await p.locator('[data-painel-cartoes] [data-abrir-cartao]').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
+  ok('lateral lista só os cartões em aberto, com link para o CRM', hrefs.length === abertosE.length && abertosE.every((id) => hrefs.includes(`/crm?cartao=${id}`))
+    && !hrefs.includes(`/crm?cartao=${cartE}`) && ((await p.textContent('[data-painel-cartoes]')) || '').includes('ESPERA-2'), hrefs.join(','));
+  await p.screenshot({ path: out + '18d_inbox_cartoes.png' });
+  await Promise.all([p.waitForURL(/\/crm\?cartao=/), p.click(`[data-painel-cartoes] [data-abrir-cartao="${abertosE[0]}"]`)]);
+  await p.locator('[data-abrir-inbox]').waitFor({ timeout: 10000 }).catch(() => undefined);
+  ok('clicar no cartão abre o CRM com o cartão aberto', (await p.locator('[data-abrir-inbox]').count()) === 1 && ((await p.textContent('main')) || '').includes('ESPERA-2'));
+  await p.goto(B + `/inbox?tel=${TELE}`); await p.locator('[data-menu-mais]').waitFor({ timeout: 10000 });
   sql(`update wa_conversas set nao_lidas = 0, lida_ate = now() where wa_id = '554755550001'`);
   await p.click('[data-menu-mais]'); await p.click('[data-nao-lida]'); await p.waitForTimeout(1200);
   ok('marcar como não lida volta a contar e fecha a conversa', sql(`select nao_lidas || '|' || (lida_ate is null) from wa_conversas where wa_id = '554755550001'`) === '1|true'

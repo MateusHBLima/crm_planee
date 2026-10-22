@@ -835,3 +835,24 @@ export async function conferirPagamento(chave: Chave, id: string, conferido: boo
     }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; exigirTabelas(e); }
 }
+
+// "Baixado na Feegow" (migração 028, 22/10): marca opcional de que a equipe já deu baixa no sistema da clínica.
+export async function marcarBaixadoPagamento(chave: Chave, id: string, baixado: boolean) {
+  exigirEscopo(chave, 'crm');
+  if (!chave.usuario_id) throw new ErroApi(403, 'Só uma pessoa da equipe marca a baixa.');
+  if (!UUID.test(id)) throw new ErroApi(400, 'id inválido.');
+  try {
+    return await transacao(async (c) => {
+      const r = await c.query(
+        `update pagamentos set baixado_em = case when $2 then now() end, baixado_por = case when $2 then $3 end, atualizado_em = now()
+          where id = $1 and not arquivado returning id`, [id, baixado, chave.nome]);
+      if (!r.rowCount) throw new ErroApi(404, 'Pagamento não encontrado.');
+      await auditar(c, chave, 'atualizar', 'pagamentos', id, { baixado });
+      return true;
+    }, bancoDe(chave));
+  } catch (e) {
+    if (e instanceof ErroApi) throw e;
+    if (semColuna(e)) throw new ErroApi(503, 'A marca de baixa ainda não foi instalada no banco desta empresa (migração 028).');
+    exigirTabelas(e);
+  }
+}

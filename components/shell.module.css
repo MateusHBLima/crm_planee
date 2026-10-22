@@ -47,3 +47,6 @@
 .faixaEmpresa button:hover:not(:disabled) { background: var(--hover); }
 .conteudoLargo > .faixaEmpresa { margin: 14px 28px 0; }
 @media (max-width: 760px) { .conteudoLargo > .faixaEmpresa { margin: 12px 16px 0; } }
+
+/* Contador da fila de comprovantes no menu (22/10). */
+.contadorNav { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ag); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }

@@ -5,6 +5,7 @@ import { CrmTela } from '@/components/crm/CrmTela';
 import { InboxTela } from '@/components/inbox/InboxTela';
 import { Resultados } from '@/components/resultados/Resultados';
 import { Agenda } from '@/components/agenda/Agenda';
+import { Comprovantes } from '@/components/comprovantes/Comprovantes';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
 import { Registro } from '@/components/registro/Registro';
@@ -52,7 +53,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'inbox' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} nome={usuario.nome} />
+        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} podeVerCrm={pode(usuario, 'crm.ver')} nome={usuario.nome} />
       </Shell>
     );
   }
@@ -80,6 +81,15 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario}>
         <Agenda key={usuario.empresa.id} empresaId={usuario.empresa.id} master={usuario.master} />
+      </Shell>
+    );
+  }
+
+  // Comprovantes a conferir (22/10): a fila chega pela leitura GET (lib/painel/servicos.ts, filaComprovantes).
+  if (atual.id === 'comprovantes' && usuario.empresa) {
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Comprovantes key={usuario.empresa.id} fuso={fuso()} />
       </Shell>
     );
   }

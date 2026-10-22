@@ -65,4 +65,6 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   resultados: (u, q) => rs.lerResultados(u, q.get('periodo'), lerIntervalo(q.get('de'), q.get('ate'))),
   // Agenda do dia (09/10): ?dia=YYYY-MM-DD
   agenda: (u, q) => ag.lerAgenda(u, q.get('dia')),
+  // Fila "Comprovantes a conferir" (22/10). ?contar=1: só o total, para o contador do menu.
+  comprovantes: (u, q) => sv.filaComprovantes(u, q.get('contar') === '1'),
 };

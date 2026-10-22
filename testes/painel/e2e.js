@@ -113,7 +113,7 @@ async function entrar(p, email, senha='senha123') {
   const txtJ = (await p.locator('aside[role=dialog]').first().textContent()) || '';
   ok('Planee vê CPF mascarado (campo e texto)', !txtCartaoJ.includes('111.222.333') && !txtJ.includes('111.222.333') && txtJ.includes('***.***.***-44'), txtJ.slice(0,160));
   await p.keyboard.press('Escape'); await p.waitForTimeout(300);
-  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim())); ok('Planee (master) vê as 10 telas', navP.join(',') === 'Inbox,CRM,Protocolos,Agenda,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
+  const navP = await p.$$eval('nav a', (as) => as.map((a) => a.textContent.trim().replace(/\d+\+?$/, ''))); ok('Planee (master) vê as 11 telas', navP.join(',') === 'Inbox,CRM,Protocolos,Agenda,Comprovantes,Resultados,Configurações,Registro,Equipe,Empresas,Interno Planee', navP.join(','));
   await p.goto(B + '/configuracoes'); ok('Configurações abre a do CRM', (await p.locator('h1', { hasText: 'Configurações do CRM' }).count()) === 1);
   await p.goto(B + '/resultados'); await p.locator('[data-kpi="quadro"]').waitFor({ timeout: 8000 }).catch(() => undefined);
   ok('Resultados abre com os números do quadro', ((await p.textContent('[data-kpi="quadro"]').catch(() => '')) || '').trim() !== '');

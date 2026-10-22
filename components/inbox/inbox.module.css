@@ -51,7 +51,7 @@
 .vazio { margin: 8px 16px; padding: 28px 20px; border: 1px dashed var(--line-strong); border-radius: 14px; text-align: center; color: var(--ink-3); font-size: 13.5px; line-height: 1.5; }
 
 /* Conversa */
-.conversa { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.conversa { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .semConversa { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); font-size: 15px; }
 .cabeca { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .voltar { display: none; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-size: 13px; font-weight: 500; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -186,3 +186,20 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .menuMaisLista > button:hover, .menuMaisLista > a:hover { background: var(--hover); }
 /* Quem leu por último (16/10): discreto, ao lado de quem atende. */
 .lidaPor { font-size: 12px; color: var(--ink-3); }
+
+/* Cartões em aberto do contato, na lateral da conversa (22/10). Cada um leva ao CRM com o cartão aberto. */
+.lateralCartoes { position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: min(360px, 100%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-2, var(--shadow-1)); }
+.lateralTopo { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.lateralVazio { margin: 0; padding: 18px 16px; font-size: 13px; color: var(--ink-3); line-height: 1.5; }
+.lateralLista { list-style: none; margin: 0; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.cartaoLateral { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); text-decoration: none; font-size: 13px; }
+.cartaoLateral:hover { background: var(--hover); border-color: var(--line-strong); }
+.cartaoLateral:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cartaoLateralTopo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cartaoLateralEtapa { flex-shrink: 0; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; background: var(--surface-3); color: var(--ink-2); }
+.cartaoLateralEtapa[data-etapa='aguardando'] { background: var(--eq-bg); color: var(--eq-ink); }
+.cartaoLateralEtapa[data-etapa='em_atendimento'] { background: var(--ia-bg); color: var(--ia-ink); }
+.cartaoLateralEtapa[data-etapa='pendente'] { background: var(--pd-bg); color: var(--pd-ink); }
+.cartaoLateralResumo { color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+.cartaoLateralMeta { font-size: 12px; color: var(--ink-3); }
+.cartaoLateralAbrir { font-size: 12px; font-weight: 600; color: var(--ink); }

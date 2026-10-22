@@ -169,6 +169,13 @@ export async function conferirPagamento(contatoId: string, pagamentoId: string, 
 export async function mudarAutomaticas(contatoId: string, parar: boolean, motivo?: string) {
   return comUsuario(async (u) => { await sv.mudarAutomaticas(u, contatoId, parar, motivo); return sv.historicoContato(u, contatoId); });
 }
+// Fila "Comprovantes a conferir" (22/10): conferir e marcar a baixa na Feegow; devolvem a fila atualizada.
+export async function conferirNaFila(pagamentoId: string, sim: boolean) {
+  return comUsuario((u) => sv.conferirDaFila(u, pagamentoId, sim));
+}
+export async function marcarBaixadoNaFila(pagamentoId: string, sim: boolean) {
+  return comUsuario((u) => sv.marcarBaixado(u, pagamentoId, sim));
+}
 export async function registrarPagamento(contatoId: string, form: FormData) {
   return comUsuario(async (u) => { await sv.registrarPagamento(u, contatoId, form); return sv.historicoContato(u, contatoId); });
 }

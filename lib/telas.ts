@@ -51,6 +51,7 @@ const TELAS: Tela[] = [
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'protocolos', nome: 'Protocolos', icone: 'protocolo', descricao: 'Acompanhamento de protocolo: quem está em análise, em protocolo, em acompanhamento ou encerrado.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'agenda', nome: 'Agenda', icone: 'agenda', descricao: 'Agendamentos do dia: o espelho da agenda da clínica e os que a Sara marcou.', exige: (u) => pode(u, 'pagamentos.ver') },
+  { id: 'comprovantes', nome: 'Comprovantes', icone: 'valor', descricao: 'Fila dos comprovantes a conferir, com o contador no menu e a marca opcional de baixa na Feegow.', exige: (u) => pode(u, 'pagamentos.ver') },
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },
   { id: 'configuracoes', nome: 'Configurações', icone: 'config', descricao: 'Configuração do CRM e do agente. Fases 3 e 4. Só a Planee.', exige: (u) => u.nivel === 'master' && Boolean(u.empresa) },
   { id: 'planee', nome: 'Planee', icone: 'conversa', descricao: 'Avisos para a Planee, respostas, novidades e manutenções.', exige: (u) => Boolean(u.empresa) && u.nivel !== 'master' },
