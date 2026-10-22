@@ -8,6 +8,7 @@ import { auditar } from './gestao';
 import { mascararTexto } from './crm';
 import { enviosDe, recusaDe, seloDosContatos, type Recusa, type Selo } from '@/lib/automaticas';
 import { numerosDoContato, pessoasDoNumero } from '@/lib/pessoas';
+import { tokenFeegow } from '@/lib/agenda/feegow';
 
 // Histórico do paciente e serviços/pagamentos para as telas do CRM (migração 013).
 // Ver serviços e comprovantes: pagamentos.ver. Conferir e registrar pagamento: pagamentos.conferir.
@@ -267,4 +268,71 @@ export async function mudarAutomaticas(u: Usuario, contatoId: string, parar: boo
   db(u);
   if (!pode(u, 'crm.editar')) throw new ErroApi(403, 'Você não tem permissão para mudar isso nesta empresa.');
   await recusaAutomaticas(atorDe(u), { contato_id: contatoId, parar, motivo: motivo ?? undefined });
+}
+
+// ---- Fila "Comprovantes a conferir" (22/10): todos os comprovantes ainda não conferidos, do mais novo ao mais antigo ----
+// Quem vê pagamentos vê a fila; quem confere (pagamentos.conferir) marca "Conferido" e "Baixado na Feegow".
+// A marca de baixa é opcional: só aparece se a empresa usa a Feegow e o banco tem a migração 028.
+export type ItemFila = Pagamento & {
+  contato_id: string; contato_nome: string | null; telefone: string | null;
+  servico: { tipo: string; inicio: string | null; profissional: string | null } | null;
+  baixado_em: string | null; baixado_por: string | null;
+};
+// faltaBaixar: com a marca ligada, os conferidos nos últimos 14 dias que ainda não foram baixados na Feegow.
+export type FilaComprovantes = { itens: ItemFila[]; faltaBaixar: ItemFila[]; total: number; podeConferir: boolean; marca: string | null; instalado: boolean; lidoEm: string };
+
+function dbPagamentos(u: Usuario) {
+  if (!u.empresa) throw new ErroApi(403, 'Escolha uma empresa para ver os comprovantes.');
+  if (!pode(u, 'pagamentos.ver')) throw new ErroApi(403, 'Você não tem acesso aos comprovantes nesta empresa.');
+  return bancoDaEmpresa(u.empresa);
+}
+
+async function temMarcaBaixa(banco: ReturnType<typeof bancoDaEmpresa>) {
+  try { await banco.query('select baixado_em from pagamentos limit 0'); return true; } catch (e) { if (semTabela(e)) return false; throw e; }
+}
+
+const A_CONFERIR = `not p.arquivado and p.conferido_em is null`;
+
+export async function filaComprovantes(u: Usuario, soContar = false): Promise<FilaComprovantes> {
+  const banco = dbPagamentos(u);
+  const lidoEm = new Date().toISOString();
+  const podeConferir = pode(u, 'pagamentos.conferir');
+  let total = 0;
+  try {
+    const t = await banco.query(`select count(*)::int as n from pagamentos p where ${A_CONFERIR}`);
+    total = Number(t.rows[0]?.n ?? 0);
+  } catch (e) {
+    if (semTabela(e)) return { itens: [], faltaBaixar: [], total: 0, podeConferir, marca: null, instalado: false, lidoEm };
+    throw e;
+  }
+  if (soContar) return { itens: [], faltaBaixar: [], total, podeConferir, marca: null, instalado: true, lidoEm };
+  const comMarca = await temMarcaBaixa(banco);
+  const marca = comMarca && u.empresa && tokenFeegow(u.empresa.id) ? 'Feegow' : null;
+  const SEL = `select p.*, c.nome as contato_nome, c.telefone as contato_telefone, s.tipo as servico_tipo, s.inicio as servico_inicio, s.profissional as servico_profissional
+       from pagamentos p join contatos c on c.id = p.contato_id left join servicos s on s.id = p.servico_id`;
+  const [r, b] = await Promise.all([
+    banco.query(`${SEL} where ${A_CONFERIR} order by p.criado_em desc limit 100`),
+    marca ? banco.query(`${SEL} where not p.arquivado and p.conferido_em > now() - interval '14 days' and p.baixado_em is null order by p.conferido_em desc limit 100`) : null,
+  ]);
+  const limpar = (x: Record<string, unknown>): ItemFila => ({
+    ...limparPagamento(x, u.master),
+    contato_id: String(x.contato_id), contato_nome: (x.contato_nome as string) ?? null, telefone: (x.contato_telefone as string) ?? null,
+    servico: x.servico_tipo ? { tipo: String(x.servico_tipo), inicio: iso(x.servico_inicio), profissional: (x.servico_profissional as string) ?? null } : null,
+    baixado_em: comMarca ? iso(x.baixado_em) : null, baixado_por: comMarca ? ((x.baixado_por as string) ?? null) : null,
+  });
+  return { itens: r.rows.map(limpar), faltaBaixar: b ? b.rows.map(limpar) : [], total, podeConferir, marca, instalado: true, lidoEm };
+}
+
+export async function conferirDaFila(u: Usuario, pagamentoId: string, sim: boolean) {
+  validar(pagamentoId, 'Pagamento');
+  dbPagamentos(u);
+  await api.conferirPagamento(atorConferir(u), pagamentoId, sim);
+  return filaComprovantes(u);
+}
+
+export async function marcarBaixado(u: Usuario, pagamentoId: string, sim: boolean) {
+  validar(pagamentoId, 'Pagamento');
+  dbPagamentos(u);
+  await api.marcarBaixadoPagamento(atorConferir(u), pagamentoId, sim);
+  return filaComprovantes(u);
 }

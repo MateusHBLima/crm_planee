@@ -1,0 +1,37 @@
+/* Fila "Comprovantes a conferir" (22/10). Mesmo desenho da Agenda. */
+.tela { display: flex; flex-direction: column; gap: 16px; max-width: 980px; }
+.tela * { box-sizing: border-box; }
+.tela button, .tela input { font-family: inherit; color: inherit; }
+.tela button { cursor: pointer; }
+.tela button:disabled { cursor: not-allowed; opacity: .5; }
+.tela :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.topo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.titulo { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.sub { margin: 2px 0 0; font-size: 13px; color: var(--ink-3); }
+
+.botaoSec { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.botaoSec:hover:not(:disabled) { background: var(--hover); }
+.botaoPri { height: 32px; padding: 0 14px; border-radius: 9px; border: 0; background: var(--ink); color: var(--inv) !important; font-size: 13px; font-weight: 600; }
+
+.lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.item { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.item[data-estado='suspeito'] { border-color: var(--rs); border-left-width: 5px; }
+.itemTopo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.valor { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; margin-right: auto; }
+.selo { height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; background: var(--ag-bg); color: var(--ag-ink); }
+.selo[data-estado='suspeito'] { background: var(--rs); color: #fff; }
+.selo[data-estado='conferido'], .selo[data-estado='baixado'] { background: var(--ia-bg); color: var(--ia-ink); }
+.nome { margin: 0; font-size: 14px; font-weight: 600; }
+.nome span { font-weight: 400; color: var(--ink-3); }
+.meta { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.motivos { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--rs-ink); }
+.acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.marca { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); margin-left: auto; cursor: pointer; }
+
+.secao { display: flex; flex-direction: column; gap: 10px; }
+.secaoTitulo { margin: 8px 0 0; font-size: 15px; font-weight: 650; display: flex; gap: 8px; align-items: baseline; }
+.secaoTitulo span { font-weight: 500; font-size: 12.5px; color: var(--ink-3); }
+
+.aviso { margin: 0; font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--ia-bg); color: var(--ia-ink); }
+.avisoErro { background: var(--rs-bg); color: var(--rs-ink); }

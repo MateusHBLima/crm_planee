@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
 import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, finalizarPelaConversa, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarAbertosDaConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
@@ -83,9 +84,12 @@ function criarDatas(fuso: string) {
 }
 
 // podeFinalizar (crm.editar): botão Finalizar no cabeçalho, para os atendimentos em aberto do número (14/10).
-export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; nome: string; empresaId?: string };
+// podeVerCrm (crm.ver): botão Cartões, que abre na lateral os cartões em aberto do número, cada um levando ao CRM (22/10).
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; podeVerCrm?: boolean; nome: string; empresaId?: string };
 
-export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, nome, empresaId = '' }: PropsInbox) {
+const ETAPA_CARTAO: Record<string, string> = { aguardando: 'Aguardando equipe', em_atendimento: 'Em atendimento', pendente: 'Pendente interno' };
+
+export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
   const inicialRef = useRef(inicial);
   // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
@@ -114,6 +118,8 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   const [finalizando, setFinalizando] = useState(false);
   // Protocolo do contato direto da conversa (15/10): painel abaixo do cabeçalho.
   const [protocoloAberto, setProtocoloAberto] = useState(false);
+  // Cartões em aberto do número, na lateral da conversa (22/10).
+  const [cartoesAberto, setCartoesAberto] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
 
   const abertaRef = useRef<Chave | null>(null);
@@ -249,14 +255,14 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     atualizarLinha(d);
   }, [tratar, atualizarLinha]);
 
-  // Atendimentos em aberto do número (só para quem finaliza). Erro aqui não atrapalha a conversa: o botão só some.
+  // Atendimentos em aberto do número (para quem finaliza ou vê o CRM). Erro aqui não atrapalha a conversa: o botão só some.
   const buscarAbertos = useCallback(async (k: Chave) => {
-    if (!podeFinalizar) return;
+    if (!podeFinalizar && !podeVerCrm) return;
     const r = await carregarAbertosDaConversa(k.wa_id);
     if (r.ok && mesma(abertaRef.current, k)) setAbertos({ wa: k.wa_id, lista: r.dados });
-  }, [podeFinalizar]);
+  }, [podeFinalizar, podeVerCrm]);
   useEffect(() => {
-    setAbertos(null); setEscolhendoFinalizar(false); setProtocoloAberto(false);
+    setAbertos(null); setEscolhendoFinalizar(false); setProtocoloAberto(false); setCartoesAberto(false);
     if (aberta) void buscarAbertos(aberta);
   }, [aberta, buscarAbertos]);
 
@@ -483,10 +489,17 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                       {finalizando ? 'Finalizando…' : abertosAgora.length === 1 ? 'Finalizar' : `Finalizar (${abertosAgora.length})`}
                     </button>
                   )}
+                  {podeVerCrm && (
+                    <button type="button" className={c.botaoDono} data-cartoes-conversa aria-expanded={cartoesAberto}
+                      onClick={() => { setCartoesAberto((x) => !x); setProtocoloAberto(false); setEscolhendoFinalizar(false); if (!cartoesAberto && aberta) void buscarAbertos(aberta); }}
+                      title="Cartões em aberto no CRM deste contato">
+                      {abertosAgora.length ? `Cartões (${abertosAgora.length})` : 'Cartões'}
+                    </button>
+                  )}
                   {/* Menu "Mais" (15/10): Protocolo, Não lida e Abrir no WhatsApp saem do cabeçalho para despoluir. */}
                   <MenuMais>
                     {podeFinalizar && (
-                      <button type="button" data-protocolo-conversa onClick={() => setProtocoloAberto((x) => !x)}
+                      <button type="button" data-protocolo-conversa onClick={() => { setProtocoloAberto((x) => !x); setCartoesAberto(false); }}
                         title="Acompanhamento de protocolo deste contato">{protocoloAberto ? 'Fechar protocolo' : 'Protocolo'}</button>
                     )}
                     <button type="button" data-nao-lida onClick={naoLida}
@@ -541,6 +554,35 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                   <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoFinalizar(false)}>Cancelar</button>
                 </div>
               </div>
+            )}
+            {cartoesAberto && atual && podeVerCrm && (
+              <aside className={c.lateralCartoes} aria-label="Cartões em aberto no CRM" data-painel-cartoes>
+                <div className={c.lateralTopo}>
+                  <strong>Cartões em aberto</strong>
+                  <button type="button" className={c.botaoDonoTexto} onClick={() => setCartoesAberto(false)} aria-label="Fechar cartões">Fechar</button>
+                </div>
+                {!abertos || abertos.wa !== atual.wa_id ? <p className={c.lateralVazio}>Carregando…</p> : abertosAgora.length === 0 ? (
+                  <p className={c.lateralVazio}>Nenhum cartão em aberto para este contato.</p>
+                ) : (
+                  <ul className={c.lateralLista}>
+                    {abertosAgora.map((a) => (
+                      <li key={a.id}>
+                        <Link href={`/crm?cartao=${a.id}`} className={c.cartaoLateral} data-abrir-cartao={a.id} title="Abrir este cartão no CRM">
+                          <span className={c.cartaoLateralTopo}>
+                            <strong>{a.assunto ?? 'Sem assunto'}</strong>
+                            <span className={c.cartaoLateralEtapa} data-etapa={a.etapa}>{ETAPA_CARTAO[a.etapa] ?? a.etapa}</span>
+                          </span>
+                          <span className={c.cartaoLateralResumo}>{a.resumo || 'Sem resumo'}</span>
+                          <span className={c.cartaoLateralMeta}>
+                            Aberto: {datas.prazo(a.aberto_em)}{a.responsavel ? ` · ${a.responsavel}` : ''}{a.nome && a.nome !== atual.nome ? ` · ${a.nome}` : ''}
+                          </span>
+                          <span className={c.cartaoLateralAbrir}>Abrir no CRM →</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </aside>
             )}
             <div className={c.mensagens} ref={rolagem}>
               {carregando && <p className={c.carregando}>Carregando a conversa…</p>}

@@ -10,6 +10,7 @@ import { TrocarEmpresa } from './TrocarEmpresa';
 import { SairDaEmpresa } from './SairDaEmpresa';
 import { Faixa } from './planee/Faixa';
 import { Antecipar } from './Antecipar';
+import { ContadorComprovantes } from './comprovantes/ContadorComprovantes';
 import s from './shell.module.css';
 
 export function Shell({ atual, usuario, largo, children }: {
@@ -37,6 +38,7 @@ export function Shell({ atual, usuario, largo, children }: {
             <Link key={t.id} href={`/${t.id}`} prefetch={t.id === 'inbox' || t.id === 'crm' ? true : null} className={s.itemNav} aria-current={t.id === atual ? 'page' : undefined}>
               <Icone nome={t.icone} />
               <span>{t.nome}</span>
+              {t.id === 'comprovantes' && usuario.empresa && <ContadorComprovantes key={usuario.empresa.id} classe={s.contadorNav} />}
             </Link>
           ))}
         </nav>

@@ -59,3 +59,4 @@ export const carregarNovidades = (): R<typeof pl.listarNovidades> => ler('novida
 export const carregarIntegracoes = (): R<typeof pl.listarIntegracoes> => ler('integracoes');
 export const carregarResultados = (periodo: Intervalo): R<typeof rs.lerResultados> => ler('resultados', { de: periodo.de, ate: periodo.ate });
 export const carregarAgenda = (dia: string): R<typeof ag.lerAgenda> => ler('agenda', { dia });
+export const carregarComprovantes = (contar = false): R<typeof sv.filaComprovantes> => ler('comprovantes', { contar: contar ? '1' : null });
