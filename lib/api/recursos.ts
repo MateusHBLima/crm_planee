@@ -129,7 +129,7 @@ Object.assign(RECURSOS, {
       valor: 'valor pago em reais',
       pago_em: 'data e hora do pagamento (ISO)',
       forma: 'pix | cartao | boleto | dinheiro | outro',
-      descricao: 'a que se refere (ex.: sinal da consulta de 14/10)',
+      descricao: 'a que se refere (ex.: sinal do pedido de 14/10)',
       wamid: 'mensagem do WhatsApp em que veio',
       comprovante: '{pagador, banco, id_pix, recebedor, recebedor_documento, emitido_em}: o que está escrito no comprovante (migração 014)',
       criado_por: 'IA ou nome de quem anexou',
@@ -154,31 +154,57 @@ export function recurso(nome: string): Recurso | undefined {
   return Object.prototype.hasOwnProperty.call(RECURSOS, nome) ? RECURSOS[nome] : recursoDeModulo(nome);
 }
 
+// O que só existe no CRM de clínica (crm_config "modelo" = "clinica"): agendamentos da Feegow, protocolo e o
+// "paciente" da carga em lote. Em outro modelo (ex.: "empresa", SSA) nada disso aparece no catálogo (23/10).
+const SO_CLINICA_RECURSOS = new Set(['servicos']);
+const SO_CLINICA_CAMPOS: Record<string, string[]> = { contatos: ['protocolo', 'protocolo_obs', 'protocolo_por'] };
+
+function paraOModelo(r: Recurso, clinica: boolean): Recurso {
+  if (clinica) return r;
+  const tirar = SO_CLINICA_CAMPOS[r.nome];
+  const campos = tirar ? Object.fromEntries(Object.entries(r.campos).filter(([k]) => !tirar.includes(k))) : r.campos;
+  const filtros = tirar ? r.filtros.filter((f) => !tirar.includes(f)) : r.filtros;
+  const descricao = r.nome === 'contatos' ? 'Clientes. Telefone no formato 55 + DDD + número, só dígitos.' : semClinica(r.descricao);
+  return { ...r, campos, filtros, descricao };
+}
+
+// "agendamento" é palavra da clínica; fora dela, o mesmo registro é um "serviço".
+const semClinica = (t: string) => t.replace(/agendamentos?/g, (m) => (m.endsWith('s') ? 'serviços' : 'serviço'));
+
+export type EmpresaDoCatalogo = { slug: string | null; nome: string | null; dominio: string | null };
+
 // Descrição para quem usa a API (pessoa ou IA). ligados = módulos ligados na empresa do endereço chamado: os
-// recursos dos outros módulos não aparecem.
-export function catalogo(ligados: ReadonlySet<string> = new Set()) {
+// recursos dos outros módulos não aparecem. empresa vem no topo, para quem chama conferir antes de gravar.
+export function catalogo(ligados: ReadonlySet<string> = new Set(), modelo = 'clinica', empresa: EmpresaDoCatalogo | null = null) {
+  const clinica = modelo === 'clinica';
   const deModulos = modulosComParte().filter((m) => ligados.has(m.id));
-  const recursos = [...Object.values(RECURSOS), ...deModulos.flatMap((m) => Object.values(parteDoModulo(m.id)!.recursos))];
+  const recursos = [...Object.values(RECURSOS), ...deModulos.flatMap((m) => Object.values(parteDoModulo(m.id)!.recursos))]
+    .filter((r) => clinica || !SO_CLINICA_RECURSOS.has(r.nome))
+    .map((r) => paraOModelo(r, clinica));
   return {
+    empresa,
+    modelo,
     api: 'Painel Planee — API do CRM',
     versao: 'v1',
-    autenticacao: 'Cabeçalho Authorization: Bearer <chave>. Escopos: leitura, crm, config.',
+    autenticacao: 'Cabeçalho Authorization: Bearer <chave>. Escopos: leitura, crm, config. A chave só vale no endereço da empresa dela. Mande também X-Empresa: <slug> para a API recusar (409 empresa_divergente) se o endereço for de outra empresa.',
     regras: [
       'Nada é apagado de vez: "arquivar" marca arquivado = true.',
       'Mensagens de WhatsApp não são enviadas por esta API (passam pelo n8n).',
       'Toda escrita fica registrada em painel_auditoria.',
+      'POST em atendimentos, notas, oportunidades e /funil aceita "chave" (até 200 caracteres): a mesma chave devolve o que já existe, com repetido = true, em vez de criar outro.',
     ],
     para_a_ia: [
       'GET /api/v1/ficha?telefone=55... — ficha completa do telefone (contatos, atendimentos, notas, oportunidades, etapas do funil). "contatos" traz todas as pessoas do número, com papel, dono_do_numero e cpf_final. Escopo leitura.',
-      'POST /api/v1/pessoas/lote {"origem"?,"itens":[{"telefone","papel":"proprio|dependente|familiar|mesmo_numero|equipe_fornecedor","paciente":{"sistema":"feegow","codigo"},"nome"?,"cpf"?,"remover"?}]} — liga as pessoas aos números (até 500 por chamada, idempotente). Dependente que estava no contato do dono do número ganha contato próprio e leva os agendamentos dele. CPF só em contato sem CPF; nunca volta na resposta. Escopo crm.',
-      'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
-      'POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.',
-      'POST /api/v1/pagamentos {"telefone","servico"?:{sistema,codigo_externo},"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.',
+      ...(clinica ? ['POST /api/v1/pessoas/lote {"origem"?,"itens":[{"telefone","papel":"proprio|dependente|familiar|mesmo_numero|equipe_fornecedor","paciente":{"sistema":"feegow","codigo"},"nome"?,"cpf"?,"remover"?}]} — liga as pessoas aos números (até 500 por chamada, idempotente). Dependente que estava no contato do dono do número ganha contato próprio e leva os agendamentos dele. CPF só em contato sem CPF; nunca volta na resposta. Escopo crm.'] : [
+        'POST /api/v1/pessoas/lote {"origem"?,"itens":[{"telefone","papel":"proprio|dependente|familiar|mesmo_numero|equipe_fornecedor","nome"?,"cpf"?,"remover"?}]} — liga as pessoas aos números (até 500 por chamada, idempotente). CPF ou CNPJ só em contato sem documento; nunca volta na resposta. Escopo crm.']),
+      'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?,"chave"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
+      ...(clinica ? ['POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.'] : []),
+      `POST /api/v1/pagamentos {"telefone",${clinica ? '"servico"?:{sistema,codigo_externo},' : ''}"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.`,
       'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
       'POST /api/v1/automaticas/recusa {"telefone" | "contato_id","parar":true|false,"motivo"?} — para ou libera as mensagens automáticas da pessoa (todos os cadastros do telefone). Marcar de novo mantém a data original. A ficha traz automaticas.permitidas. Escopo crm.',
       'POST /api/v1/automaticas/envios {"telefone","tipo","situacao":"enviado|falhou|cancelado","chave","quando"?,"texto"?,"wamid"?,"motivo"?,"servico"?:{sistema,codigo_externo}} — registra o envio automático na linha do tempo do contato; mesma chave atualiza (repetido=true). Escopo crm.',
       ...deModulos.flatMap((m) => parteDoModulo(m.id)!.paraIa ?? []),
-    ],
+    ].map((t) => (clinica ? t : semClinica(t))),
     modulos: deModulos.map((m) => ({ id: m.id, nome: m.nome, descricao: m.descricao })),
     recursos: recursos.map((r) => ({
       nome: r.nome,

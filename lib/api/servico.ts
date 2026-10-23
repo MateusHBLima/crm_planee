@@ -11,6 +11,8 @@ import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { PAPEIS, pessoasDoNumero } from '@/lib/pessoas';
 import { exigirModulo, ligadosDaOperacao, parteDoModulo } from '@/lib/modulos-servidor';
+import { guardarChave, ROTAS_COM_CHAVE, tirarChave, travarChave } from './idempotencia';
+import { modeloDoCrm } from './empresa-api';
 
 // Operações da API. A rota HTTP e o conector MCP usam exatamente estas funções.
 
@@ -142,10 +144,13 @@ export async function obter(chave: Chave, nome: string, id: string) {
   return protegerDoc(r.tabela, res.rows[0]);
 }
 
-export async function criar(chave: Chave, nome: string, corpo: unknown) {
-  if (nome === 'pagamentos') return criarPagamento(chave, corpo);
+export async function criar(chave: Chave, nome: string, corpoComChave: unknown) {
+  if (nome === 'pagamentos') return criarPagamento(chave, corpoComChave);
   const r = await recursoLigado(chave, nome);
   exigirEscopo(chave, r.escrita);
+  // "chave" (migração 029): atendimentos, notas e oportunidades. Mesma chave devolve o que já existe.
+  const comChave = (ROTAS_COM_CHAVE as readonly string[]).includes(r.nome);
+  const { chave: idem, resto: corpo } = comChave ? tirarChave(corpoComChave) : { chave: undefined, resto: corpoComChave };
   const dados = limparDados(r, corpo);
   if (r.nome === 'contatos' && dados.protocolo) { dados.protocolo_em = new Date().toISOString(); if (!('protocolo_por' in dados)) dados.protocolo_por = chave.nome; }
   const cols = Object.keys(dados);
@@ -160,9 +165,18 @@ export async function criar(chave: Chave, nome: string, corpo: unknown) {
   const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
   try {
     return await transacao(async (c) => {
+      if (idem) {
+        const ja = await travarChave(c, r.nome, idem);
+        if (ja) {
+          const atual = await c.query(`select * from ${r.tabela} where id::text = $1`, [ja.alvo_id]);
+          return { ...protegerDoc(r.tabela, atual.rows[0] ?? ja.resposta), repetido: true };
+        }
+      }
       const res = await c.query(`insert into ${r.tabela} (${cols.join(', ')}) values (${ph}) returning *`, vals);
-      await auditar(c, chave, 'criar', r.nome, String(res.rows[0].id), dados);
-      return protegerDoc(r.tabela, res.rows[0]);
+      await auditar(c, chave, 'criar', r.nome, String(res.rows[0].id), idem ? { ...dados, chave: idem } : dados);
+      const saida = protegerDoc(r.tabela, res.rows[0]);
+      if (idem) await guardarChave(c, r.nome, idem, r.tabela, String(res.rows[0].id), saida);
+      return saida;
     }, bancoDe(chave));
   } catch (e) { if (e instanceof ErroApi) throw e; traduzErroBanco(e); }
 }
@@ -281,6 +295,8 @@ export async function ficha(chave: Chave, telefone: unknown) {
   const etapas = await db.query(`select id, nome, tipo, ordem from crm_etapas where not arquivado order by ordem, nome`);
   if (!cont.rows.length) return { encontrado: false, telefone: tel, contatos: [], etapas_funil: etapas.rows, automaticas: { permitidas: true, desde: null, motivo: null, por: null, ultimos_envios: [] } };
   const ids = cont.rows.map((c) => c.id);
+  // Modelo do CRM (crm_config "modelo", 23/10): fora da clínica, a ficha não traz agendamentos nem protocolo.
+  const clinica = (await modeloDoCrm(db)) === 'clinica';
   const [atend, ops, notas] = await Promise.all([
     db.query(
       `select a.id, a.contato_id, a.topico_id, t.nome as assunto, a.etapa, a.resumo, a.responsavel, a.aberto_por,
@@ -315,7 +331,7 @@ export async function ficha(chave: Chave, telefone: unknown) {
   const automaticas = await resumoParaFicha(db, ids);
   // Acompanhamento de protocolo (migração 025): banco sem a coluna devolve protocolo null.
   const prot = new Map<string, Record<string, unknown>>();
-  try {
+  if (clinica) try {
     const p = await db.query(`select id, protocolo, protocolo_obs, protocolo_em, protocolo_por from contatos where id = any($1) and protocolo is not null`, [ids]);
     for (const x of p.rows) prot.set(String(x.id), { situacao: x.protocolo, obs: x.protocolo_obs, desde: x.protocolo_em, por: x.protocolo_por });
   } catch (e) { if ((e as { code?: string }).code !== '42703') throw e; }
@@ -330,12 +346,12 @@ export async function ficha(chave: Chave, telefone: unknown) {
     encontrado: true,
     telefone: tel,
     automaticas,
-    servicos: servs.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
+    ...(clinica ? { servicos: servs.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })) } : {}),
     pagamentos: pags.rows.map((x) => ({ ...x, valor: x.valor === null ? null : Number(x.valor) })),
     contatos: cont.rows.map((c) => ({
       id: c.id, nome: c.nome, contato_desde: c.criado_em, papel: c.papel, dono_do_numero: c.dono,
       cpf_final: c.documento ? String(c.documento).replace(/\D/g, '').slice(-3) : null,
-      protocolo: prot.get(String(c.id)) ?? null,
+      ...(clinica ? { protocolo: prot.get(String(c.id)) ?? null } : {}),
       ...(extras.get(String(c.id)) ?? {}),
     })),
     atendimentos_abertos: atend.rows.filter((a) => a.etapa !== 'finalizado'),
@@ -351,7 +367,8 @@ export async function ficha(chave: Chave, telefone: unknown) {
 export async function moverNoFunil(chave: Chave, corpo: unknown) {
   exigirEscopo(chave, 'crm');
   if (!corpo || typeof corpo !== 'object') throw new ErroApi(400, 'Envie {"telefone", "etapa_id", "interesse"?, "valor"?, "nome"?, "so_avancar"?}.');
-  const d = corpo as Record<string, unknown>;
+  const { chave: idem, resto } = tirarChave(corpo);
+  const d = resto as Record<string, unknown>;
   const tel = normalizarTelefone(d.telefone);
   const etapaId = String(d.etapa_id ?? '');
   if (!ID_TEXTO.test(etapaId)) throw new ErroApi(400, 'Informe "etapa_id" (veja etapas_funil na ficha).');
@@ -359,7 +376,7 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
   if (valor !== undefined && (!Number.isFinite(valor) || valor < 0)) throw new ErroApi(400, 'Valor inválido.');
   const interesse = d.interesse === undefined ? undefined : String(d.interesse ?? '').trim().slice(0, 300) || null;
   const nome = String(d.nome ?? '').trim().slice(0, 120) || null;
-  return transacao(async (c) => {
+  const mover = async (c: PoolClient) => {
     const et = await c.query('select id, nome, tipo, ordem from crm_etapas where id = $1 and not arquivado', [etapaId]);
     if (!et.rowCount) throw new ErroApi(400, `Etapa "${etapaId}" não existe no funil.`);
     let cont = await c.query(`select id, nome from contatos where not arquivado and ${SQL_MESMO_TELEFONE('telefone', 1, 2)} order by criado_em limit 1`, chaveTelefone(tel));
@@ -432,6 +449,19 @@ export async function moverNoFunil(chave: Chave, corpo: unknown) {
       await auditar(c, chave, 'criar', 'oportunidades', op.id, { contato_id: contatoId, ...campos });
     }
     return { oportunidade: op, etapa: et.rows[0], contato_id: contatoId, criou: !viva.rowCount, movida: true };
+  };
+  return transacao(async (c) => {
+    // "chave" (migração 029): o mesmo pedido de novo devolve o que a primeira chamada fez, com a oportunidade como está agora.
+    if (idem) {
+      const ja = await travarChave(c, 'funil', idem);
+      if (ja) {
+        const atual = await c.query('select * from oportunidades where id::text = $1', [ja.alvo_id]);
+        return { ...ja.resposta, oportunidade: atual.rows[0] ?? ja.resposta.oportunidade, criou: false, movida: false, repetido: true };
+      }
+    }
+    const r = await mover(c);
+    if (idem && r.oportunidade?.id) await guardarChave(c, 'funil', idem, 'oportunidades', String(r.oportunidade.id), r);
+    return r;
   }, bancoDe(chave));
 }
 
