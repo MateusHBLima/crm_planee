@@ -9,6 +9,19 @@ Tudo que dá para criar e editar no CRM passa por esta API. As telas do painel e
 
 **Qual empresa (decisão 26):** o endereço chamado escolhe o banco. No domínio de uma empresa (ex.: `https://painel.clinica.com.br/api/v1`), a chave é conferida e os dados são lidos e gravados no banco daquela empresa. No endereço geral (`adm.planeelabia.com`), vale o banco padrão do deploy. Cada chave existe só no banco da empresa dela.
 
+## Nunca misturar empresas (23/10, migração 029)
+
+Pedido do SSA AUGUSTO: "de forma alguma pode misturar as coisas de empresas". Camadas, da mais forte para a mais fraca:
+
+1. **Banco separado.** Cada empresa tem o seu banco (decisão 26); o banco diz de quem é (`painel_empresa`, migração 027) e o SQL de módulo aborta no banco errado.
+2. **Chave presa à empresa.** A chave só existe no banco da empresa dela: usada no endereço de outra empresa, dá `401`. A recusa vai para `central_auditoria` (`acao = 'api_chave_recusada'`, empresa e endereço chamados, rota e só os 8 primeiros caracteres do hash; nunca a chave). No máximo 1 registro por minuto para a mesma chave no mesmo endereço.
+3. **Empresa em toda resposta.** Cabeçalho `X-Painel-Empresa: <slug>` em toda resposta da REST (inclusive erro). `GET /api/v1`, `descrever_crm`, a ficha (`/ficha` e `ficha_do_contato`) e a config (`/config` e `ler_config`) trazem no topo `"empresa": {"slug", "nome", "dominio"}`. O conector diz a empresa ao conectar (`instructions` e `serverInfo`). Quem grava confere o `slug` antes.
+4. **`X-Empresa: <slug>` (recomendado em toda escrita de integração).** Se não for a empresa do endereço, a API responde `409` com `detalhe.codigo = "empresa_divergente"` antes de tocar no banco; o conector MCP responde `409` ao lote inteiro.
+5. **Nada de clínica fora da clínica.** `crm_config` `modelo` diferente de `"clinica"` (ex.: `"empresa"`) tira do catálogo o recurso `servicos` (agendamentos Feegow), os campos e o filtro de protocolo em `contatos`, o `paciente` de `pessoas/lote` e o `servicos/registrar`; a ficha vem sem `servicos` e sem `protocolo`. Sem a chave `modelo`, vale `"clinica"` (como os bancos antigos nasceram).
+6. **Uma chave por integração e por empresa**, criada pelo Mateus; nunca passa pelos chats.
+
+**Idempotência por `chave`.** `POST /api/v1/atendimentos`, `/notas`, `/oportunidades` e `/funil` (e `criar`/`mover_no_funil` no conector) aceitam `"chave"` (texto de negócio, até 200 caracteres, ex.: `chamado:tel:maquina:cidade:dia`). A mesma chave na mesma rota devolve o que a primeira chamada criou, como está agora, com `"repetido": true` (status `200` em vez de `201`); reenvios ao mesmo tempo esperam o primeiro e também não duplicam. No `/funil`, a mesma chave não move de novo (o pedido já foi feito). Sem `chave`, tudo como antes. A chave vale só no banco da empresa (a mesma chave em outra empresa é outra). Banco sem a migração 029: mandar `chave` dá `503`; sem `chave`, funciona.
+
 ## O que dá para fazer
 
 | Recurso | O que é | Escrita |
@@ -16,7 +29,7 @@ Tudo que dá para criar e editar no CRM passa por esta API. As telas do painel e
 | `etapas` | etapas do funil comercial | `config` |
 | `topicos` | assuntos do quadro de atendimento | `config` |
 | `config` | configuração livre (termo do contato, nomes das etapas de atendimento, campos do cartão...) | `config` |
-| `contatos` | pacientes ou clientes (CPF ou CNPJ) | `crm` |
+| `contatos` | pacientes ou clientes (CPF ou CNPJ); fora da clínica, só clientes | `crm` |
 | `oportunidades` | cartões do funil comercial | `crm` |
 | `atendimentos` | solicitações do quadro de atendimento | `crm` |
 | `notas` | notas internas em contatos, oportunidades e atendimentos | `crm` |
