@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { ErroApi, registrarErro } from '@/lib/db';
+import { bancoDaEmpresa, ErroApi, registrarErro } from '@/lib/db';
 import { autenticar, chaveDoCabecalho } from '@/lib/api/auth';
-import { hostDeCabecalhos } from '@/lib/empresa';
+import { empresaDoDominio, hostDeCabecalhos } from '@/lib/empresa';
+import { conferirEmpresaEsperada, empresaDaApi, modeloDoCrm, type EmpresaDaApi } from '@/lib/api/empresa-api';
 import { ligadosDoEndereco } from '@/lib/modulos-servidor';
 import { catalogo, RECURSOS } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
@@ -20,12 +21,12 @@ const FERRAMENTAS = [
   { name: 'descrever_crm', description: 'Mostra tudo que dá para criar e editar no CRM: recursos, campos, filtros e regras. Chame primeiro.', inputSchema: { type: 'object', properties: {} } },
   { name: 'listar', description: 'Lista registros de um recurso, com filtros opcionais.', inputSchema: { type: 'object', properties: { recurso: recursoProp, filtros: { type: 'object', additionalProperties: { type: 'string' } }, limite: { type: 'number' } }, required: ['recurso'] } },
   { name: 'obter', description: 'Lê um registro pelo id.', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' } }, required: ['recurso', 'id'] } },
-  { name: 'criar', description: 'Cria um registro. Para etapas e topicos, informe também "id" (texto curto).', inputSchema: { type: 'object', properties: { recurso: recursoProp, dados: { type: 'object' } }, required: ['recurso', 'dados'] } },
+  { name: 'criar', description: 'Cria um registro. Para etapas e topicos, informe também "id" (texto curto). Em atendimentos, notas e oportunidades, "chave" nos dados evita duplicar: a mesma chave devolve o que já existe (repetido=true).', inputSchema: { type: 'object', properties: { recurso: recursoProp, dados: { type: 'object' } }, required: ['recurso', 'dados'] } },
   { name: 'atualizar', description: 'Edita campos de um registro (ex.: mover atendimento de etapa, renomear etapa).', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' }, dados: { type: 'object' } }, required: ['recurso', 'id', 'dados'] } },
   { name: 'arquivar', description: 'Arquiva um registro (nada é apagado de vez).', inputSchema: { type: 'object', properties: { recurso: recursoProp, id: { type: 'string' } }, required: ['recurso', 'id'] } },
   { name: 'ficha_do_contato', description: 'Tudo o que o CRM sabe de um telefone: quem é (nome, final do CPF, desde quando), atendimentos abertos e recentes, notas, oportunidades do funil e as etapas do funil. Use antes de responder para não repetir oferta nem perder o contexto.', inputSchema: { type: 'object', properties: { telefone: { type: 'string', description: 'DDD + número, com ou sem 55' } }, required: ['telefone'] } },
-  { name: 'mover_no_funil', description: 'Coloca o telefone numa etapa do funil comercial: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). etapa_id vem de etapas_funil na ficha. so_avancar=true só move para frente (ex.: horários enviados).', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, etapa_id: { type: 'string' }, interesse: { type: 'string' }, valor: { type: 'number' }, nome: { type: 'string' }, so_avancar: { type: 'boolean' } }, required: ['telefone', 'etapa_id'] } },
-  { name: 'parar_automaticas', description: 'Para (parar=true) ou volta a liberar (parar=false) as mensagens automáticas (aniversário, lembretes, follow-up) para o telefone. Use quando o paciente pedir para não receber mais mensagens.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, parar: { type: 'boolean' }, motivo: { type: 'string' } }, required: ['telefone', 'parar'] } },
+  { name: 'mover_no_funil', description: 'Coloca o telefone numa etapa do funil comercial: move a oportunidade em aberto dele ou cria uma (e o contato, se faltar). etapa_id vem de etapas_funil na ficha. so_avancar=true só move para frente. "chave" evita repetir o mesmo pedido (repetido=true).', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, etapa_id: { type: 'string' }, interesse: { type: 'string' }, valor: { type: 'number' }, nome: { type: 'string' }, so_avancar: { type: 'boolean' }, chave: { type: 'string' } }, required: ['telefone', 'etapa_id'] } },
+  { name: 'parar_automaticas', description: 'Para (parar=true) ou volta a liberar (parar=false) as mensagens automáticas (aniversário, lembretes, follow-up) para o telefone. Use quando a pessoa pedir para não receber mais mensagens.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, parar: { type: 'boolean' }, motivo: { type: 'string' } }, required: ['telefone', 'parar'] } },
   { name: 'registrar_envio_automatico', description: 'Registra no CRM uma mensagem automática enviada, que falhou ou foi cancelada. "chave" é única por envio: repetir atualiza em vez de duplicar.', inputSchema: { type: 'object', properties: { telefone: { type: 'string' }, tipo: { type: 'string', description: 'aniversario, lembrete_2d, lembrete_dia, followup_1h, followup_3h, followup_d1, followup_tarde, followup_transferencia, retomada ou outro (letras minúsculas, números e _). Follow-up e retomada enviados movem o funil.' }, situacao: { type: 'string', enum: ['enviado', 'falhou', 'cancelado'] }, quando: { type: 'string' }, texto: { type: 'string' }, wamid: { type: 'string' }, motivo: { type: 'string' }, servico: { type: 'object', properties: { sistema: { type: 'string' }, codigo_externo: { type: 'string' } } }, chave: { type: 'string' } }, required: ['telefone', 'tipo', 'situacao', 'chave'] } },
   { name: 'ler_config', description: 'Lê a configuração do CRM (todas ou uma chave).', inputSchema: { type: 'object', properties: { chave: { type: 'string' } } } },
   { name: 'definir_config', description: 'Cria ou altera uma configuração do CRM (ex.: termo_contato, etapas_atendimento, campos_cartao).', inputSchema: { type: 'object', properties: { chave: { type: 'string' }, valor: {} }, required: ['chave', 'valor'] } },
@@ -36,9 +37,14 @@ type Rpc = { jsonrpc: '2.0'; id?: string | number | null; method: string; params
 const ok = (id: Rpc['id'], result: unknown) => ({ jsonrpc: '2.0', id: id ?? null, result });
 const falha = (id: Rpc['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 
-async function chamar(chaveTexto: string | null, host: string | null, nome: string, a: Record<string, unknown>) {
-  if (nome === 'descrever_crm') return catalogo(await ligadosDoEndereco(host));
-  const chave = await autenticar(chaveTexto, host);
+const comEmpresa = (empresa: EmpresaDaApi, r: unknown) => ({ empresa, ...(r as Record<string, unknown>) });
+
+async function chamar(chaveTexto: string | null, host: string | null, empresa: EmpresaDaApi, nome: string, a: Record<string, unknown>) {
+  if (nome === 'descrever_crm') {
+    const modelo = await modeloDoCrm(bancoDaEmpresa(await empresaDoDominio(host)));
+    return catalogo(await ligadosDoEndereco(host), modelo, empresa);
+  }
+  const chave = await autenticar(chaveTexto, host, `mcp ${nome}`);
   const rec = String(a.recurso ?? '');
   switch (nome) {
     case 'listar': return s.listar(chave, rec, (a.filtros as Record<string, string>) ?? {}, Number(a.limite));
@@ -46,24 +52,29 @@ async function chamar(chaveTexto: string | null, host: string | null, nome: stri
     case 'criar': return s.criar(chave, rec, a.dados);
     case 'atualizar': return s.atualizar(chave, rec, String(a.id ?? ''), a.dados);
     case 'arquivar': return s.arquivar(chave, rec, String(a.id ?? ''));
-    case 'ficha_do_contato': return s.ficha(chave, a.telefone);
+    case 'ficha_do_contato': return comEmpresa(empresa, await s.ficha(chave, a.telefone));
     case 'mover_no_funil': return s.moverNoFunil(chave, a);
     case 'parar_automaticas': return auto.recusaAutomaticas(chave, a);
     case 'registrar_envio_automatico': return auto.registrarEnvioAutomatico(chave, a);
-    case 'ler_config': return s.lerConfig(chave, a.chave ? String(a.chave) : undefined);
+    case 'ler_config': return comEmpresa(empresa, await s.lerConfig(chave, a.chave ? String(a.chave) : undefined));
     case 'definir_config': return s.definirConfig(chave, String(a.chave ?? ''), a.valor);
     default: throw new ErroApi(404, `Ferramenta "${nome}" não existe.`);
   }
 }
 
-async function responder(msg: Rpc, chaveTexto: string | null, host: string | null) {
+// Nome da empresa no conector (23/10): quem conecta vê de qual empresa é o CRM antes de qualquer chamada.
+function quemE(e: EmpresaDaApi) {
+  return e.slug ? `${e.nome ?? e.slug} (empresa "${e.slug}", ${e.dominio ?? 'sem endereço'})` : `banco padrão (${e.dominio ?? 'sem endereço'})`;
+}
+
+async function responder(msg: Rpc, chaveTexto: string | null, host: string | null, empresa: EmpresaDaApi) {
   switch (msg.method) {
     case 'initialize':
       return ok(msg.id, {
         protocolVersion: (msg.params?.protocolVersion as string) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'painel-planee-crm', version: '1.0.0' },
-        instructions: 'CRM do Painel Planee. Chame descrever_crm antes de criar ou editar. Nada é apagado de vez; mensagens de WhatsApp não saem por aqui.',
+        serverInfo: { name: `painel-planee-crm-${empresa.slug ?? 'padrao'}`, title: `Painel Planee — ${empresa.nome ?? empresa.slug ?? 'banco padrão'}`, version: '1.1.0' },
+        instructions: `CRM do Painel Planee da empresa ${quemE(empresa)}. Tudo o que você ler ou gravar aqui é desta empresa e de nenhuma outra: confira "empresa" nas respostas antes de gravar. Chame descrever_crm antes de criar ou editar. Nada é apagado de vez; mensagens de WhatsApp não saem por aqui.`,
       });
     case 'ping':
       return ok(msg.id, {});
@@ -73,7 +84,7 @@ async function responder(msg: Rpc, chaveTexto: string | null, host: string | nul
       const nome = String(msg.params?.name ?? '');
       const args = (msg.params?.arguments as Record<string, unknown>) ?? {};
       try {
-        const r = await chamar(chaveTexto, host, nome, args);
+        const r = await chamar(chaveTexto, host, empresa, nome, args);
         return ok(msg.id, { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] });
       } catch (e) {
         const m = e instanceof ErroApi ? e.message + (e.detalhe ? ` ${JSON.stringify(e.detalhe)}` : '') : 'Erro interno.';
@@ -102,10 +113,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ k?: string
   } catch { return NextResponse.json(falha(null, -32700, 'JSON inválido.'), { status: 400 }); }
   const lista = Array.isArray(entrada) ? entrada : [entrada];
   if (lista.length > MAX_LOTE) return NextResponse.json(falha(null, -32600, `No máximo ${MAX_LOTE} chamadas por lote.`), { status: 400 });
+  const host = hostDeCabecalhos(req.headers);
+  const empresa = await empresaDaApi(host);
+  // X-Empresa: <slug> (23/10): endereço de outra empresa = nada é feito.
+  try { conferirEmpresaEsperada(req.headers.get('x-empresa'), empresa); } catch (e) {
+    const m = e instanceof ErroApi ? e.message : 'Empresa divergente.';
+    return NextResponse.json(falha(null, -32600, m), { status: 409 });
+  }
   const respostas = [];
   for (const m of lista) {
     if (m.id === undefined || m.id === null) continue; // notificação: sem resposta
-    respostas.push(await responder(m, chaveTexto, hostDeCabecalhos(req.headers)));
+    respostas.push(await responder(m, chaveTexto, host, empresa));
   }
   if (!respostas.length) return new NextResponse(null, { status: 202 });
   return NextResponse.json(Array.isArray(entrada) ? respostas : respostas[0]);
