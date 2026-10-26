@@ -45,12 +45,14 @@ sobe_auth 3600
 export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste PAINEL_CHAVE_CIFRA="chave-de-teste-local-com-mais-de-32-caracteres"
 # Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
 export PORTA_N8N=${PORTA_N8N:-3999}
-export N8N_WEBHOOK_PAINEL_ENVIAR="http://127.0.0.1:$PORTA_N8N/painel-enviar" N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
+export N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
 export N8N_WEBHOOK_PAINEL_RETOMAR="http://127.0.0.1:$PORTA_N8N/painel-retomar"
 # Espelho da agenda: Feegow falsa (agenda.js), token só na variável, sem rodada automática durante os testes.
 export FEEGOW_API_URL="http://127.0.0.1:${PORTA_FEEGOW:-3997}" FEEGOW_TOKEN_TESTE="token-feegow-falso" PAINEL_AGENDA=0
 # Receptor falso (o inbox.js sobe): entrega as mídias pelo link curto que o painel cria.
 export RECEPTOR_URL="http://127.0.0.1:${PORTA_RECEPTOR:-3998}"
+# Envio pela Inbox (26/10): o painel chama POST /whatsapp/enviar do receptor (falso) com esta chave.
+export RECEPTOR_CHAVE_INTERNA="chave-interna-de-teste"
 # Módulos (docs/modulos.md): o build dos testes tem o módulo fictício "teste_notas", e sem memória (o teste marca e
 # roda o SQL do módulo e confere na hora).
 export NEXT_PUBLIC_PAINEL_MODULO_TESTE=1 PAINEL_MODULOS_CACHE_MS=0

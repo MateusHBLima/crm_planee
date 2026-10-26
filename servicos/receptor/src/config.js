@@ -24,6 +24,8 @@ export const config = {
   graphUrl: (env.META_GRAPH_URL || 'https://graph.facebook.com').replace(/\/+$/, ''),
   graphVersao: env.META_GRAPH_VERSAO || 'v23.0',
   encaminharPadrao: env.ENCAMINHAR_PADRAO || '',
+  // Resposta pela Inbox do painel vira eco (smb_message_echoes) para a IA da empresa: [EQUIPE] no histórico. 0 desliga.
+  ecoDoPainel: env.PAINEL_ECO_PARA_IA !== '0',
   // Só estes campos vão para a Sara: o que ela já recebe hoje (mensagens, status e ecos da equipe).
   // Histórico da conexão e agenda do celular ficam só no painel (milhares de mensagens antigas não podem virar atendimento).
   // Evento com mais de N minutos (a Meta reenviando depois de uma falha) é guardado e aparece na Inbox, mas não vai
