@@ -496,6 +496,41 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await ctx.close();
   sql(`update empresas set modulos = array_remove(modulos, 'inbox.ver') where id = 'clinica-outra'`);
 
+  // ---- Comprovante ligado à mensagem (26/10): "Ver na conversa" abre a Inbox na mensagem, destacada ----
+  const tinhaInbox = sql(`select 'inbox.ver' = any(modulos) from empresas where id = 'teste'`) === 't';
+  const tinhaPag = sql(`select 'pagamentos.ver' = any(modulos) from empresas where id = 'teste'`) === 't';
+  sql(`update empresas set modulos = array(select distinct unnest(modulos || array['inbox.ver','pagamentos.ver'])) where id = 'teste'`);
+  // 150 mensagens depois da do comprovante: ela fica fora da primeira página (100) e a tela precisa buscar a anterior.
+  sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em)
+         select '${NUM}', '${BIA}', 'wamid.ENCHE' || g, 'entrada', 'contato', 'text', 'Mensagem de enchimento ' || g, ${ONTEM} + make_interval(mins => 20 + g)
+           from generate_series(1, 150) g;
+       insert into pagamentos (contato_id, valor, forma, wamid, criado_por, descricao)
+         values ('00000000-0000-4000-8000-000000000001', 800, 'pix', 'wamid.TI1', 'IA', 'Comprovante de teste da Inbox');`);
+  [ctx, p] = await novo();
+  await entrar(p, GERAL, 'gestor@teste.local', 'senha123', '/comprovantes');
+  await p.waitForTimeout(1500);
+  const linkConv = p.locator('[data-ver-conversa]').first();
+  ok('fila de comprovantes tem "Ver na conversa"', (await linkConv.count()) === 1 && ((await linkConv.getAttribute('href')) || '').includes('msg=wamid.TI1'),
+    await linkConv.getAttribute('href').catch(() => ''));
+  await linkConv.click();
+  await p.waitForURL(/\/inbox\?msg=/, { timeout: 8000 }).catch(() => {});
+  await p.locator('[data-destaque="true"]').waitFor({ timeout: 15000 }).catch(() => {});
+  const dest = p.locator('[data-destaque="true"]');
+  ok('abre a conversa certa, busca a página antiga e destaca a mensagem do comprovante', (await dest.count()) === 1
+    && ((await dest.textContent()) || '').includes('Oi, gostaria de marcar uma consulta'), ((await dest.textContent().catch(() => '')) || '').slice(0, 120));
+  const visivel = await dest.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; }).catch(() => false);
+  ok('a mensagem destacada está na tela (rolou até ela)', visivel);
+  const selo = p.locator('[data-comprovante]').first();
+  ok('a mensagem mostra o comprovante com valor e paciente', (await selo.count()) === 1 && /R\$\s?800,00/.test((await selo.textContent()) || '') && ((await selo.textContent()) || '').includes('Marina Teste'),
+    ((await selo.textContent().catch(() => '')) || '').slice(0, 120));
+  const statusMsg = await p.evaluate(async () => (await fetch('/inbox?msg=wamid.NAO_EXISTE')).status);
+  await p.goto(GERAL + '/inbox?msg=wamid.NAO_EXISTE'); await p.waitForTimeout(2000);
+  ok('mensagem que não está no espelho avisa, sem quebrar a tela', statusMsg === 200 && ((await p.textContent('body')) || '').includes('ainda não está no espelho'));
+  await ctx.close();
+  sql(`delete from pagamentos where descricao = 'Comprovante de teste da Inbox'; delete from wa_mensagens where wamid like 'wamid.ENCHE%';`);
+  if (!tinhaPag) sql(`update empresas set modulos = array_remove(modulos, 'pagamentos.ver') where id = 'teste'`);
+  if (!tinhaInbox) sql(`update empresas set modulos = array_remove(modulos, 'inbox.ver') where id = 'teste'`);
+
   // ---- Sem inbox.ver: a tela não abre nem por URL ----
   sql(`update painel_vinculos set permissoes = array_remove(permissoes, 'inbox.ver') where usuario_id = (select id from painel_usuarios where email = 'amanda@teste.local') and empresa_id = 'teste'`);
   [ctx, p] = await novo();

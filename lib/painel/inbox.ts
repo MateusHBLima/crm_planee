@@ -76,6 +76,8 @@ export type Mensagem = {
   citada: { encontrada: boolean; tipo: string | null; texto: string | null; direcao: string | null } | null;
   // Mensagem automática da IA (follow-up, retomada, lembrete...), casada com envios_automaticos pelo wamid ou pelo texto.
   automatica?: string | null;
+  // Comprovante registrado a partir desta mensagem (pagamentos.wamid, 26/10), só para quem vê os comprovantes.
+  comprovante?: { id: string; valor: number | null; paciente: string | null; conferido: boolean; suspeito: boolean } | null;
 };
 // selo: mensagens automáticas da IA (follow-up, recusa), migração 017; null sem selo ou sem a 017.
 export type ConversaAberta = { conversa: Conversa; mensagens: Mensagem[]; temMais: boolean; fuso: string; selo: Selo | null };
@@ -224,7 +226,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   // o "lida" da equipe e o registro de acesso do master. Selo e registro são extras: falha neles não derruba a tela.
   // As automáticas são casadas depois do texto da Sara completado (o casamento usa o texto quando falta o wamid).
   const completar = completarFalasDaIa(banco, waId, linhas);
-  const [, seloBruto, leu, , autos] = await Promise.all([
+  const [, seloBruto, leu, , autos, comprovantes] = await Promise.all([
     completar,
     primeira
       ? seloDoTelefone(banco, waId, entrada ? new Date(entrada as string).toISOString() : null).catch((e) => { registrarErro('selo das automáticas', e); return null; })
@@ -232,6 +234,8 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     marcar ? marcarLida(u, numeroId, waId) : Promise.resolve(false),
     registrarAbertura(u, numeroId, waId).catch((e) => registrarErro('registro de abertura da conversa', e)),
     completar.then(() => automaticasDaPagina(banco, waId, linhas)).catch((e) => { registrarErro('automáticas na conversa', e); return new Map<string, string>(); }),
+    pode(u, 'pagamentos.ver') ? comprovantesDaPagina(banco, linhas).catch((e) => { registrarErro('comprovantes na conversa', e); return new Map<string, NonNullable<Mensagem['comprovante']>>(); })
+      : Promise.resolve(new Map<string, NonNullable<Mensagem['comprovante']>>()),
   ]);
   if (marcar) {
     conversa.nao_lidas = 0;
@@ -258,6 +262,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
       editada: Boolean(m.editada_em), apagada: Boolean(m.apagada_em), em: iso(m.enviada_em) as string,
       reacoes: porWamid.get(String(m.wamid)) ?? [],
       automatica: autos.get(String(m.id)) ?? null,
+      comprovante: comprovantes.get(String(m.wamid)) ?? null,
       citada: m.resposta_a
         ? cit
           ? { encontrada: true, tipo: String(cit.tipo), texto: mascarar(cit.texto == null ? null : String(cit.texto)), direcao: String(cit.direcao) }
@@ -266,6 +271,35 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     };
   });
   return { conversa, mensagens, temMais, fuso: fuso(), selo };
+}
+
+// Comprovantes registrados a partir das mensagens da página (pagamentos.wamid, migração 013). O nome é o do paciente
+// do pagamento, que pode não ser o dono do número (a mãe paga a consulta do filho). Banco sem a 013: nenhum.
+async function comprovantesDaPagina(banco: ReturnType<typeof db>, linhas: Record<string, unknown>[]) {
+  const mapa = new Map<string, NonNullable<Mensagem['comprovante']>>();
+  const wamids = linhas.filter((m) => m.direcao === 'entrada' && m.wamid).map((m) => String(m.wamid));
+  if (!wamids.length) return mapa;
+  let r;
+  try {
+    r = await banco.query(
+      `select p.id, p.wamid, p.valor, p.conferido_em is not null as conferido, p.analise = 'suspeito' as suspeito, c.nome
+         from pagamentos p left join contatos c on c.id = p.contato_id
+        where p.wamid = any($1::text[]) and not p.arquivado order by p.criado_em`, [wamids]);
+  } catch (e) { if ((e as { code?: string }).code === '42P01') return mapa; throw e; }
+  for (const x of r.rows) {
+    mapa.set(String(x.wamid), { id: String(x.id), valor: x.valor == null ? null : Number(x.valor), paciente: (x.nome as string) ?? null, conferido: Boolean(x.conferido), suspeito: Boolean(x.suspeito) });
+  }
+  return mapa;
+}
+
+// Link "Ver na conversa" (26/10): acha a conversa de uma mensagem pelo wamid, no banco da empresa de quem pediu.
+export async function localizarMensagem(u: Usuario, wamid: string): Promise<{ numero_id: string; wa_id: string; id: string }> {
+  const w = String(wamid ?? '');
+  if (!WAMID.test(w)) throw new ErroApi(400, 'Mensagem inválida.');
+  const r = await consultar(() => db(u).query(
+    `select numero_id, wa_id, id::text as id from wa_mensagens where wamid = $1 order by id limit 1`, [w]));
+  if (!r.rowCount) throw new ErroApi(404, 'Essa mensagem ainda não está no espelho do WhatsApp.');
+  return r.rows[0];
 }
 
 // Quais mensagens da página saíram como automáticas da IA (envios_automaticos, migração 017): pelo wamid ou, quando a

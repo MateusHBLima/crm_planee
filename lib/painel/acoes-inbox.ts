@@ -16,6 +16,11 @@ export async function abrirConversa(numeroId: string, waId: string, antesDeId?: 
   return comUsuario((u) => inbox.lerConversa(u, numeroId, waId, antesDeId, { marcar: !antesDeId }), 'inbox');
 }
 
+// "Ver na conversa" de um comprovante (26/10): devolve a conversa da mensagem para a Inbox abrir nela.
+export async function localizarMensagem(wamid: string) {
+  return comUsuario((u) => inbox.localizarMensagem(u, wamid), 'inbox');
+}
+
 // Resposta pelo painel: vai ao webhook do n8n; a mensagem entra no espelho quando o receptor registra o envio.
 // Devolve o wamid para a tela mostrar a bolha "enviando…" até a conversa trazer a mensagem.
 export async function enviarMensagem(numeroId: string, waId: string, texto: string) {

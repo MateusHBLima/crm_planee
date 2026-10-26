@@ -113,6 +113,7 @@ function Item({ p, fila, quando, onFila, onErro, onAviso }: {
       {fila.marca && p.baixado_em && <p className={c.meta}>Baixado na {fila.marca} por {p.baixado_por ?? 'equipe'} em {quando(p.baixado_em)}</p>}
       <div className={c.acoes}>
         {p.tem_arquivo && <a className={c.botaoSec} href={`/api/painel/pagamentos/${p.id}/arquivo`} target="_blank" rel="noopener noreferrer" data-ver-comprovante>Ver comprovante</a>}
+        {p.mensagem_wamid && <Link className={c.botaoSec} href={`/inbox?msg=${encodeURIComponent(p.mensagem_wamid)}`} data-ver-conversa>Ver na conversa</Link>}
         {cartao && <Link className={c.botaoSec} href={`/crm?cartao=${cartao}`} data-abrir-cartao={cartao}>Abrir cartão</Link>}
         {fila.podeConferir && fila.marca && (
           <label className={c.marca}>

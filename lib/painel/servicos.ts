@@ -38,6 +38,8 @@ export type Pagamento = {
   conferido_em: string | null; conferido_por: string | null; criado_por: string | null; criado_em: string; alerta_atendimento_id: string | null;
   // O que está escrito no comprovante (migração 014; antes dela, tudo vazio).
   comprovante: { pagador: string | null; banco: string | null; id_pix: string | null; recebedor: string | null; recebedor_documento: string | null; emitido_em: string | null } | null;
+  // Mensagem do WhatsApp em que o comprovante chegou (26/10): "Ver na conversa" abre a Inbox nela. Só para quem vê a Inbox.
+  mensagem_wamid: string | null;
 };
 export type EventoHistorico = {
   quando: string; tipo: 'atendimento' | 'nota' | 'servico' | 'pagamento' | 'automatica'; texto: string; quem: string | null;
@@ -60,7 +62,8 @@ function limparServico(r: Record<string, unknown>): Servico {
     criado_em: iso(r.criado_em) as string, atualizado_em: iso(r.atualizado_em) as string, atendimento_id: (r.atendimento_id as string) ?? null,
   };
 }
-function limparPagamento(r: Record<string, unknown>, master: boolean): Pagamento {
+function limparPagamento(r: Record<string, unknown>, u: Usuario): Pagamento {
+  const master = u.master;
   const motivos = (Array.isArray(r.analise_motivos) ? r.analise_motivos : []).map(String);
   return {
     id: String(r.id), servico_id: (r.servico_id as string) ?? null, atendimento_id: (r.atendimento_id as string) ?? null, valor: num(r.valor),
@@ -71,6 +74,7 @@ function limparPagamento(r: Record<string, unknown>, master: boolean): Pagamento
     conferido_em: iso(r.conferido_em), conferido_por: (r.conferido_por as string) ?? null, criado_por: (r.criado_por as string) ?? null,
     criado_em: iso(r.criado_em) as string, alerta_atendimento_id: (r.alerta_atendimento_id as string) ?? null,
     comprovante: comprovanteDe(r, master),
+    mensagem_wamid: r.wamid && pode(u, 'inbox.ver') ? String(r.wamid) : null,
   };
 }
 
@@ -120,7 +124,7 @@ export async function historicoContato(u: Usuario, contatoId: string): Promise<H
         banco.query(`${SEL_PAGAMENTO} where contato_id = $1 and not arquivado order by criado_em desc limit 100`, [contatoId]),
       ]);
       servicos = s.rows.map(limparServico);
-      pagamentos = p.rows.map((x) => limparPagamento(x, u.master));
+      pagamentos = p.rows.map((x) => limparPagamento(x, u));
     } catch (e) {
       if (!semTabela(e)) throw e;
       instalado = false;
@@ -168,7 +172,7 @@ export async function detalheServico(u: Usuario, id: string): Promise<{ servico:
   const s = await banco.query(`${SEL_SERVICO} where id = $1`, [id]).catch((e) => { if (semTabela(e)) throw new ErroApi(503, 'Agendamentos ainda não instalados nesta empresa.'); throw e; });
   if (!s.rowCount) throw new ErroApi(404, 'Agendamento não encontrado.');
   const p = await banco.query(`${SEL_PAGAMENTO} where servico_id = $1 and not arquivado order by criado_em`, [id]);
-  return { servico: limparServico(s.rows[0]), pagamentos: p.rows.map((x) => limparPagamento(x, u.master)) };
+  return { servico: limparServico(s.rows[0]), pagamentos: p.rows.map((x) => limparPagamento(x, u)) };
 }
 
 // Quem confere age em nome próprio, com o escopo "crm" mesmo sem crm.editar.
@@ -315,7 +319,7 @@ export async function filaComprovantes(u: Usuario, soContar = false): Promise<Fi
     marca ? banco.query(`${SEL} where not p.arquivado and p.conferido_em > now() - interval '14 days' and p.baixado_em is null order by p.conferido_em desc limit 100`) : null,
   ]);
   const limpar = (x: Record<string, unknown>): ItemFila => ({
-    ...limparPagamento(x, u.master),
+    ...limparPagamento(x, u),
     contato_id: String(x.contato_id), contato_nome: (x.contato_nome as string) ?? null, telefone: (x.contato_telefone as string) ?? null,
     servico: x.servico_tipo ? { tipo: String(x.servico_tipo), inicio: iso(x.servico_inicio), profissional: (x.servico_profissional as string) ?? null } : null,
     baixado_em: comMarca ? iso(x.baixado_em) : null, baixado_por: comMarca ? ((x.baixado_por as string) ?? null) : null,
