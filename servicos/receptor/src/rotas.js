@@ -7,6 +7,7 @@ import { erroCurto, log } from './log.js';
 let mapa = new Map();
 let lidoEm = 0;
 let segredosNumeros = [];
+let segredoPorNumero = new Map(); // phone_number_id -> segredo do app (assinar o eco do envio pelo painel)
 
 function abrir(cifrado) {
   if (!cifrado) return null;
@@ -19,20 +20,22 @@ export const segredosDosNumeros = () => segredosNumeros;
 export async function recarregarRotas() {
   try {
     const r = await central().query(
-      `select n.phone_number_id, n.empresa_id, n.encaminhar_url, n.baixar_midias, n.telefone, e.banco_url_cifrado,
+      `select n.phone_number_id, n.empresa_id, n.encaminhar_url, n.baixar_midias, n.telefone, n.waba_id, e.banco_url_cifrado,
               to_jsonb(n) ->> 'token_cifrado' as token_cifrado, to_jsonb(n) ->> 'app_secret_cifrado' as app_secret_cifrado
          from whatsapp_numeros n join empresas e on e.id = n.empresa_id
         where n.ativo and e.ativo`);
     const segredos = new Set();
+    const porNumero = new Map();
     mapa = new Map(r.rows.map((x) => {
       // Token e segredo do app cadastrados no painel (cifrados). Sem cadastro, valem META_TOKEN e META_APP_SECRET.
       x.meta_token = abrir(x.token_cifrado);
       const s = abrir(x.app_secret_cifrado);
-      if (s) segredos.add(s);
+      if (s) { segredos.add(s); porNumero.set(x.phone_number_id, s); }
       delete x.token_cifrado; delete x.app_secret_cifrado;
       return [x.phone_number_id, x];
     }));
     segredosNumeros = [...segredos];
+    segredoPorNumero = porNumero;
     lidoEm = Date.now();
   } catch (e) {
     log('erro', 'não consegui reler os números; sigo com a lista anterior', { erro: erroCurto(e) });
@@ -63,4 +66,9 @@ export function destinoDoRepasse(numero) {
 // Token da Meta do número: o cadastrado no painel ou, sem cadastro, o META_TOKEN do receptor.
 export function tokenDoNumero(numero) {
   return rotaEmCache(numero)?.meta_token || config.metaToken || '';
+}
+
+// Segredo do app da Meta do número (cadastrado no painel) ou, sem cadastro, o primeiro de META_APP_SECRET.
+export function segredoDoNumero(numero) {
+  return segredoPorNumero.get(String(numero)) || config.appSecrets[0] || '';
 }

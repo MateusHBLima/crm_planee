@@ -1,5 +1,5 @@
 import 'server-only';
-import { criarLinkMidia } from '@/lib/midia-link';
+import { baseReceptor, criarLinkMidia } from '@/lib/midia-link';
 import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
 import { atorDe, pode, type Usuario } from '@/lib/sessao';
 import * as api from '@/lib/api/servico';
@@ -362,7 +362,8 @@ const MAX_TEXTO = 4096;
 const WAMID = /^[A-Za-z0-9_.=:+/-]{1,200}$/;
 export const MSG_FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
 
-// Manda a resposta ao webhook do n8n (painel_enviar), que envia pela Meta e registra no receptor.
+// Manda a resposta ao receptor (POST /whatsapp/enviar, 26/10), que envia pela Meta com o token do número, grava no
+// espelho e repassa o eco para a IA da empresa ([EQUIPE] no histórico). Nenhum workflow de envio no n8n.
 // Só dentro da janela de 24 h (fora dela a Meta exige modelo aprovado). Toda tentativa vai para a auditoria
 // central, sem o texto. Erro do n8n ou da Meta volta como mensagem curta, sem repassar o corpo da resposta.
 export async function enviarMensagem(u: Usuario, numeroId: string, waId: string, texto: string): Promise<{ wamid: string }> {
@@ -379,8 +380,8 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   if (!entrada) throw new ErroApi(409, 'Este contato ainda não escreveu para a clínica: a Meta só permite começar a conversa com modelo aprovado. Responda pelo celular.');
   if (Date.now() - entrada >= JANELA_MS) throw new ErroApi(409, MSG_FORA_DA_JANELA);
 
-  const url = process.env.N8N_WEBHOOK_PAINEL_ENVIAR;
-  if (!url) throw new ErroApi(503, 'Envio pelo painel ainda não configurado.');
+  const chave = process.env.RECEPTOR_CHAVE_INTERNA;
+  if (!chave) throw new ErroApi(503, 'Envio pelo painel ainda não configurado (falta RECEPTOR_CHAVE_INTERNA na stack do painel).');
 
   // Quem responde pelo painel assume a conversa: a Sara não fala junto. Devolver é um clique.
   await assumirAoEnviar(u, banco, numeroId, waId);
@@ -392,10 +393,11 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   let resposta: { ok?: unknown; wamid?: unknown; erro?: unknown } | null = null;
   let status = 0;
   try {
-    const x = await fetch(url, {
-      method: 'POST', signal: ctrl.signal,
-      headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
-      body: JSON.stringify({ evento: 'painel_enviar', empresa: u.empresa!.id, numero_id: numeroId, para: waId, texto: t, por: u.nome, usuario_id: u.id }),
+    // O receptor confere o número (só envia por número cadastrado, com o token dele) e a chave interna.
+    const x = await fetch(`${baseReceptor()}/whatsapp/enviar`, {
+      method: 'POST', signal: ctrl.signal, cache: 'no-store',
+      headers: { 'content-type': 'application/json', 'x-receptor-chave': chave },
+      body: JSON.stringify({ phone_number_id: numeroId, to: waId, texto: t, por: u.nome }),
     });
     status = x.status;
     resposta = await x.json().catch(() => null);

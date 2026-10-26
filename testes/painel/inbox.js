@@ -41,8 +41,8 @@ const chamarAcao = (p, id, args) => p.evaluate(async ({ id, args }) => {
   return r.status + ' ' + await r.text();
 }, { id, args });
 
-// n8n falso (webhook painel_enviar): confere o segredo, guarda o pedido e, como o receptor faria depois do envio
-// pela Meta, grava a mensagem no espelho com origem 'painel' e quem mandou em bruto.por.
+// n8n falso: recebe o aviso conversa_devolvida (painel_retomar) e confere o segredo. Os pedidos de envio (receptor
+// falso, abaixo) entram na mesma lista, para os testes contarem tudo o que saiu do painel.
 const n8n = { pedidos: [], n: 0 };
 const dolar = (t) => '$q$' + String(t).replace(/\$q\$/g, '') + '$q$';
 const servidorN8n = http.createServer((req, res) => {
@@ -51,22 +51,33 @@ const servidorN8n = http.createServer((req, res) => {
     n8n.pedidos.push({ url: req.url, segredo: req.headers['x-painel-segredo'], corpo: d });
     const responder = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (req.headers['x-painel-segredo'] !== process.env.N8N_WEBHOOK_SEGREDO) return responder({ ok: false, erro: 'segredo' });
-    if (req.url === '/painel-retomar') return responder({ ok: true });
-    if (String(d.texto).includes('FALHAR')) return responder({ ok: false, erro: '131026', detalhe: 'Resposta com DADO_SENSIVEL do n8n' });
-    const wamid = `wamid.TESTE${++n8n.n}`;
-    sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
-           values (${dolar(d.numero_id)}, ${dolar(d.para)}, '${wamid}', 'saida', 'painel', 'text', ${dolar(d.texto)}, 'enviada', now(), now(),
-                   jsonb_build_object('origem', 'registro', 'por', ${dolar(d.por)}));
-         update wa_conversas set ultima_em = now(), ultima_resumo = left(${dolar(d.texto)}, 160), ultima_direcao = 'saida'
-          where numero_id = ${dolar(d.numero_id)} and wa_id = ${dolar(d.para)};`);
-    responder({ ok: true, wamid });
+    responder({ ok: true });
   });
 });
+// Envio pela Inbox (POST /whatsapp/enviar no receptor, 26/10): confere a chave interna e, como o receptor faria depois
+// de enviar pela Meta, grava a mensagem no espelho com origem 'painel' e quem mandou em bruto.por.
+function receptorEnviar(req, res) {
+  let corpo = ''; req.on('data', (x) => { corpo += x; }); req.on('end', () => {
+    const d = (() => { try { return JSON.parse(corpo); } catch { return {}; } })();
+    n8n.pedidos.push({ url: req.url, chave: req.headers['x-receptor-chave'], corpo: d });
+    const responder = (st, o) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (req.headers['x-receptor-chave'] !== process.env.RECEPTOR_CHAVE_INTERNA) return responder(401, { erro: 'chave inválida' });
+    if (String(d.texto).includes('FALHAR')) return responder(200, { ok: false, erro: '131026', detalhe: 'Resposta com DADO_SENSIVEL do receptor' });
+    const wamid = `wamid.TESTE${++n8n.n}`;
+    sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, status_em, enviada_em, bruto)
+           values (${dolar(d.phone_number_id)}, ${dolar(d.to)}, '${wamid}', 'saida', 'painel', 'text', ${dolar(d.texto)}, 'enviada', now(), now(),
+                   jsonb_build_object('origem', 'registro', 'por', ${dolar(d.por)}));
+         update wa_conversas set ultima_em = now(), ultima_resumo = left(${dolar(d.texto)}, 160), ultima_direcao = 'saida'
+          where numero_id = ${dolar(d.phone_number_id)} and wa_id = ${dolar(d.to)};`);
+    responder(200, { ok: true, wamid });
+  });
+}
 
 // Receptor falso (GET /whatsapp/midia/<token>): como o de verdade, só entrega enquanto o link vale na central.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const receptor = { pedidos: [] };
 const servidorReceptor = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/whatsapp/enviar') return receptorEnviar(req, res);
   const tok = (req.url.match(/^\/whatsapp\/midia\/(?:[a-z0-9-]+\/)?([A-Za-z0-9_-]{24,128})$/) || [])[1];
   const achou = tok ? sql(`select caminho || '|' || coalesce(mime, '') from wa_midia_links where token = '${tok}' and expira_em > now()`) : '';
   receptor.pedidos.push({ tok, achou });
@@ -314,10 +325,10 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     ((await bolhaR.textContent().catch(() => '')) || '').slice(0, 120));
   ok('a bolha "enviando…" some quando o espelho traz a mensagem', (await conversa(p).locator('[data-pendente]').count()) === 0 && (await p.inputValue('#resposta-inbox')) === '');
   const ped = n8n.pedidos[n8n.pedidos.length - 1] || { corpo: {} };
-  ok('webhook recebe o segredo e os campos certos', ped.url === '/painel-enviar' && ped.segredo === 'segredo-n8n-de-teste' && ped.corpo.evento === 'painel_enviar'
-    && ped.corpo.empresa === 'teste' && ped.corpo.numero_id === NUM && ped.corpo.para === BIA && ped.corpo.texto === 'Resposta fictícia pelo painel'
-    && ped.corpo.por === 'Amanda Teste' && ped.corpo.usuario_id === idAmanda, JSON.stringify(ped).slice(0, 300));
-  ok('painel não grava no espelho: a linha é a do "receptor" (n8n falso)', sql(`select count(*) || '|' || min(origem) from wa_mensagens where texto = 'Resposta fictícia pelo painel'`) === '1|painel');
+  ok('receptor recebe a chave interna e os campos certos', ped.url === '/whatsapp/enviar' && ped.chave === process.env.RECEPTOR_CHAVE_INTERNA
+    && ped.corpo.phone_number_id === NUM && ped.corpo.to === BIA && ped.corpo.texto === 'Resposta fictícia pelo painel'
+    && ped.corpo.por === 'Amanda Teste', JSON.stringify({ ...ped, chave: ped.chave ? '…' : null }).slice(0, 300));
+  ok('painel não grava no espelho: a linha é a do receptor (falso)', sql(`select count(*) || '|' || min(origem) from wa_mensagens where texto = 'Resposta fictícia pelo painel'`) === '1|painel');
   const audE = sql(`select a.empresa_id || '|' || a.alvo || '|' || coalesce(a.detalhe::text, '') from central_auditoria a where a.acao = 'enviar_mensagem' order by a.id desc limit 1`);
   ok('envio registrado na auditoria central, sem o texto', Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`)) === audEnvioAntes + 1
     && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);

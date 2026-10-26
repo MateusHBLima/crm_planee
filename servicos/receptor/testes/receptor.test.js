@@ -102,6 +102,11 @@ before(async () => {
     graphPedidos.push({ metodo: req.method, url: req.url, auth: req.headers.authorization, corpo: corpo.toString() });
     const json = (st, o) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (!['Bearer token-meta-falso', 'Bearer token-do-numero-novo'].includes(req.headers.authorization)) return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
+    if (req.method === 'POST' && req.url.endsWith('/messages')) { // envio pela Inbox do painel
+      const c = JSON.parse(corpo.toString() || '{}');
+      if (String(c.text?.body).includes('FALHAR')) return json(400, { error: { code: 131047, message: 'Re-engagement message' } });
+      return json(200, { messaging_product: 'whatsapp', contacts: [{ input: c.to, wa_id: c.to }], messages: [{ id: `wamid.ENVIADA${graphPedidos.length}` }] });
+    }
     if (req.method === 'POST') return json(200, { success: true });
     if (req.url.includes('fields=')) return json(200, { display_phone_number: '+55 47 90000-0002', verified_name: 'Empresa Ficticia Dois', id: '100000000000002' });
     if (req.url.startsWith('/arquivo/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from('JPEGFALSO')); }
@@ -362,6 +367,40 @@ test('o painel registra o que a equipe mandou: origem painel e quem mandou (por)
   assert.equal((await reg({ phone_number_id: NUM, to: PAC, wamid: 'wamid.PAINEL3', texto: 'origem estranha', origem: 'celular', por: 'Alguém' })).status, 200);
   const [m3] = await msgs("where wamid = 'wamid.PAINEL3'");
   assert.equal(m3.origem, 'api'); assert.equal(m3.bruto.por, undefined);
+});
+
+test('o painel envia pela Inbox: o receptor manda pela Meta, grava no espelho e repassa o eco para a IA', async () => {
+  const env = (corpo, chave = 'chave-interna-teste') => fetch(`${B}/whatsapp/enviar`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': chave }, body: JSON.stringify(corpo) });
+  assert.equal((await env({ phone_number_id: NUM, to: PAC, texto: 'x' }, 'errada')).status, 401, 'sem a chave interna, recusa');
+  const antes = graphPedidos.length;
+  const r = await env({ phone_number_id: NUM, to: PAC, texto: 'Oi, aqui é o Dr. Ficticio.', por: 'Dr. Ficticio' });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.ok, true); assert.match(j.wamid, /^wamid\.ENVIADA/);
+  const g = graphPedidos.slice(antes).find((x) => x.url.endsWith(`/${NUM}/messages`));
+  assert.ok(g, 'não chamou a Graph API'); assert.equal(g.auth, 'Bearer token-meta-falso');
+  const c = JSON.parse(g.corpo);
+  assert.equal(c.to, PAC); assert.equal(c.type, 'text'); assert.equal(c.text.body, 'Oi, aqui é o Dr. Ficticio.');
+  const [m] = await msgs(`where wamid = '${j.wamid}'`);
+  assert.equal(m.origem, 'painel'); assert.equal(m.direcao, 'saida'); assert.equal(m.texto, 'Oi, aqui é o Dr. Ficticio.'); assert.equal(m.bruto.por, 'Dr. Ficticio');
+  // Eco para a IA, no formato da Meta e assinado como ela: o n8n grava [EQUIPE] e não responde junto.
+  const rep = await ate(() => n8n.recebidos.find((x) => x.corpo.includes(j.wamid)));
+  assert.ok(rep, 'eco não chegou na IA'); assert.equal(rep.url, '/sara');
+  assert.equal(rep.assinatura, assinar(rep.corpo), 'eco assinado com o segredo do app');
+  const e = JSON.parse(rep.corpo);
+  const ch = e.entry[0].changes[0];
+  assert.equal(ch.field, 'smb_message_echoes'); assert.equal(ch.value.metadata.phone_number_id, NUM);
+  assert.deepEqual(ch.value.message_echoes[0], { from: MEU, to: PAC, id: j.wamid, timestamp: ch.value.message_echoes[0].timestamp, type: 'text', text: { body: 'Oi, aqui é o Dr. Ficticio.' } });
+  assert.deepEqual(e.painel, { origem: 'painel', por: 'Dr. Ficticio' });
+  // Meta recusa: {ok:false, erro:<código>}, nada gravado nem repassado.
+  const nRec = n8n.recebidos.length;
+  const f = await (await env({ phone_number_id: NUM, to: PAC, texto: 'FALHAR por favor', por: 'x' })).json();
+  assert.deepEqual(f, { ok: false, erro: '131047' });
+  assert.equal((await q("select count(*)::int n from wa_mensagens where texto = 'FALHAR por favor'"))[0].n, 0);
+  await esperar(400); assert.equal(n8n.recebidos.length, nRec);
+  // Número sem dono: 404. Pedido mal formado: 400.
+  assert.equal((await env({ phone_number_id: '999999', to: PAC, texto: 'oi' })).status, 404);
+  assert.equal((await env({ phone_number_id: NUM, to: PAC, texto: '' })).status, 400);
 });
 
 test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', async () => {

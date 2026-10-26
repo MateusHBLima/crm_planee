@@ -41,7 +41,9 @@ export async function graphApi(caminho, token, { metodo = 'GET', corpo } = {}) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) {
     const e = j.error || {};
-    throw new Error(`Meta ${r.status}${e.code ? ` (código ${e.code})` : ''}: ${String(e.message || 'sem detalhe').slice(0, 160)}`);
+    const erro = new Error(`Meta ${r.status}${e.code ? ` (código ${e.code})` : ''}: ${String(e.message || 'sem detalhe').slice(0, 160)}`);
+    erro.codigoMeta = e.code != null ? String(e.code) : null;
+    throw erro;
   }
   return j;
 }

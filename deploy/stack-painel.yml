@@ -13,7 +13,8 @@ services:
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - CENTRAL_DATABASE_URL=${CENTRAL_DATABASE_URL:-}
       - PAINEL_CHAVE_CIFRA=${PAINEL_CHAVE_CIFRA:-}
-      - N8N_WEBHOOK_PAINEL_ENVIAR=${N8N_WEBHOOK_PAINEL_ENVIAR:-}
+      # Envio pela Inbox (26/10): o painel chama o receptor (POST /whatsapp/enviar) com a MESMA chave da stack do receptor.
+      - RECEPTOR_CHAVE_INTERNA=${RECEPTOR_CHAVE_INTERNA:-}
       - N8N_WEBHOOK_PAINEL_RETOMAR=${N8N_WEBHOOK_PAINEL_RETOMAR:-}
       - N8N_WEBHOOK_SEGREDO=${N8N_WEBHOOK_SEGREDO:-}
       - PAINEL_FUSO=America/Sao_Paulo
