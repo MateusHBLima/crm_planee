@@ -63,6 +63,9 @@ async function contato(c, numero, waId, campos) {
     [numero, waId, campos.nome_perfil ?? null, campos.nome_salvo ?? null, campos.removido ?? null, 'nome_salvo' in campos]);
 }
 
+// Resumo da lista para a mensagem que a IA mandou e cujo texto ainda não chegou (só o status da Meta).
+const ENVIADA = 'Mensagem enviada';
+
 async function conversa(c, numero, waId, { em, resumo: r, direcao, contarNaoLida, zerar }) {
   await c.query(
     `insert into wa_conversas (numero_id, wa_id, ultima_em, ultima_resumo, ultima_direcao, ultima_entrada_em, nao_lidas, lida_ate)
@@ -169,7 +172,7 @@ async function status(c, numero, s) {
   const em = quando(s.timestamp);
   const waId = digitos(s.recipient_id);
   // Mensagem enviada pela API (Sara) que ainda não conhecemos: cria a linha só com o status.
-  await c.query(
+  const r = await c.query(
     `insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, status, status_em, erro, enviada_em)
      values ($1,$2,$3,'saida','api','desconhecido',$4,$5,$6,$5)
      on conflict (numero_id, wamid) do update set
@@ -179,9 +182,13 @@ async function status(c, numero, s) {
          when coalesce(($7::jsonb ->> excluded.status)::int, 0) > coalesce(($7::jsonb ->> wa_mensagens.status)::int, 0) then excluded.status
          else wa_mensagens.status end,
        status_em = case when excluded.status_em >= coalesce(wa_mensagens.status_em, '-infinity') then excluded.status_em else wa_mensagens.status_em end,
-       erro = coalesce(excluded.erro, wa_mensagens.erro)`,
+       erro = coalesce(excluded.erro, wa_mensagens.erro)
+     returning (xmax = 0) as nova`,
     [numero, waId || 'desconhecido', s.id, novo, em, s.errors ? JSON.stringify(s.errors) : null, JSON.stringify(ORDEM_STATUS)]);
-  if (waId) await conversa(c, numero, waId, { em, resumo: null, direcao: 'saida', contarNaoLida: false, zerar: false }).catch(() => undefined);
+  // Entregue/lida de mensagem já conhecida não é mensagem nova: a conversa não muda (27/10). Antes, o status virava
+  // a "última de saída" com o texto do contato ("Clínica: Sim" na lista). Só a mensagem que o receptor ainda não
+  // conhecia (a IA mandou pela API e o texto não veio) conta como saída, com o resumo provisório.
+  if (waId && r.rows[0]?.nova) await conversa(c, numero, waId, { em, resumo: ENVIADA, direcao: 'saida', contarNaoLida: false, zerar: false });
 }
 
 // Histórico da coexistência: chega em blocos (fases 0-1, 1-90 e 90-180 dias), na conexão do número.
@@ -318,6 +325,10 @@ export async function registrarEnvio(d) {
        returning (xmax = 0) as nova`,
       [numero, waId, m.id, m.type, textoDe(m), midiaDe(m), quando(m.timestamp), bruto, origem, por]);
     await conversa(c, numero, waId, { em: quando(m.timestamp), resumo: resumo(m.type, textoDe(m)), direcao: 'saida', contarNaoLida: false, zerar: false });
+    // O status chegou antes e a lista mostra o resumo provisório: troca pelo texto, se ela ainda for a última.
+    await c.query(
+      `update wa_conversas set ultima_resumo = $3 where numero_id = $1 and wa_id = $2 and ultima_direcao = 'saida' and ultima_resumo = $4`,
+      [numero, waId, resumo(m.type, textoDe(m)), ENVIADA]);
     if (origem === 'painel') await renovarDono(c, numero, waId, quando(m.timestamp));
     return x.rows[0]?.nova;
   });

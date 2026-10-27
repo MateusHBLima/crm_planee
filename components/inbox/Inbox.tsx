@@ -17,20 +17,22 @@ import { ProtocoloRapido } from '@/components/crm/Protocolo';
 import c from './inbox.module.css';
 
 // Inbox (fases 1.1, 2.1 e 2.3): lista de conversas à esquerda e a conversa aberta à direita, com a caixa de resposta
-// e os botões Assumir / Devolver pra Sara para quem tem inbox.responder. Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto
+// e os botões Assumir / Devolver para a IA para quem tem inbox.responder. Atualiza a lista e a conversa aberta a cada 10 s, sem tirar a pessoa do ponto
 // onde ela rolou. A resposta enviada aparece como "enviando…" até o receptor gravá-la no espelho.
 
 const ATUALIZA_MS = 10000;
 type Chave = { numero_id: string; wa_id: string };
 type Aberta = Omit<ConversaAberta, 'fuso'>;
 type Pendente = { chave: string; wamid: string; texto: string; em: string };
-const FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
+const FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o contato escrever.';
 const chaveDe = (k: Chave) => k.numero_id + ':' + k.wa_id;
-// WhatsApp Web oficial da clínica, já na conversa do contato. Fora das 24 h a equipe manda por ali (sem modelo);
-// a mensagem volta para a Inbox pelo eco da coexistência e a Sara fica pausada pela regra do celular.
+// WhatsApp Web oficial da empresa, já na conversa do contato. Fora das 24 h a equipe manda por ali (sem modelo);
+// a mensagem volta para a Inbox pelo eco da coexistência e a IA fica pausada pela regra do celular.
 const linkWhatsApp = (waId: string) => `https://web.whatsapp.com/send?phone=${encodeURIComponent(waId)}`;
 
-const AUTOR: Record<Mensagem['origem'], string> = { contato: '', api: 'Sara', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
+// Quem mandou cada mensagem. O nome do agente de IA vem da empresa (crm_config "agente", 27/10), nunca do código.
+const AUTOR: Record<Exclude<Mensagem['origem'], 'api'>, string> = { contato: '', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
+const rotuloDe = (origem: Mensagem['origem'], agente: string) => (origem === 'api' ? agente : AUTOR[origem] ?? '');
 const MIDIA: Record<string, string> = {
   image: 'Foto', audio: 'Áudio', video: 'Vídeo', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contacts: 'Contato',
 };
@@ -91,6 +93,7 @@ const ETAPA_CARTAO: Record<string, string> = { aguardando: 'Aguardando equipe', 
 
 export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
+  const agente = lista.agente || 'IA'; // lista guardada antes de 27/10 não traz o nome
   const inicialRef = useRef(inicial);
   // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
   const memLista = `${empresaId}:conversas`;
@@ -270,7 +273,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     return null;
   }, [aplicarAtualizacao, atualizarLinha]);
 
-  // Assumir (a Sara fica quieta nesta conversa) ou devolver para a Sara.
+  // Assumir (a IA fica quieta nesta conversa) ou devolver para a IA.
   const trocarDono = useCallback(async (dono: 'ia' | 'humano', prazo: '24h' | 'sempre' = '24h') => {
     const k = abertaRef.current;
     if (!k) return;
@@ -422,12 +425,12 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
           </label>
           <div className={c.filtros}>
             <button type="button" className={c.filtro} aria-pressed={soFollowup} onClick={() => setSoFollowup((x) => !x)}
-              title="Contatos que receberam follow-up da Sara e ainda não responderam">Em follow-up</button>
+              title={`Contatos que receberam follow-up da ${agente} e ainda não responderam`}>Em follow-up</button>
             <button type="button" className={c.filtro} aria-pressed={soNaoLidas} data-filtro-nao-lidas onClick={() => setSoNaoLidas((x) => !x)}
               title="Só as conversas não lidas (inclusive as marcadas como não lidas)">Não lidas{naoLidas ? ` · ${naoLidas}` : ''}</button>
           </div>
           {falhouAtualizar && <p className={c.subErro}>Sem conexão com o banco agora. Tentando de novo.</p>}
-          {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado e acesso registrado. Abrir uma conversa não a marca como lida para a clínica.</p>}
+          {mascarado && <p className={c.notaMaster}>Visão da Planee: CPF mascarado e acesso registrado. Abrir uma conversa não a marca como lida para a equipe.</p>}
         </div>
         <ul className={c.itens}>
           {visiveis.map((k) => (
@@ -441,7 +444,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     <span className={c.itemHora}>{datas.lista(k.ultima_em)}</span>
                   </span>
                   <span className={c.itemLinha}>
-                    <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Clínica: ' : ''}{k.ultima_resumo ?? ''}</span>
+                    <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Você: ' : ''}{k.ultima_resumo ?? ''}</span>
                     {lista.linhas && k.numero_id !== principal && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
                     {k.dono === 'humano' && (
                       <span className={c.tagEquipe} data-sempre={k.dono_sempre ? 'true' : undefined}
@@ -501,7 +504,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                           ? atual.dono_sempre
                             ? `Fixa com a equipe${atual.dono_por ? ' · ' + atual.dono_por : ''}`
                             : `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}${atual.dono_ate ? ` · até ${datas.prazo(atual.dono_ate)}` : ''}`
-                          : atual.pausa_ate ? `Sara pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : 'Sara atendendo'}
+                          : atual.pausa_ate ? `${agente} pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : `${agente} atendendo`}
                       </span>
                       {atual.lida_por && atual.lida_em && (
                         <span className={c.lidaPor} data-lida-por title="Quem da equipe abriu a conversa por último">
@@ -509,7 +512,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                         </span>
                       )}
                       {dados?.selo && (
-                        <span className={c.seloAuto} data-selo={dados.selo.tipo} title={`Mensagens automáticas da Sara · desde ${datas.hora(dados.selo.desde)}`}>
+                        <span className={c.seloAuto} data-selo={dados.selo.tipo} title={`Mensagens automáticas da ${agente} · desde ${datas.hora(dados.selo.desde)}`}>
                           {dados.selo.texto}
                         </span>
                       )}
@@ -543,7 +546,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                       title="Volta a contar como não lida, para lembrar de responder depois">Marcar como não lida</button>
                     {podeResponder && (
                       <a href={linkWhatsApp(atual.wa_id)} target="whatsapp-clinica" rel="noopener noreferrer"
-                        title="Abre o WhatsApp Web da clínica nesta conversa. O que você mandar por lá aparece aqui.">
+                        title="Abre o WhatsApp Web da empresa nesta conversa. O que você mandar por lá aparece aqui.">
                         Abrir no WhatsApp
                       </a>
                     )}
@@ -551,16 +554,16 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                   {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
                       onClick={() => (atual.dono === 'humano' ? trocarDono('ia') : setEscolhendoPrazo(true))}
-                      title={atual.dono === 'humano' ? 'A Sara volta a responder esta conversa' : 'A Sara fica quieta nesta conversa: por 24 h ou sempre'}>
-                      {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? 'Devolver pra Sara' : 'Assumir'}
+                      title={atual.dono === 'humano' ? `${agente} volta a responder esta conversa` : `${agente} fica quieta nesta conversa: por 24 h ou sempre`}>
+                      {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? `Devolver pra ${agente}` : 'Assumir'}
                     </button>
                   )}
                   {podeResponder && atual.dono !== 'humano' && escolhendoPrazo && (
                     <span className={c.prazoDono} role="group" aria-label="Assumir por quanto tempo">
                       <button type="button" className={c.botaoDonoForte} disabled={mudandoDono} onClick={() => trocarDono('humano', '24h')}
-                        title="A Sara volta sozinha 24 h depois da última resposta da equipe">Por 24 h</button>
+                        title={`${agente} volta sozinha 24 h depois da última resposta da equipe`}>Por 24 h</button>
                       <button type="button" className={c.botaoDono} disabled={mudandoDono} onClick={() => trocarDono('humano', 'sempre')}
-                        title="A conversa fica com você até alguém clicar em Devolver pra Sara">Sempre</button>
+                        title={`A conversa fica com você até alguém clicar em Devolver pra ${agente}`}>Sempre</button>
                       <button type="button" className={c.botaoDonoTexto} onClick={() => setEscolhendoPrazo(false)}>Cancelar</button>
                     </span>
                   )}
@@ -634,10 +637,10 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                 return (
                   <div key={m.id} className={c.bloco}>
                     {novoDia && <div className={c.dia} role="separator"><span>{datas.separador(m.em)}</span></div>}
-                    <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} numeroId={dados.conversa.numero_id} waId={dados.conversa.wa_id}
+                    <Bolha m={m} agente={agente} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} numeroId={dados.conversa.numero_id} waId={dados.conversa.wa_id}
                       destacada={m.id === destaque}
                       onAvisar={mascarado || !aberta ? undefined : () => setAvisando({
-                        numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato'),
+                        numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato', agente),
                         trecho: m.texto || (MIDIA[m.tipo] ?? null),
                       })} />
                   </div>
@@ -749,8 +752,8 @@ function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; o
   );
 }
 
-const autorDe = (m: Mensagem, nomeContato: string) =>
-  m.direcao === 'entrada' ? nomeContato : m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${AUTOR[m.origem]} · ${m.por}` : AUTOR[m.origem] || 'Clínica';
+const autorDe = (m: Mensagem, nomeContato: string, agente: string) =>
+  m.direcao === 'entrada' ? nomeContato : m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${rotuloDe(m.origem, agente)} · ${m.por}` : rotuloDe(m.origem, agente) || 'Equipe';
 
 // Menu "⋯" de cada mensagem. Hoje só "Avisar a Planee"; outras ações entram aqui.
 function MenuMensagem({ lado, onAvisar }: { lado: 'esquerda' | 'direita'; onAvisar: () => void }) {
@@ -850,14 +853,14 @@ function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; w
   );
 }
 
-function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar, destacada = false }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void; destacada?: boolean }) {
+function Bolha({ m, agente, hora, nomeContato, numeroId, waId, onAvisar, destacada = false }: { m: Mensagem; agente: string; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void; destacada?: boolean }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' || (m.origem === 'historico' && m.por === 'IA') ? 'sara' : 'equipe';
-  const autor = (m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${AUTOR[m.origem]} · ${m.por}` : AUTOR[m.origem] || (m.automatica ? 'Sara' : '')) + (m.automatica ? ` · ${m.automatica}` : '');
+  const autor = (m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${rotuloDe(m.origem, agente)} · ${m.por}` : rotuloDe(m.origem, agente) || (m.automatica ? agente : '')) + (m.automatica ? ` · ${m.automatica}` : '');
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
   const rotMidia = MIDIA[m.tipo];
   let conteudo: React.ReactNode;
   if (m.origem === 'api' && m.tipo === 'desconhecido' && !m.texto) {
-    conteudo = <p className={c.semTexto}>Mensagem da Sara (texto ainda não registrado)</p>;
+    conteudo = <p className={c.semTexto}>Mensagem da {agente} (texto ainda não registrado)</p>;
   } else if (m.tipo === 'unsupported') {
     conteudo = <p className={c.semTexto}>Tipo de mensagem não suportado</p>;
   } else if (rotMidia) {
@@ -885,7 +888,7 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar, destacada = fal
           <blockquote className={c.citada}>
             {m.citada.encontrada ? (
               <>
-                <span className={c.citadaAutor}>{m.citada.direcao === 'entrada' ? nomeContato : 'Clínica'}</span>
+                <span className={c.citadaAutor}>{m.citada.direcao === 'entrada' ? nomeContato : 'Você'}</span>
                 <span className={c.citadaTexto}>{m.citada.texto || MIDIA[m.citada.tipo ?? ''] || 'Mensagem'}</span>
               </>
             ) : <span className={c.citadaTexto}>Mensagem citada não está no espelho</span>}
@@ -897,7 +900,7 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar, destacada = fal
       {m.reacoes.length > 0 && (
         <span className={c.reacoes}>
           {m.reacoes.map((r, i) => (
-            <span key={i} title={r.daEmpresa ? 'Reação da clínica' : 'Reação do contato'}>{r.emoji}</span>
+            <span key={i} title={r.daEmpresa ? 'Reação da equipe' : 'Reação do contato'}>{r.emoji}</span>
           ))}
         </span>
       )}

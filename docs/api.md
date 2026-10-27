@@ -38,6 +38,8 @@ Rotas de cada recurso: `GET /api/v1/<recurso>` (lista, com filtros na URL), `POS
 
 Ferramentas do conector MCP: `descrever_crm`, `listar`, `obter`, `criar`, `atualizar`, `arquivar`, `ler_config`, `definir_config`, `ficha_do_contato`, `mover_no_funil`.
 
+**Nome do agente de IA** (27/10): configuração `agente` = `{"nome": "Sara"}` (`PUT /api/v1/config/agente` ou `definir_config`). A Inbox usa esse nome no autor das mensagens da API, em "Devolver pra …", "… atendendo" e "… pausada". Sem a chave, aparece "IA". O nome tem até 40 caracteres.
+
 ## Para a IA (Sara)
 
 Dois atalhos pelo telefone, para o agente não precisar saber ids:

@@ -197,6 +197,29 @@ test('status: entregue e lida, fora de ordem não volta; mensagem da API desconh
   assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.SARA1'"))[0].status === 'falhou'));
 });
 
+test('status de mensagem já conhecida não vira a última da conversa; a da IA sem texto entra como "Mensagem enviada"', async () => {
+  const P = '5547911110009';
+  const cv = async () => (await q('select ultima_direcao, ultima_resumo, nao_lidas from wa_conversas where wa_id = $1', [P]))[0];
+  const st = (id, status, s) => ev('messages', { statuses: [{ id, status, timestamp: ts(s), recipient_id: P }] });
+  await enviar(eco('wamid.ST-E', { to: P, type: 'text', text: { body: 'Pode ser amanhã?' } }));
+  assert.ok(await ate(async () => (await cv())?.ultima_direcao === 'saida'));
+  await enviar(ev('messages', { messages: [{ from: P, id: 'wamid.ST-C', timestamp: ts(1), type: 'text', text: { body: 'Sim' } }] }));
+  assert.ok(await ate(async () => (await cv())?.ultima_resumo === 'Sim'));
+  // O contato lê a mensagem da equipe depois de responder: a conversa continua "Sim", de entrada, não lida.
+  await enviar(st('wamid.ST-E', 'delivered', 2)); await enviar(st('wamid.ST-E', 'read', 3));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.ST-E' and status = 'lida'")).length));
+  await esperar(300);
+  assert.deepEqual(await cv(), { ultima_direcao: 'entrada', ultima_resumo: 'Sim', nao_lidas: 1 });
+  // A IA responde pela API: o status chega antes do texto, a lista mostra o provisório; o registro troca pelo texto.
+  await enviar(st('wamid.ST-IA', 'sent', 4));
+  assert.ok(await ate(async () => (await cv())?.ultima_resumo === 'Mensagem enviada'));
+  assert.equal((await cv()).ultima_direcao, 'saida');
+  const reg = await fetch(`${B}/whatsapp/envio`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' },
+    body: JSON.stringify({ phone_number_id: NUM, to: P, wamid: 'wamid.ST-IA', tipo: 'text', texto: 'Perfeito, anotei para amanhã', timestamp: ts(3) }) });
+  assert.equal(reg.status, 200);
+  assert.equal((await cv()).ultima_resumo, 'Perfeito, anotei para amanhã');
+});
+
 test('reação do paciente: aparece, troca e some quando ele tira', async () => {
   const reagir = (id, emoji) => msgEntrada(id, { type: 'reaction', reaction: { message_id: 'wamid.E1', ...(emoji !== undefined ? { emoji } : {}) } });
   await enviar(reagir('wamid.R1', '👍'));
