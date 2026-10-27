@@ -77,6 +77,8 @@ const fone = (t: string | null) => {
 const pendente = (n: NumeroWhats) => Boolean(n.conectar_pedido_em || n.historico_pedido_em || n.historico_status?.startsWith('pedindo'));
 
 type Ficha = { phone_number_id: string; waba_id: string; nome: string; encaminhar_url: string; token: string; app_secret: string };
+const hostDe = (u: string) => { try { return new URL(u).host; } catch { return u; } };
+
 const vazia: Ficha = { phone_number_id: '', waba_id: '', nome: '', encaminhar_url: '', token: '', app_secret: '' };
 
 function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
@@ -95,7 +97,7 @@ function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
         <label className={g.campo}>Nome na Inbox
           <input name="nome" maxLength={80} placeholder="Clínica — principal" {...campo('nome')} /></label>
       </div>
-      <label className={g.campo}>Repassar para a Sara (webhook do n8n; vazio = não repassa)
+      <label className={g.campo}>Repassar para a IA (webhook do n8n; vazio = ao conectar, vale o endereço que recebe hoje na Meta)
         <input name="encaminhar_url" type="url" placeholder="https://..." {...campo('encaminhar_url')} /></label>
       <div className={g.linha}>
         <label className={g.campo}>Token da Meta {editando && '(vazio = mantém o guardado)'}
@@ -117,7 +119,7 @@ function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rod
   return (
     <div className={g.bloco}>
       <h3 className={g.blocoTitulo}>Números de WhatsApp</h3>
-      {e.numeros.length === 0 && <p className={g.dica}>Nenhum número. Cadastre, clique em Conectar e o receptor aponta o número para o painel na Meta.</p>}
+      {e.numeros.length === 0 && <p className={g.dica}>Nenhum número. Cadastre e clique em Conectar: o receptor aponta o número para o painel, continua entregando à IA da empresa e já pede o histórico.</p>}
       {e.numeros.map((n) => (
         <div key={n.phone_number_id} className={`${g.numero} ${n.ativo ? '' : g.inativa}`} data-numero={n.phone_number_id}>
           <div className={g.linha}>
@@ -132,7 +134,7 @@ function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rod
             <span className={g.selo}>{n.tem_token ? 'Token guardado' : 'Token geral do receptor'}</span>
           </div>
           {n.conexao_erro && !n.conectar_pedido_em && <p className={g.erroLinha} data-erro>{n.conexao_erro}</p>}
-          {n.verificado_nome && <p className={g.dica}>Nome verificado na Meta: {n.verificado_nome}{n.encaminhar_url ? ' · repassa para a Sara' : ' · sem repasse para a Sara'}</p>}
+          {n.verificado_nome && <p className={g.dica}>Nome verificado na Meta: {n.verificado_nome}{n.encaminhar_url ? ` · repassa para a IA em ${hostDe(n.encaminhar_url)}` : ' · sem repasse para a IA'}</p>}
           {(n.historico_status || n.historico_pedido_em) && (
             <p className={g.dica} data-historico>Histórico: {n.historico_status}{n.historico_em ? ` (${quando(n.historico_em)})` : ''}</p>
           )}

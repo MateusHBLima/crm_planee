@@ -235,7 +235,12 @@ x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
 Tela **Empresas → (empresa) → Números de WhatsApp**, só para o master. Migração 011 no banco **central** (a do painel).
 
 1. **Adicionar número:** `phone_number_id`, WABA, nome que aparece na Inbox, para onde repassar (webhook da Sara no n8n; vazio = não repassa), o token da Meta do número e, se o número for de outro app da Meta, a chave secreta desse app. Token e chave ficam cifrados com `PAINEL_CHAVE_CIFRA` e não voltam para a tela nem para a auditoria. Editar com o token em branco mantém o guardado.
-2. **Conectar:** o painel só marca o pedido. Em até 10 s o receptor inscreve o app na WABA (`POST /<waba>/subscribed_apps`), aponta o número para `RECEPTOR_URL_PUBLICA` (override com o `META_VERIFY_TOKEN`) e lê o nome verificado e o telefone. A tela relê sozinha e mostra "Conectado" ou o erro da Meta. Duas réplicas não repetem o pedido (o pedido é pego numa instrução só).
+2. **Conectar:** o painel só marca o pedido. Em até 10 s o receptor:
+   - **sem "Repassar para" cadastrado**, lê na Meta para onde o número entrega hoje (`GET /<número>?fields=webhook_configuration`: override do número, da conta ou o geral do app) e grava esse endereço como repasse **antes** do override. Assim conectar nunca corta a IA da empresa: ela passa a receber pelo receptor. Se a Meta não responder, a conexão para com erro e nada muda (preencha "Repassar para" e conecte de novo);
+   - inscreve o app na WABA (`POST /<waba>/subscribed_apps`), aponta o número para `RECEPTOR_URL_PUBLICA` (override com o `META_VERIFY_TOKEN`) e lê o nome verificado e o telefone;
+   - na primeira conexão, já pede o histórico (item 3).
+
+   A tela relê sozinha e mostra "Conectado", para onde repassa, ou o erro da Meta. Duas réplicas não repetem o pedido (o pedido é pego numa instrução só). **Voltar atrás:** o override com o endereço que ficou em "Repassar para" (seção 5).
 3. **Puxar histórico:** o receptor chama `POST /<número>/smb_app_data` com `smb_app_state_sync` (agenda) e depois `history` (conversas de até 180 dias). Vale nas 24 h depois de conectar o número no app WhatsApp Business (coexistência). O app precisa assinar os campos `history` e `smb_app_state_sync` (App Dashboard → WhatsApp → Configuração → Campos do webhook). As conversas antigas entram na Inbox com origem "Histórico" e não vão para a Sara (`REPASSAR_CAMPOS`).
 
 Sem token cadastrado, o número usa o `META_TOKEN` do receptor (os números antigos). A assinatura dos eventos aceita os segredos de `META_APP_SECRET` e os cadastrados por número. Os números são relidos a cada 60 s (`WA_ROTAS_MS`) e logo depois de cada conexão.

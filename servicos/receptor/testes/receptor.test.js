@@ -108,6 +108,7 @@ before(async () => {
       return json(200, { messaging_product: 'whatsapp', contacts: [{ input: c.to, wa_id: c.to }], messages: [{ id: `wamid.ENVIADA${graphPedidos.length}` }] });
     }
     if (req.method === 'POST') return json(200, { success: true });
+    if (req.url.includes('fields=webhook_configuration')) return json(200, { webhook_configuration: { application: 'http://127.0.0.1:3911/ia-de-hoje' }, id: '100000000000003' });
     if (req.url.includes('fields=')) return json(200, { display_phone_number: '+55 47 90000-0002', verified_name: 'Empresa Ficticia Dois', id: '100000000000002' });
     if (req.url.startsWith('/arquivo/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(Buffer.from('JPEGFALSO')); }
     const id = decodeURIComponent(req.url.split('/').pop());
@@ -500,6 +501,34 @@ test('cadastro pelo painel: número novo com token e segredo próprios, conectar
   await q(`update whatsapp_numeros set token_cifrado = $2, conectar_pedido_em = now() where phone_number_id = $1`, [NUM2, cifrar('token-errado')]);
   const [e] = await ate(async () => { const x = await q('select conexao_erro from whatsapp_numeros where phone_number_id = $1 and conexao_erro is not null', [NUM2]); return x.length ? x : null; }, 15000) || [];
   assert.ok(e && e.conexao_erro.includes('190'), e && e.conexao_erro);
+});
+
+test('conectar sem repasse cadastrado: quem recebe hoje vira o repasse, antes do override, e o histórico já é pedido', async () => {
+  const NUM3 = '100000000000003';
+  await q(`insert into whatsapp_numeros (phone_number_id, waba_id, empresa_id, nome, encaminhar_url, token_cifrado, conectar_pedido_em)
+           values ($1, 'WABA_FICTICIA_3', 'teste', 'Número com IA própria', '', $2, now())`, [NUM3, cifrar('token-do-numero-novo')]);
+  const antes = graphPedidos.length;
+  const [n] = await ate(async () => { const r = await q('select * from whatsapp_numeros where phone_number_id = $1 and conectado_em is not null', [NUM3]); return r.length ? r : null; }, 15000) || [];
+  assert.ok(n, 'não conectou');
+  assert.equal(n.conexao_erro, null);
+  assert.equal(n.encaminhar_url, 'http://127.0.0.1:3911/ia-de-hoje', 'o endereço de hoje não virou o repasse');
+  const meus = graphPedidos.slice(antes).filter((x) => x.url.includes(NUM3));
+  const iLer = meus.findIndex((x) => x.url.includes('fields=webhook_configuration'));
+  const iOv = meus.findIndex((x) => x.metodo === 'POST' && x.url.endsWith(`/${NUM3}`));
+  assert.ok(iLer >= 0 && iOv > iLer, 'leu o webhook de hoje depois do override (ou não leu)');
+  // Histórico pedido junto com a conexão
+  const [h] = await ate(async () => { const r = await q("select * from whatsapp_numeros where phone_number_id = $1 and historico_status like 'pedido aceito%'", [NUM3]); return r.length ? r : null; }, 15000) || [];
+  assert.ok(h, 'não pediu o histórico junto com a conexão');
+  // A mensagem que chega depois segue para a IA de hoje
+  const r = await enviar(ev('messages', { contacts: [{ profile: { name: 'Cliente Três' }, wa_id: '5547911113333' }], messages: [{ from: '5547911113333', id: 'wamid.TRES1', timestamp: ts(), type: 'text', text: { body: 'oi' } }] }, NUM3));
+  assert.equal(r.status, 200);
+  assert.ok(await ate(() => n8n.recebidos.find((x) => x.url === '/ia-de-hoje' && x.corpo.includes('wamid.TRES1'))), 'não repassou para a IA de hoje');
+  // Conectar de novo não troca um repasse já cadastrado nem pede o histórico outra vez
+  await q(`update whatsapp_numeros set encaminhar_url = 'http://127.0.0.1:3911/outra', conectar_pedido_em = now() where phone_number_id = $1`, [NUM3]);
+  assert.ok(await ate(async () => (await q('select 1 from whatsapp_numeros where phone_number_id = $1 and conectar_pedido_em is null', [NUM3])).length === 1, 15000));
+  await new Promise((ok) => setTimeout(ok, 300));
+  const [d] = await q('select encaminhar_url, historico_pedido_em from whatsapp_numeros where phone_number_id = $1', [NUM3]);
+  assert.equal(d.encaminhar_url, 'http://127.0.0.1:3911/outra'); assert.equal(d.historico_pedido_em, null);
 });
 
 test('link curto de mídia: entrega o arquivo enquanto vale', async () => {
