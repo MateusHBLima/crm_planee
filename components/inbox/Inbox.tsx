@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, finalizarPelaConversa, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
+import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, finalizarPelaConversa, localizarMensagem, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarAbertosDaConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
 import type { AbertoDaConversa } from '@/lib/painel/crm';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
@@ -121,6 +121,10 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   // Cartões em aberto do número, na lateral da conversa (22/10).
   const [cartoesAberto, setCartoesAberto] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
+  // "Ver na conversa" de um comprovante (/inbox?msg=<wamid>, 26/10): a conversa abre e vai buscando as páginas antigas
+  // até achar a mensagem, que fica destacada no meio da tela.
+  const alvo = useRef<{ wamid: string; paginas: number } | null>(null);
+  const [destaque, setDestaque] = useState<string | null>(null);
 
   const abertaRef = useRef<Chave | null>(null);
   abertaRef.current = aberta;
@@ -181,6 +185,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   }, [memConversa, mascarado]);
   const cancelarPrevia = useCallback(() => { if (timerPrevia.current) window.clearTimeout(timerPrevia.current); timerPrevia.current = null; }, []);
 
+  const carregarAntigasRef = useRef<() => Promise<void>>(async () => undefined);
   const carregarAntigas = useCallback(async () => {
     const k = abertaRef.current;
     if (!k || !dados?.mensagens.length) return;
@@ -192,6 +197,28 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     ajuste.current = el ? { tipo: 'manter', altura: el.scrollHeight, topo: el.scrollTop } : null;
     setDados((x) => (x ? { ...x, mensagens: mesclar(x.mensagens, d.mensagens), temMais: d.temMais } : x));
   }, [dados, tratar]);
+  carregarAntigasRef.current = carregarAntigas;
+
+  // Procura a mensagem do link: achou, rola até ela e destaca; não achou, busca a página anterior (até 30, 3.000 mensagens).
+  useEffect(() => {
+    const a = alvo.current;
+    if (!a || !dados || carregando || carregandoAntigas) return;
+    const m = dados.mensagens.find((x) => x.wamid === a.wamid);
+    if (m) {
+      alvo.current = null;
+      setDestaque(m.id);
+      window.requestAnimationFrame(() => rolagem.current?.querySelector(`[data-id="${m.id}"]`)?.scrollIntoView({ block: 'center' }));
+      return;
+    }
+    if (dados.temMais && a.paginas < 30) { a.paginas += 1; void carregarAntigasRef.current(); return; }
+    alvo.current = null;
+    setAviso('Não achei a mensagem do comprovante nesta conversa.');
+  }, [dados, carregando, carregandoAntigas]);
+  useEffect(() => {
+    if (!destaque) return;
+    const t = window.setTimeout(() => setDestaque(null), 8000);
+    return () => window.clearTimeout(t);
+  }, [destaque]);
 
   useLayoutEffect(() => {
     const el = rolagem.current; const a = ajuste.current;
@@ -293,6 +320,16 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const numero = q.get('numero'); const wa = q.get('wa');
+    const msg = q.get('msg');
+    if (msg) {
+      void localizarMensagem(msg).then((r) => {
+        const d = tratar(r);
+        if (!d) return;
+        alvo.current = { wamid: msg, paginas: 0 };
+        abrir({ numero_id: d.numero_id, wa_id: d.wa_id });
+      });
+      return;
+    }
     if (numero && wa && /^\d{5,30}$/.test(numero) && /^\d{8,20}$/.test(wa)) abrir({ numero_id: numero, wa_id: wa });
     // Do cartão do CRM (/inbox?tel=55...; 14/10): busca pelos 8 últimos dígitos e abre a conversa se houver uma só.
     const tel = (q.get('tel') ?? '').replace(/\D/g, '');
@@ -598,6 +635,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                   <div key={m.id} className={c.bloco}>
                     {novoDia && <div className={c.dia} role="separator"><span>{datas.separador(m.em)}</span></div>}
                     <Bolha m={m} hora={datas.hora(m.em)} nomeContato={atual ? nomeDe(atual) : 'Contato'} numeroId={dados.conversa.numero_id} waId={dados.conversa.wa_id}
+                      destacada={m.id === destaque}
                       onAvisar={mascarado || !aberta ? undefined : () => setAvisando({
                         numero_id: aberta.numero_id, wa_id: aberta.wa_id, wamid: m.wamid, autor: autorDe(m, atual ? nomeDe(atual) : 'Contato'),
                         trecho: m.texto || (MIDIA[m.tipo] ?? null),
@@ -812,7 +850,7 @@ function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; w
   );
 }
 
-function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void }) {
+function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar, destacada = false }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void; destacada?: boolean }) {
   const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
   const autor = (m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] || (m.automatica ? 'Sara' : '')) + (m.automatica ? ` · ${m.automatica}` : '');
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
@@ -840,7 +878,7 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem
     conteudo = texto ? <p className={c.texto}>{texto}</p> : <p className={c.semTexto}>Mensagem sem texto</p>;
   }
   return (
-    <div className={c.linha} data-direcao={m.direcao} data-id={m.id}>
+    <div className={c.linha} data-direcao={m.direcao} data-id={m.id} data-destaque={destacada ? 'true' : undefined}>
       {autor && <span className={c.autor} data-tipo={tipoBolha}>{autor}</span>}
       <div className={c.bolha} data-tipo={tipoBolha} data-apagada={m.apagada ? 'true' : undefined}>
         {m.citada && (
@@ -854,6 +892,7 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem
           </blockquote>
         )}
         {conteudo}
+        {m.comprovante && <SeloComprovante k={m.comprovante} />}
       </div>
       {m.reacoes.length > 0 && (
         <span className={c.reacoes}>
@@ -869,6 +908,18 @@ function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar }: { m: Mensagem
         {st && <span className={c.status} data-status={m.status} title={st.nome} aria-label={st.nome}>{st.marca}</span>}
         {onAvisar && <MenuMensagem lado={m.direcao === 'saida' ? 'direita' : 'esquerda'} onAvisar={onAvisar} />}
       </span>
+    </div>
+  );
+}
+
+// Comprovante registrado a partir desta mensagem (26/10): valor, paciente e situação, com o arquivo guardado.
+const reaisSelo = (v: number | null) => (v === null ? 'valor não lido' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+function SeloComprovante({ k }: { k: NonNullable<Mensagem['comprovante']> }) {
+  const estado = k.conferido ? 'Conferido' : k.suspeito ? 'Suspeito, a conferir' : 'A conferir';
+  return (
+    <div className={c.seloComprovante} data-comprovante={k.id} data-estado={k.conferido ? 'conferido' : k.suspeito ? 'suspeito' : 'aberto'}>
+      <span><strong>Comprovante</strong> · {reaisSelo(k.valor)}{k.paciente ? ` · ${k.paciente}` : ''} · {estado}</span>
+      <a href={`/api/painel/pagamentos/${k.id}/arquivo`} target="_blank" rel="noopener noreferrer">Ver arquivo</a>
     </div>
   );
 }

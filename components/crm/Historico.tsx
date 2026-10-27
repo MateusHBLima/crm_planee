@@ -196,6 +196,9 @@ function CartaoPagamento({ p, fmt, podeConferir, contatoId, onMudou, onErro }: {
         {p.tem_arquivo && (
           <a className={c.acaoSec + ' ' + c.linkAcao} href={`/api/painel/pagamentos/${p.id}/arquivo`} target="_blank" rel="noopener noreferrer">Ver comprovante</a>
         )}
+        {p.mensagem_wamid && (
+          <a className={c.acaoSec + ' ' + c.linkAcao} href={`/inbox?msg=${encodeURIComponent(p.mensagem_wamid)}`} data-ver-conversa>Ver na conversa</a>
+        )}
         {podeConferir && (p.conferido_em
           ? <button type="button" className={c.acaoSec} disabled={salvando} onClick={() => conferir(false)}>Desfazer conferência</button>
           : <button type="button" className={c.acaoPri} disabled={salvando} onClick={() => conferir(true)}>{salvando ? 'Salvando…' : 'Conferir'}</button>)}

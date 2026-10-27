@@ -203,3 +203,14 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .cartaoLateralResumo { color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
 .cartaoLateralMeta { font-size: 12px; color: var(--ink-3); }
 .cartaoLateralAbrir { font-size: 12px; font-weight: 600; color: var(--ink); }
+
+/* "Ver na conversa" de um comprovante (26/10): a mensagem do link fica destacada por alguns segundos. */
+.linha[data-destaque="true"] .bolha { outline: 2px solid var(--focus); outline-offset: 3px; animation: destaqueComprovante 1.2s ease-out 2; }
+@keyframes destaqueComprovante { 0% { box-shadow: 0 0 0 0 var(--focus); } 100% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { .linha[data-destaque="true"] .bolha { animation: none; } }
+/* Selo do comprovante registrado a partir da mensagem: valor, paciente e situação. */
+.seloComprovante { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; padding: 6px 8px; border-radius: 8px;
+  font-size: 12px; background: var(--surface-3); color: var(--ink-2); }
+.seloComprovante[data-estado="conferido"] { background: var(--ia-bg); color: var(--ia-ink); }
+.seloComprovante[data-estado="suspeito"] { background: var(--rs-bg); color: var(--rs-ink); }
+.seloComprovante a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
