@@ -111,7 +111,9 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .bolha[data-tipo='equipe'] .midia { background: rgba(127, 127, 127, .25); color: inherit; }
 /* Mídias: player de áudio e vídeo, foto e documento, dentro da bolha */
 .caixaMidia { display: flex; flex-direction: column; gap: 4px; align-self: stretch; min-width: 0; }
-.audio { width: min(300px, 100%); height: 40px; display: block; }
+/* Largura fixa (27/10): com width em % dentro do balão (que encolhe para caber o conteúdo), o player ficava com
+   largura zero, tocava e não dava para pausar nem voltar. */
+.audio { width: 300px; max-width: 100%; height: 40px; display: block; flex-shrink: 0; }
 .video, .foto { display: block; max-width: min(320px, 100%); max-height: 360px; border-radius: 8px; background: var(--surface-3); }
 .figurinha { display: block; width: 140px; height: 140px; object-fit: contain; }
 .fotoVazia { display: grid; place-items: center; width: 220px; max-width: 100%; height: 160px; border-radius: 8px; background: var(--surface-3); color: var(--ink-3); font-size: 12.5px; }
@@ -153,13 +155,18 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .avisoOk { display: inline-flex; align-items: center; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; background: var(--ia-bg); color: var(--ia-ink); }
 .avisoErro button { border: 0; background: none; color: inherit; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 
-@media (max-width: 760px) {
-  .tela { flex: none; height: 100dvh; min-height: 480px; grid-template-columns: minmax(0, 1fr); }
+/* Até 1099 px (tablet e notebook pequeno, com o menu lateral de 232 px) a lista e a conversa não cabem lado a lado:
+   a conversa ficava com ~120 px e uma palavra por linha. Uma coisa por vez, com "Voltar", como no celular (27/10). */
+@media (max-width: 1099px) {
+  .tela { grid-template-columns: minmax(0, 1fr); }
   .tela[data-aberta='true'] .lista { display: none; }
   .tela[data-aberta='false'] .conversa { display: none; }
   .lista { border-right: 0; }
   .voltar { display: inline-flex; }
-  .cabeca { padding: 12px 16px; gap: 10px; }
+}
+@media (max-width: 760px) {
+  .tela { min-height: 360px; }
+  .cabeca { padding: 10px 12px; gap: 10px; }
   .avatarGrande { display: none; }
   .mensagens { padding: 14px 16px 18px; }
   .linha { max-width: 92%; }

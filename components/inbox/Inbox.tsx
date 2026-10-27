@@ -504,7 +504,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                           ? atual.dono_sempre
                             ? `Fixa com a equipe${atual.dono_por ? ' · ' + atual.dono_por : ''}`
                             : `Equipe atendendo${atual.dono_por ? ' · ' + atual.dono_por : ''}${atual.dono_ate ? ` · até ${datas.prazo(atual.dono_ate)}` : ''}`
-                          : atual.pausa_ate ? `${agente} pausada até ${datas.hora(atual.pausa_ate)} (resposta pelo celular)` : `${agente} atendendo`}
+                          : atual.pausa_ate ? `${agente} pausada até ${datas.hora(atual.pausa_ate)} (a equipe respondeu)` : `${agente} atendendo`}
                       </span>
                       {atual.lida_por && atual.lida_em && (
                         <span className={c.lidaPor} data-lida-por title="Quem da equipe abriu a conversa por último">

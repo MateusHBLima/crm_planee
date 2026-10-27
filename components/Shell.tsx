@@ -11,6 +11,7 @@ import { SairDaEmpresa } from './SairDaEmpresa';
 import { Faixa } from './planee/Faixa';
 import { Antecipar } from './Antecipar';
 import { ContadorComprovantes } from './comprovantes/ContadorComprovantes';
+import { MenuCelular } from './MenuCelular';
 import s from './shell.module.css';
 
 export function Shell({ atual, usuario, largo, children }: {
@@ -20,14 +21,15 @@ export function Shell({ atual, usuario, largo, children }: {
   const escolhe = !usuario.empresaFixa && (usuario.master || usuario.empresas.length > 1);
   const dentro = usuario.master && !usuario.empresaFixa && usuario.empresa;
   const banco = bancoConfigurado();
+  const sub = usuario.empresa ? usuario.empresa.nome : usuario.master ? 'Planee — visão geral' : 'Nenhuma empresa';
   return (
     <div className={s.app}>
-      <aside className={s.lateral}>
+      <MenuCelular titulo={telas.find((t) => t.id === atual)?.nome ?? 'Painel Planee'} sub={sub}>
         <div className={s.marca}>
           <span className={s.logo}>P</span>
           <div>
             <div className={s.marcaNome}>Painel Planee</div>
-            <div className={s.marcaSub}>{usuario.empresa ? usuario.empresa.nome : usuario.master ? 'Planee — visão geral' : 'Nenhuma empresa'}</div>
+            <div className={s.marcaSub}>{sub}</div>
           </div>
         </div>
         {escolhe && <TrocarEmpresa atual={usuario.empresa?.id ?? null} empresas={usuario.empresas} master={usuario.master} />}
@@ -61,7 +63,7 @@ export function Shell({ atual, usuario, largo, children }: {
             {banco ? 'Banco conectado' : 'Banco não configurado'}
           </div>
         </div>
-      </aside>
+      </MenuCelular>
       <main className={largo ? s.conteudoLargo : s.conteudo}>
         {dentro && <SairDaEmpresa nome={usuario.empresa!.nome} />}
         {usuario.empresa && <Faixa largo={largo} />}
