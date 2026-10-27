@@ -322,3 +322,65 @@ export async function registrarEnvio(d) {
     return x.rows[0]?.nova;
   });
 }
+
+// POST /whatsapp/historico (27/10): carga das conversas antigas que a empresa já tem guardadas (ex.: o histórico
+// da IA no n8n), para a Inbox não começar vazia. Grava como origem 'historico': não repassa para a IA, não conta
+// como não lida, não mexe no dono da conversa e nunca sobrescreve o que chegou ao vivo. Idempotente por
+// (número, wamid): mensagem sem wamid conhecido vai com um id estável da origem (ex.: "hist:<id da linha>").
+const DIRECOES = ['entrada', 'saida'];
+const AUTORES = ['cliente', 'ia', 'equipe'];
+export const MAX_HISTORICO = 500;
+
+function itemDoHistorico(x, i) {
+  const erro = (m) => { throw new Error(`Item ${i + 1}: ${m}.`); };
+  if (!x || typeof x !== 'object') erro('não é objeto');
+  const waId = digitos(x.wa_id);
+  if (!/^\d{8,20}$/.test(waId)) erro('wa_id inválido');
+  const wamid = typeof x.wamid === 'string' ? x.wamid.trim() : '';
+  if (!wamid || wamid.length > 200) erro('wamid vazio ou longo demais');
+  if (!DIRECOES.includes(x.direcao)) erro('direcao deve ser entrada ou saida');
+  const autor = x.autor == null ? (x.direcao === 'entrada' ? 'cliente' : null) : x.autor;
+  if (autor !== null && !AUTORES.includes(autor)) erro('autor deve ser cliente, ia ou equipe');
+  const em = new Date(x.em);
+  if (!x.em || Number.isNaN(em.getTime()) || em.getTime() > Date.now() + 5 * 60_000) erro('em inválido');
+  const tipo = typeof x.tipo === 'string' && /^[a-z_]{1,30}$/.test(x.tipo) ? x.tipo : 'text';
+  const texto = x.texto == null ? null : String(x.texto).slice(0, 4096);
+  if (!texto && tipo === 'text') erro('texto vazio');
+  const nome = typeof x.nome === 'string' && x.nome.trim() ? x.nome.trim().slice(0, 120) : null;
+  return { wa_id: waId, wamid, direcao: x.direcao, tipo, texto, em: em.toISOString(), nome,
+           bruto: { origem: 'carga', autor, tipo, texto } };
+}
+
+export async function registrarHistorico(d) {
+  const numero = String(d?.phone_number_id || '');
+  if (!Array.isArray(d?.itens) || !d.itens.length) throw new Error('Informe itens (lista).');
+  if (d.itens.length > MAX_HISTORICO) throw new Error(`No máximo ${MAX_HISTORICO} itens por lote.`);
+  const linhas = d.itens.map(itemDoHistorico); // valida tudo antes de gravar
+  const r = await rota(numero);
+  if (!r) throw new NumeroSemDono(`Número ${numero || '(sem id)'} não cadastrado em whatsapp_numeros.`);
+  return transacao(bancoDaEmpresa(r), async (c) => {
+    const nomes = new Map();
+    const ultimas = new Map();
+    for (const l of linhas) {
+      if (l.nome && l.direcao === 'entrada') nomes.set(l.wa_id, l.nome);
+      const u = ultimas.get(l.wa_id);
+      if (!u || l.em >= u.em) ultimas.set(l.wa_id, { em: new Date(l.em), resumo: resumo(l.tipo, l.texto), direcao: l.direcao });
+    }
+    for (const [waId, nome] of nomes) {
+      await c.query(
+        `insert into wa_contatos (numero_id, wa_id, nome_perfil) values ($1, $2, $3)
+         on conflict (numero_id, wa_id) do update set nome_perfil = coalesce(wa_contatos.nome_perfil, excluded.nome_perfil)`,
+        [numero, waId, nome]);
+    }
+    const x = await c.query(
+      `insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, enviada_em, bruto)
+       select $1, x.wa_id, x.wamid, x.direcao, 'historico', x.tipo, x.texto, x.em, x.bruto
+         from jsonb_to_recordset($2::jsonb) as x(wa_id text, wamid text, direcao text, tipo text, texto text, em timestamptz, bruto jsonb)
+       on conflict (numero_id, wamid) do nothing
+       returning 1`,
+      [numero, JSON.stringify(linhas)]);
+    for (const [waId, u] of ultimas) await conversa(c, numero, waId, { ...u, contarNaoLida: false, zerar: false });
+    const gravadas = x.rowCount;
+    return { gravadas, repetidas: linhas.length - gravadas, conversas: ultimas.size };
+  });
+}

@@ -750,7 +750,7 @@ function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; o
 }
 
 const autorDe = (m: Mensagem, nomeContato: string) =>
-  m.direcao === 'entrada' ? nomeContato : m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] || 'Clínica';
+  m.direcao === 'entrada' ? nomeContato : m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${AUTOR[m.origem]} · ${m.por}` : AUTOR[m.origem] || 'Clínica';
 
 // Menu "⋯" de cada mensagem. Hoje só "Avisar a Planee"; outras ações entram aqui.
 function MenuMensagem({ lado, onAvisar }: { lado: 'esquerda' | 'direita'; onAvisar: () => void }) {
@@ -851,8 +851,8 @@ function Midia({ m, numeroId, waId, rotulo }: { m: Mensagem; numeroId: string; w
 }
 
 function Bolha({ m, hora, nomeContato, numeroId, waId, onAvisar, destacada = false }: { m: Mensagem; hora: string; nomeContato: string; numeroId: string; waId: string; onAvisar?: () => void; destacada?: boolean }) {
-  const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' ? 'sara' : 'equipe';
-  const autor = (m.origem === 'painel' && m.por ? `Painel · ${m.por}` : AUTOR[m.origem] || (m.automatica ? 'Sara' : '')) + (m.automatica ? ` · ${m.automatica}` : '');
+  const tipoBolha = m.direcao === 'entrada' ? 'entrada' : m.origem === 'api' || (m.origem === 'historico' && m.por === 'IA') ? 'sara' : 'equipe';
+  const autor = (m.por && (m.origem === 'painel' || m.origem === 'historico') ? `${AUTOR[m.origem]} · ${m.por}` : AUTOR[m.origem] || (m.automatica ? 'Sara' : '')) + (m.automatica ? ` · ${m.automatica}` : '');
   const st = m.direcao === 'saida' && m.status ? STATUS[m.status] : undefined;
   const rotMidia = MIDIA[m.tipo];
   let conteudo: React.ReactNode;

@@ -193,7 +193,8 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   const r = await consultar(() => banco.query(
     `with conv as (${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2),
      pag as (
-       select m.id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80) end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
+       select m.id, m.wamid, m.direcao, case when m.origem = 'painel' then left(m.bruto->>'por', 80)
+                   when m.origem = 'historico' then case m.bruto->>'autor' when 'ia' then 'IA' when 'equipe' then 'Equipe' end end as por, m.origem, m.tipo, m.texto, m.resposta_a, m.status,
               m.midia->>'mime_type' as mime_type, m.midia->>'filename' as filename, (m.midia is not null) as tem_midia,
               (m.midia->>'caminho') is not null as midia_pronta, (m.midia->>'erro') is not null as midia_erro,
               m.editada_em, m.apagada_em, m.enviada_em, coalesce(m.bruto->>'texto_de', '') as texto_de

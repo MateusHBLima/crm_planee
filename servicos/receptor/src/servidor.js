@@ -2,6 +2,7 @@
 //   GET  /whatsapp/webhook   verificação da Meta (hub.challenge)
 //   POST /whatsapp/webhook   eventos da Meta: confere a assinatura, guarda, repassa para a Sara, responde 200
 //   POST /whatsapp/envio     a Sara (n8n) registra o que mandou pela API (cabeçalho x-receptor-chave)
+//   POST /whatsapp/historico carga das conversas antigas guardadas pela empresa (x-receptor-chave; até 500 por lote)
 //   POST /whatsapp/enviar    o painel manda a resposta da equipe: envia pela Meta, grava e avisa a IA (x-receptor-chave)
 //   GET  /whatsapp/atendimento?numero=&wa_id=   a Sara pergunta se pode responder (equipe assumiu? cabeçalho x-receptor-chave)
 //   GET  /whatsapp/midia/<empresa>/<token>   arquivo de mídia por link curto criado pelo painel (Inbox: ouvir, ver, baixar)
@@ -12,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { bancoDaEmpresa, central } from './banco.js';
 import { assinaturaValida } from './meta.js';
-import { idadeDoEventoMin, NumeroSemDono, registrarEnvio, resumoDoEvento } from './processar.js';
+import { idadeDoEventoMin, NumeroSemDono, registrarEnvio, registrarHistorico, resumoDoEvento } from './processar.js';
 import { estadoDoAtendimento } from './atendimento.js';
 import { enviarPeloPainel } from './enviar.js';
 import { timingSafeEqual } from 'node:crypto';
@@ -103,6 +104,15 @@ async function envio(req, res) {
   try { d = JSON.parse((await lerCorpo(req)).toString('utf8')); } catch { return responder(res, 400, { erro: 'JSON inválido' }); }
   try { await registrarEnvio(d); responder(res, 200, { ok: true }); }
   catch (e) { responder(res, 400, { erro: erroCurto(e) }); }
+}
+
+// Carga do histórico (27/10): 200 {gravadas, repetidas, conversas}; 404 número sem dono; 400 lote inválido.
+async function cargaHistorico(req, res) {
+  if (!chaveCerta(req.headers['x-receptor-chave'])) return responder(res, 401, { erro: 'chave inválida' });
+  let d;
+  try { d = JSON.parse((await lerCorpo(req)).toString('utf8')); } catch { return responder(res, 400, { erro: 'JSON inválido' }); }
+  try { responder(res, 200, { ok: true, ...(await registrarHistorico(d)) }); }
+  catch (e) { responder(res, e instanceof NumeroSemDono ? 404 : 400, { erro: erroCurto(e) }); }
 }
 
 // Resposta da equipe pela Inbox (26/10). Sempre 200 com {ok, wamid} ou {ok:false, erro:<código>}, que é o que o
@@ -203,6 +213,7 @@ export function criarServidor() {
       if (url.pathname === '/whatsapp/webhook' && req.method === 'POST') return await receberEvento(req, res);
       if (url.pathname === '/whatsapp/envio' && req.method === 'POST') return await envio(req, res);
       if (url.pathname === '/whatsapp/enviar' && req.method === 'POST') return await enviar(req, res);
+      if (url.pathname === '/whatsapp/historico' && req.method === 'POST') return await cargaHistorico(req, res);
       if (url.pathname === '/whatsapp/atendimento' && req.method === 'GET') return await atendimento(req, res, url.searchParams);
       if (url.pathname.startsWith('/whatsapp/midia/') && req.method === 'GET') return await midia(req, res, url.pathname.slice('/whatsapp/midia/'.length));
       if (url.pathname === '/whatsapp/saude') return await saude(res);
