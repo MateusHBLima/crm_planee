@@ -43,3 +43,14 @@ Geist (400, 500, 600, 700) para tudo; Geist Mono para telefone, CPF, horário e 
 ## Ícones
 
 Traço de 1,8px, 24×24, cantos arredondados. Os caminhos usados estão na função `icones()` do protótipo.
+
+## Celular e tablet (27/10)
+
+- **Até 760 px (celular):**
+  - o menu lateral vira gaveta (`components/MenuCelular.tsx`);
+  - no topo fica só uma barra de 52 px com ☰, a tela atual e a empresa;
+  - as telas largas (Inbox, CRM) ocupam a altura que sobra e rolam por dentro, nunca a página;
+  - campos com letra de 16 px, para o iPhone não dar zoom ao tocar;
+  - no CRM, uma coluna por vez (85% da largura), parando no começo da próxima.
+- **Até 1099 px (tablet e notebook pequeno):** a Inbox mostra a lista ou a conversa, uma por vez, com "Voltar".
+- **Nenhuma tela pode sair para o lado.** O `testes/painel/celular.js` confere em 390, 768 e 1366 px.

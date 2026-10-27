@@ -11,7 +11,7 @@ case "$DATABASE_URL" in *@localhost*|*@127.0.0.1*) ;; *) echo "Recusado: DATABAS
 PORTA_APP=${PORTA_APP:-3100}; PORTA_AUTH=${PORTA_AUTH:-54321}
 export BASE_URL="http://localhost:$PORTA_APP"
 
-echo "1/22 Banco: recria o schema, aplica as migrações 001 a 029 e a semente fictícia; cria o banco da 2ª empresa"
+echo "1/23 Banco: recria o schema, aplica as migrações 001 a 029 e a semente fictícia; cria o banco da 2ª empresa"
 psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
@@ -32,7 +32,7 @@ psql -q "$DATABASE_URL" -c "insert into painel_empresa (id) values ('teste')" >/
 psql -q "$OUTRA_DATABASE_URL" -c "insert into painel_empresa (id) values ('clinica-outra')" >/dev/null
 psql -q "$OUTRA_DATABASE_URL" -c "delete from notas; delete from atendimentos; insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000001','receita','Cartão só da Clínica Outra','IA')" >/dev/null
 
-echo "2/22 Dependências dos testes"
+echo "2/23 Dependências dos testes"
 (cd "$T" && npm install --no-audit --no-fund --silent)
 [ -n "${CHROMIUM_PATH:-}" ] || (cd "$T" && npx playwright install chromium >/dev/null)
 
@@ -40,7 +40,7 @@ sobe_auth() { TTL=$1 PORTA=$PORTA_AUTH node "$T/auth-falso.js" > /dev/null 2>&1 
 para() { for p in ${APP_PID:-} ${AUTH_PID:-}; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done; }
 trap para EXIT
 
-echo "3/22 App: build e start com o Auth falso"
+echo "3/23 App: build e start com o Auth falso"
 sobe_auth 3600
 export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste PAINEL_CHAVE_CIFRA="chave-de-teste-local-com-mais-de-32-caracteres"
 # Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
@@ -61,60 +61,63 @@ npm run build >/dev/null
 node node_modules/next/dist/bin/next start -p "$PORTA_APP" > /dev/null 2>&1 & APP_PID=$!
 for i in $(seq 1 30); do curl -sf "$BASE_URL/entrar" >/dev/null && break; sleep 1; done
 
-echo "4/22 Testes de ponta a ponta"
+echo "4/23 Testes de ponta a ponta"
 node "$T/e2e.js"
 
-echo "5/22 CRM completo: criar e editar pela tela, Configurações, avisos, ficha e funil da IA"
+echo "5/23 CRM completo: criar e editar pela tela, Configurações, avisos, ficha e funil da IA"
 node "$T/crm-completo.js"
 
-echo "6/22 Empresas, domínios, níveis e permissões (banco central)"
+echo "6/23 Empresas, domínios, níveis e permissões (banco central)"
 node "$T/central.js"
 
-echo "7/22 Módulos por empresa: SQL travado no banco certo, 409 sem SQL, 404 e catálogo por empresa, ficha, tela Empresas"
+echo "7/23 Módulos por empresa: SQL travado no banco certo, 409 sem SQL, 404 e catálogo por empresa, ficha, tela Empresas"
 node "$T/modulos.js"
 
-echo "8/22 Link de convite: uso único, vencido, cancelado, sem acesso ao entrar, admin libera depois, outra empresa"
+echo "8/23 Link de convite: uso único, vencido, cancelado, sem acesso ao entrar, admin libera depois, outra empresa"
 node "$T/convite.js"
 
-echo "9/22 Equipe no CRM: cor da coluna, avisos por assunto, Passar para, Registro, filtro de data"
+echo "9/23 Equipe no CRM: cor da coluna, avisos por assunto, Passar para, Registro, filtro de data"
 node "$T/equipe-crm.js"
 
-echo "10/22 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
+echo "10/23 Inbox: lista, conversa, não lidas, CPF e auditoria do master, isolamento, permissão, resposta pelo painel"
 node "$T/inbox.js"
 
-echo "11/22 Avisos para a Planee: menu da mensagem, fila do Interno, resposta, novidades, integrações, vigia e saúde"
+echo "11/23 Celular e tablet: barra com menu em gaveta, Inbox uma coluna com a resposta à vista, nada sai para o lado"
+node "$T/celular.js"
+
+echo "12/23 Avisos para a Planee: menu da mensagem, fila do Interno, resposta, novidades, integrações, vigia e saúde"
 node "$T/avisos.js"
 
-echo "12/22 Mensagens automáticas da IA: recusa, registro de envios, ficha, histórico, selo e filtro de follow-up"
+echo "13/23 Mensagens automáticas da IA: recusa, registro de envios, ficha, histórico, selo e filtro de follow-up"
 node "$T/automaticas.js"
 
-echo "13/22 Funil automático: follow-up e retomada movem o funil, respondeu volta, sem resposta vira perdido, cartões e conversa"
+echo "14/23 Funil automático: follow-up e retomada movem o funil, respondeu volta, sem resposta vira perdido, cartões e conversa"
 node "$T/funil-auto.js"
 
-echo "14/22 Pessoas no mesmo número: carga em lote, separação do dependente, CPF, ficha e tela"
+echo "15/23 Pessoas no mesmo número: carga em lote, separação do dependente, CPF, ficha e tela"
 node "$T/pessoas.js"
 
-echo "15/22 Velocidade: leitura comprimida, resumo cortado, clique na hora, conversa antecipada, memória da aba"
+echo "16/23 Velocidade: leitura comprimida, resumo cortado, clique na hora, conversa antecipada, memória da aba"
 node "$T/velocidade.js"
 
-echo "16/22 Comprovante pelo espelho do WhatsApp: foto copiada, baixando, outra empresa"
+echo "17/23 Comprovante pelo espelho do WhatsApp: foto copiada, baixando, outra empresa"
 node "$T/comprovante-whatsapp.js"
 
-echo "17/22 Resultados: números conferidos no banco, período, permissão, sem dado pessoal"
+echo "18/23 Resultados: números conferidos no banco, período, permissão, sem dado pessoal"
 node "$T/resultados.js"
 
-echo "18/22 Agenda: espelho da Feegow (falsa), carga do histórico, contatos, Sara sem duplicar, tela do dia"
+echo "19/23 Agenda: espelho da Feegow (falsa), carga do histórico, contatos, Sara sem duplicar, tela do dia"
 node "$T/agenda.js"
 
-echo "19/22 Comprovantes a conferir: contador no menu, fila, Conferido, Baixado na Feegow, cartão e permissão"
+echo "20/23 Comprovantes a conferir: contador no menu, fila, Conferido, Baixado na Feegow, cartão e permissão"
 node "$T/comprovantes.js"
 
-echo "20/22 Empresa em toda resposta, X-Empresa, chave de outra empresa na auditoria, nada de clínica fora dela, chave idempotente"
+echo "21/23 Empresa em toda resposta, X-Empresa, chave de outra empresa na auditoria, nada de clínica fora dela, chave idempotente"
 node "$T/empresa-api.js"
 
-echo "21/22 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
+echo "22/23 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
 node "$T/seguranca.js"
 
-echo "22/22 Renovação do token (Auth com token de 30 s)"
+echo "23/23 Renovação do token (Auth com token de 30 s)"
 kill $AUTH_PID; sobe_auth 30
 node "$T/renovacao.js"

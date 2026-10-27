@@ -16,15 +16,27 @@
 .pontoOff { background: var(--fn); }
 .conteudo { padding: 28px 32px; min-width: 0; }
 
+/* Celular (27/10): barra fina no topo + menu em gaveta (components/MenuCelular.tsx). No computador a barra não aparece. */
+.barraCelular, .fecharMenu, .veu { display: none; }
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .lateral { position: static; height: auto; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .nav { flex-direction: row; flex-wrap: wrap; }
-  .itemNav { width: auto; }
-  .conteudo { padding: 20px 16px; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .barraCelular { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 30; height: 52px; padding: 0 12px 0 6px; background: var(--side); border-bottom: 1px solid var(--line); }
+  .botaoMenu { width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 10px; background: none; color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+  .botaoMenu:active { background: var(--hover); }
+  .botaoMenu:focus-visible, .fecharMenu:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .barraTexto { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+  .barraTitulo { font-weight: 650; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .barraSub { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lateral { position: fixed; top: 0; left: 0; bottom: 0; z-index: 50; width: min(300px, 86vw); height: 100vh; height: 100dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 14px 12px calc(14px + env(safe-area-inset-bottom)); gap: 16px; box-shadow: var(--shadow-2); transform: translateX(-105%); visibility: hidden;
+    transition: transform .2s ease, visibility 0s linear .2s; }
+  .lateral[data-aberto='true'] { transform: none; visibility: visible; transition: transform .2s ease; }
+  .fecharMenu { display: grid; place-items: center; position: absolute; top: 10px; right: 8px; width: 40px; height: 40px; border: 0; border-radius: 10px; background: none; color: var(--ink-2); cursor: pointer; }
+  .veu { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, .35); }
+  .itemNav { height: 44px; font-size: 15px; }
+  .conteudo { padding: 18px 16px; }
 }
-
-@media (max-width: 760px) { .rodape { margin-top: 0; flex-direction: row; align-items: center; justify-content: space-between; } .rodape .itemNav { width: auto; } }
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) { .lateral, .lateral[data-aberto='true'] { transition: none; } }
 
 .usuario { display: flex; align-items: center; gap: 9px; padding: 8px 6px 8px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
 .avatar { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; font-size: 12.5px; font-weight: 650; }
@@ -39,14 +51,20 @@
    crescia com o quadro e a barra de rolagem lateral do quadro ficava lá embaixo, fora da tela: no notebook as
    colunas da direita pareciam cortadas (11/10). */
 @media (min-width: 761px) { .conteudoLargo { height: 100vh; height: 100dvh; min-height: 0; overflow: auto; } }
-@media (max-width: 760px) { .usuario { flex-grow: 1; } .conteudoLargo { min-height: 0; } }
-@media (max-width: 760px) { .rodape { flex-wrap: wrap; gap: 8px; } .usuario { flex-basis: 100%; } .app { grid-template-columns: minmax(0, 1fr); } }
+/* No celular, as telas largas também cabem na tela (abaixo da barra de 52 px): a Inbox fica com a caixa de resposta
+   sempre à vista, como no WhatsApp, e o quadro do CRM rola por dentro (27/10). */
+@media (max-width: 760px) { .conteudoLargo { height: calc(100vh - 52px); height: calc(100dvh - 52px); min-height: 0; overflow: auto; } }
 .faixaEmpresa { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 18px; padding: 9px 14px; border-radius: 10px; background: var(--sel); border: 1px solid var(--line-strong); font-size: 13px; color: var(--ink-2); }
 .faixaEmpresa strong { color: var(--ink); }
 .faixaEmpresa button { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; }
 .faixaEmpresa button:hover:not(:disabled) { background: var(--hover); }
 .conteudoLargo > .faixaEmpresa { margin: 14px 28px 0; }
-@media (max-width: 760px) { .conteudoLargo > .faixaEmpresa { margin: 12px 16px 0; } }
+@media (max-width: 760px) {
+  .conteudoLargo > .faixaEmpresa { margin: 8px 12px 0; }
+  .faixaEmpresa { flex-wrap: nowrap; padding: 5px 6px 5px 10px; font-size: 12.5px; margin-bottom: 12px; }
+  .faixaEmpresa > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .faixaEmpresa button { flex-shrink: 0; height: 28px; padding: 0 10px; }
+}
 
 /* Contador da fila de comprovantes no menu (22/10). */
 .contadorNav { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ag); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }

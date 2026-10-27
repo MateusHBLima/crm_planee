@@ -499,6 +499,17 @@ test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', as
   assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.DONO4'")).length === 1));
   assert.equal((await (await perguntar(P4)).json()).sara_responde, true);
 
+  // 27/10: resposta pelo painel vale como a do celular (pausa de sempre, sem assumir a conversa).
+  const P5 = '554788880005';
+  await enviar(entrada(P5, 'wamid.DONO5'));
+  assert.ok(await ate(async () => (await q('select count(*)::int n from wa_conversas where wa_id = $1', [P5]))[0].n === 1));
+  const reg = await fetch(`${B}/whatsapp/envio`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' },
+    body: JSON.stringify({ phone_number_id: NUM, to: P5, wamid: 'wamid.DONO6', tipo: 'text', texto: 'Respondi pelo painel', timestamp: ts(), origem: 'painel', por: 'Amanda Teste' }) });
+  assert.equal(reg.status, 200);
+  r = await (await perguntar(P5)).json();
+  assert.equal(r.sara_responde, false); assert.equal(r.motivo, 'equipe_no_celular'); assert.equal(r.dono, 'ia');
+  assert.equal((await q('select dono from wa_conversas where wa_id = $1', [P5]))[0].dono, 'ia', 'responder pelo painel não assume a conversa');
+
   // A equipe assumiu no painel: Sara quieta até devolverem, sem prazo.
   await q(`update wa_conversas set dono = 'humano', dono_em = now(), dono_por = 'Amanda Teste' where wa_id = $1`, [P4]);
   r = await (await perguntar(P4)).json();

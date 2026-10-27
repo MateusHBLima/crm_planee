@@ -38,7 +38,8 @@ const JANELA_MS = 24 * 60 * 60 * 1000;
 const POR_PAGINA = 100;
 const ID_NUMERO = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SO_DIGITOS = /^\d{5,20}$/;
-// Minutos que a Sara fica quieta depois de resposta pelo celular (o receptor usa a mesma variável).
+// Minutos que a Sara fica quieta depois de uma resposta da equipe, pelo celular ou pelo painel (o receptor usa a
+// mesma variável).
 const PAUSA_CELULAR_MS = () => (Number(process.env.SARA_PAUSA_CELULAR_MIN) || 7) * 60_000;
 // Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (o receptor usa a mesma).
 const ASSUMIR_HORAS = () => Number(process.env.INBOX_ASSUMIR_HORAS) || 24;
@@ -107,7 +108,7 @@ const SELECT_CONVERSA = `
          c.ultima_em, c.ultima_resumo, c.ultima_direcao, c.ultima_entrada_em, c.nao_lidas, c.dono, c.dono_por, c.dono_em, c.dono_ate,
          c.lida_ate, to_jsonb(c) ->> 'lida_por' as lida_por,
          (select max(m.enviada_em) from wa_mensagens m
-           where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
+           where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem in ('celular', 'painel')) as celular_em
     from wa_conversas c left join wa_contatos k on k.numero_id = c.numero_id and k.wa_id = c.wa_id`;
 
 // Filtro "Em follow-up": o contato recebeu follow-up da IA nos últimos 31 dias e não respondeu depois (migração 017).
@@ -435,8 +436,9 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   const chave = process.env.RECEPTOR_CHAVE_INTERNA;
   if (!chave) throw new ErroApi(503, 'Envio pelo painel ainda não configurado (falta RECEPTOR_CHAVE_INTERNA na stack do painel).');
 
-  // Quem responde pelo painel assume a conversa: a Sara não fala junto. Devolver é um clique.
-  await assumirAoEnviar(u, banco, numeroId, waId);
+  // Responder pelo painel é como responder pelo celular (27/10, Mateus): a Sara fica quieta pelo tempo de sempre
+  // (SARA_PAUSA_CELULAR_MIN) e volta sozinha. Só fica com a equipe por 24 h ou "sempre" quem clicar em Assumir.
+  // Se a conversa já está assumida por prazo, o receptor empurra o prazo ao registrar o envio.
 
   const alvo = `${numeroId}:${waId.slice(-4)}`;
   const registrar = (resultado: string) => auditar(central(), u, u.empresa!.id, 'enviar_mensagem', alvo, { resultado }).catch(() => undefined);
@@ -478,21 +480,6 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
 
 const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, extra?: Record<string, unknown>) =>
   auditar(central(), u, u.empresa!.id, acao, `${numeroId}:${waId.slice(-4)}`, extra).catch(() => undefined);
-
-// Responder pelo painel assume por 24 h; se já estava com a equipe por prazo, empurra o prazo (o "sempre" fica).
-async function assumirAoEnviar(u: Usuario, banco: ReturnType<typeof db>, numeroId: string, waId: string) {
-  const r = await consultar(() => banco.query(
-    `with antes as (select ${SQL_COM_EQUIPE} as com_equipe from wa_conversas where numero_id = $1 and wa_id = $2 for update)
-     update wa_conversas c set
-        dono     = 'humano',
-        dono_em  = case when a.com_equipe then c.dono_em else now() end,
-        dono_por = case when a.com_equipe then c.dono_por else $3 end,
-        dono_ate = case when a.com_equipe and c.dono_ate is null then null else now() + make_interval(hours => $4) end
-       from antes a
-      where c.numero_id = $1 and c.wa_id = $2
-      returning a.com_equipe`, [numeroId, waId, u.nome, ASSUMIR_HORAS()]));
-  if (r.rowCount && !r.rows[0].com_equipe) await auditarDono(u, 'assumir_conversa', numeroId, waId, { ao_enviar: true, prazo: '24h' });
-}
 
 export type PrazoDono = '24h' | 'sempre';
 

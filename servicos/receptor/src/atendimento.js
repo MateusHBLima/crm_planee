@@ -2,7 +2,8 @@
 //   dono = 'humano' sem prazo (sempre)      → a equipe assumiu de vez: Sara quieta até devolverem.
 //   dono = 'humano' com prazo ainda valendo → assumida por 24 h (renovadas a cada resposta da equipe): Sara quieta.
 //   dono = 'humano' com prazo vencido       → a Sara volta sozinha (vale a regra do celular abaixo).
-//   resposta pelo celular há < N minutos    → Sara quieta até passar o prazo (mesmo comportamento de hoje).
+//   resposta da equipe há < N minutos (celular ou painel, 27/10) → Sara quieta até passar o prazo. O motivo
+//   continua "equipe_no_celular" para não mudar o que o n8n já trata.
 //   o resto                                 → Sara responde.
 // Conversa que o espelho ainda não conhece: Sara responde (o agente não depende do painel).
 import { config } from './config.js';
@@ -30,7 +31,7 @@ export async function estadoDoAtendimento(numero, waId) {
   const x = await bancoDaEmpresa(r).query(
     `select c.dono, c.dono_em, c.dono_por, to_jsonb(c) ->> 'dono_ate' as dono_ate,
             (select max(m.enviada_em) from wa_mensagens m
-              where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem = 'celular') as celular_em
+              where m.numero_id = c.numero_id and m.wa_id = c.wa_id and m.origem in ('celular', 'painel')) as celular_em
        from wa_conversas c
       where c.numero_id = $1 and c.wa_id = any($2::text[])
       order by c.ultima_em desc nulls last limit 1`, [String(numero), formas]);

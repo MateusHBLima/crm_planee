@@ -31,6 +31,7 @@ export const ICONES: Record<string, string> = {
   nota: 'M5 4h14v11l-5 5H5zM14 20v-5h5',
   check: 'M5 12l5 5L20 7',
   fechar: 'M6 6l12 12M18 6L6 18',
+  menu: 'M4 7h16M4 12h16M4 17h16',
   conversa: 'M4 5h16v11H9l-5 4z',
   arquivo: 'M3 5h18v4H3zM5 9v10h14V9M10 13h4',
   atualizar: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',

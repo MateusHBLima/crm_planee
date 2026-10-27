@@ -173,6 +173,9 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await audio1.locator('audio').waitFor({ timeout: 8000 }).catch(() => {});
   const srcAudio = (await audio1.locator('audio').getAttribute('src').catch(() => '')) || '';
   ok('áudio: "Ouvir áudio" vira o player com o arquivo', srcAudio.startsWith(process.env.RECEPTOR_URL + '/whatsapp/midia/') && (await audio1.locator('audio[controls]').count()) === 1, srcAudio);
+  // 27/10: o player ficava com largura zero dentro do balão (tocava e não dava para pausar nem voltar).
+  const larguraAudio = (await audio1.locator('audio').boundingBox().catch(() => null))?.width ?? 0;
+  ok('áudio: o player aparece inteiro (pausar e voltar à vista)', larguraAudio >= 200, String(larguraAudio));
   await p.waitForTimeout(500);
   const tokA = srcAudio.split('/').pop();
   ok('o receptor entregou o áudio pelo link (tipo sem o codecs)', receptor.pedidos.some((x) => x.tok === tokA && x.achou.endsWith('|audio/ogg')), JSON.stringify(receptor.pedidos.slice(-2)));
@@ -336,15 +339,23 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const audE = sql(`select a.empresa_id || '|' || a.alvo || '|' || coalesce(a.detalhe::text, '') from central_auditoria a where a.acao = 'enviar_mensagem' order by a.id desc limit 1`);
   ok('envio registrado na auditoria central, sem o texto', Number(sql(`select count(*) from central_auditoria where acao = 'enviar_mensagem'`)) === audEnvioAntes + 1
     && audE.startsWith(`teste|${NUM}:1001|`) && audE.includes('enviada') && !audE.includes('Resposta fictícia') && !audE.includes(BIA), audE);
-  // Quem responde pelo painel assume a conversa (a Sara fica quieta)
+  // 27/10 (Mateus): responder pelo painel é como responder pelo celular. A conversa não passa para a equipe; a Sara
+  // só fica quieta pelo tempo de sempre (pausa da resposta da equipe). Assumir por 24 h ou sempre é só pelo botão.
   await p.waitForTimeout(800);
-  ok('responder pelo painel assume a conversa por 24 h', sql(`select dono || '|' || dono_por || '|' || (dono_em is not null) || '|' || (dono_ate between now() + interval '23 hours' and now() + interval '25 hours') from wa_conversas where wa_id='${BIA}'`) === 'humano|Amanda Teste|true|true');
+  ok('responder pelo painel não assume a conversa', sql(`select dono || '|' || coalesce(dono_ate::text, '-') from wa_conversas where wa_id='${BIA}'`) === 'ia|-'
+    && sql(`select count(*) from central_auditoria where acao = 'assumir_conversa' and alvo = '${NUM}:1001'`) === '0');
   const cab = () => p.locator('section[aria-label^="Conversa com"] header');
-  ok('cabeçalho mostra "Equipe atendendo · Amanda Teste" e o botão Devolver pra Sara',
-    ((await cab().textContent()) || '').includes('Equipe atendendo · Amanda Teste') && (await p.getByRole('button', { name: 'Devolver pra Sara' }).count()) === 1);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await cab().getByText(/pausada até/).waitFor({ timeout: 8000 }).catch(() => {});
+  ok('depois da resposta pelo painel: "Sara pausada até" (a equipe respondeu) e o botão Assumir',
+    /Sara pausada até \d{2}:\d{2} \(a equipe respondeu\)/.test(((await cab().textContent()) || '').replace(/\s+/g, ' '))
+    && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1, ((await cab().textContent()) || '').slice(0, 200));
+  // Para os testes de Devolver a seguir, a conversa fica com a equipe como se alguém tivesse clicado em Assumir.
+  sql(`update wa_conversas set dono = 'humano', dono_por = 'Amanda Teste', dono_em = now(), dono_ate = now() + interval '24 hours' where wa_id = '${BIA}'`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await p.getByRole('button', { name: 'Devolver pra Sara' }).waitFor({ timeout: 8000 }).catch(() => {});
   ok('lista marca a conversa com a equipe', (await item(p, 'Beatriz Ficticia').getByText('Equipe', { exact: true }).count()) === 1
     && (await item(p, 'Carlos Ficticio').getByText('Equipe', { exact: true }).count()) === 0);
-  ok('assumir ao enviar fica na auditoria', sql(`select count(*) from central_auditoria where acao = 'assumir_conversa' and alvo = '${NUM}:1001' and detalhe::text like '%ao_enviar%'`) === '1');
   // Shift+Enter quebra a linha
   const nAntesShift = n8n.pedidos.length;
   await p.fill('#resposta-inbox', 'Linha 1'); await p.press('#resposta-inbox', 'Shift+Enter'); await p.type('#resposta-inbox', 'Linha 2'); await p.waitForTimeout(500);
@@ -357,6 +368,9 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131026)') && !respR.join('\n').includes('DADO_SENSIVEL')
     && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
+  // As respostas pelo painel acima pausam a Sara por alguns minutos (como o celular); daqui em diante os testes
+  // olham só o dono da conversa, então elas ficam no passado.
+  sql(`update wa_mensagens set enviada_em = now() - interval '1 hour' where wa_id = '${BIA}' and origem = 'painel'`);
   // Devolver pra Sara: volta para a IA e, com a última mensagem do contato, avisa o n8n para ela responder já
   sql(`update wa_conversas set ultima_direcao = 'entrada' where wa_id = '${BIA}'`);
   const nRet = n8n.pedidos.filter((x) => x.url === '/painel-retomar').length;
@@ -417,7 +431,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await item(p, 'Daniela Ficticia').getByRole('button').click();
   await conversa(p).getByText('Respondi pelo celular').waitFor({ timeout: 8000 }).catch(() => {});
   const cabDani = ((await cab().textContent()) || '').replace(/\s+/g, ' ');
-  ok('resposta pelo celular: "Sara pausada até" com o botão Assumir', /Sara pausada até \d{2}:\d{2} \(resposta pelo celular\)/.test(cabDani)
+  ok('resposta pelo celular: "Sara pausada até" com o botão Assumir', /Sara pausada até \d{2}:\d{2} \(a equipe respondeu\)/.test(cabDani)
     && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1 && sql(`select dono from wa_conversas where wa_id='${DANI}'`) === 'ia', cabDani.slice(0, 160));
   await p.screenshot({ path: out + '25_inbox_pausa_celular.png' });
   await item(p, 'Beatriz Ficticia').getByRole('button').click();
