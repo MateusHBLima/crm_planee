@@ -328,6 +328,46 @@ test('a Sara registra o que mandou: a linha do status ganha o texto', async () =
   assert.equal((await msgs("where wamid = 'wamid.SARA2'"))[0].status, 'enviada');
 });
 
+test('carga do histórico: grava antigas sem repassar, sem não lida, sem duplicar e sem sobrescrever o ao vivo', async () => {
+  const carga = (corpo, chave = 'chave-interna-teste') => fetch(`${B}/whatsapp/historico`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': chave }, body: JSON.stringify(corpo) });
+  assert.equal((await carga({}, 'errada')).status, 401);
+  assert.equal((await carga({ phone_number_id: '999999999', itens: [{ wa_id: '5547911118888', wamid: 'hist:1', direcao: 'entrada', texto: 'oi', em: '2026-09-01T12:00:00Z' }] })).status, 404);
+  const ruim = await carga({ phone_number_id: NUM, itens: [{ wa_id: '5547911118888', wamid: 'hist:1', direcao: 'lado', texto: 'oi', em: '2026-09-01T12:00:00Z' }] });
+  assert.equal(ruim.status, 400); assert.match((await ruim.json()).erro, /Item 1: direcao/);
+  const HIST = '5547911118888';
+  const repassesAntes = n8n.recebidos.length;
+  const itens = [
+    { wa_id: HIST, wamid: 'hist:1', direcao: 'entrada', autor: 'cliente', texto: 'Bom dia, a impressora parou', em: '2026-09-01T12:00:00Z', nome: 'Cliente Antigo' },
+    { wa_id: HIST, wamid: 'hist:2', direcao: 'saida', autor: 'ia', texto: 'Bom dia! Qual o modelo?', em: '2026-09-01T12:01:00Z' },
+    { wa_id: HIST, wamid: 'hist:3', direcao: 'saida', autor: 'equipe', tipo: 'image', texto: 'foto do orçamento', em: '2026-09-01T12:05:00Z' },
+  ];
+  let r = await (await carga({ phone_number_id: NUM, itens })).json();
+  assert.deepEqual([r.gravadas, r.repetidas, r.conversas], [3, 0, 1]);
+  const ms = (await msgs(`where wa_id = '${HIST}'`)).sort((a, b) => a.enviada_em - b.enviada_em);
+  assert.deepEqual(ms.map((m) => [m.origem, m.direcao, m.bruto.autor]), [['historico', 'entrada', 'cliente'], ['historico', 'saida', 'ia'], ['historico', 'saida', 'equipe']]);
+  const [cv] = await q('select nao_lidas, dono from wa_conversas where wa_id = $1', [HIST]);
+  assert.equal(cv.nao_lidas, 0);
+  assert.equal((await q('select nome_perfil from wa_contatos where wa_id = $1', [HIST]))[0].nome_perfil, 'Cliente Antigo');
+  // De novo: nada duplica
+  r = await (await carga({ phone_number_id: NUM, itens })).json();
+  assert.deepEqual([r.gravadas, r.repetidas], [0, 3]);
+  // Mensagem que já chegou ao vivo não é sobrescrita pela carga
+  await enviar(ev('messages', { contacts: [{ profile: { name: 'Ao Vivo' }, wa_id: HIST }], messages: [{ from: HIST, id: 'wamid.VIVO_HIST', timestamp: ts(), type: 'text', text: { body: 'mensagem de hoje' } }] }));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.VIVO_HIST'")).length === 1));
+  r = await (await carga({ phone_number_id: NUM, itens: [{ wa_id: HIST, wamid: 'wamid.VIVO_HIST', direcao: 'entrada', texto: 'texto velho', em: '2026-09-02T12:00:00Z' }] })).json();
+  assert.equal(r.repetidas, 1);
+  const [vivo] = await msgs("where wamid = 'wamid.VIVO_HIST'");
+  assert.equal(vivo.texto, 'mensagem de hoje'); assert.equal(vivo.origem, 'contato');
+  // A conversa continua com a mensagem de hoje como a última; nome do contato ao vivo não foi trocado
+  const [cv2] = await q('select ultima_resumo from wa_conversas where wa_id = $1', [HIST]);
+  assert.equal(cv2.ultima_resumo, 'mensagem de hoje');
+  // A carga não repassa nada para a IA
+  assert.ok(!n8n.recebidos.slice(repassesAntes).some((x) => x.corpo.includes('hist:')), 'repassou histórico');
+  // Lote grande demais
+  const muitos = Array.from({ length: 501 }, (_, i) => ({ wa_id: HIST, wamid: `hist:x${i}`, direcao: 'entrada', texto: 'x', em: '2026-09-01T12:00:00Z' }));
+  assert.equal((await carga({ phone_number_id: NUM, itens: muitos })).status, 400);
+});
+
 test('saúde: mostra a fila e o atraso', async () => {
   const r = await (await fetch(`${B}/whatsapp/saude`)).json();
   assert.equal(r.ok, true); assert.equal(typeof r.pendentes, 'number'); assert.equal(typeof r.atraso_s, 'number');

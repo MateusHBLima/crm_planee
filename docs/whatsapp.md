@@ -251,6 +251,17 @@ O receptor e o painel precisam da **mesma central**: no stack do receptor, `CENT
 
 **Etiqueta da linha:** empresa com mais de um número mostra, em cada conversa, o nome do número que recebeu.
 
+## 13. Carga do histórico guardado pela empresa (27/10)
+
+Para a Inbox não começar vazia quando o histórico da Meta (item 12, só nas 24 h da coexistência) não está mais disponível: a empresa manda as conversas que já tem guardadas (ex.: o histórico da IA no n8n).
+
+- `POST /whatsapp/historico`, cabeçalho `x-receptor-chave` (a chave interna do receptor).
+- Corpo: `{phone_number_id, itens: [{wa_id, wamid, direcao: "entrada"|"saida", autor: "cliente"|"ia"|"equipe", tipo?, texto, em, nome?}]}`, até 500 itens por lote. `em` em ISO 8601; `tipo` padrão `text`; `nome` (só nas de entrada) preenche o nome do contato se ele ainda não tiver.
+- Mensagem sem o `wamid` da Meta: mande um id estável da origem, ex.: `hist:<id da linha>`. Repetir o lote não duplica nada.
+- Grava com origem "Histórico" (a Inbox mostra "Histórico · IA" ou "Histórico · Equipe"): **não repassa para a IA, não conta como não lida, não mexe em quem atende e nunca sobrescreve uma mensagem que chegou ao vivo.**
+- Mídia antiga entra só como texto/legenda (o arquivo da Meta já expirou).
+- Resposta: `200 {ok, gravadas, repetidas, conversas}`; `401` chave errada; `404` número não cadastrado; `400` lote inválido (diz qual item).
+
 ## Retenção (LGPD)
 
 O corpo bruto em `wa_eventos` é apagado `WA_RETER_DIAS` (padrão 30) dias depois de processado e repassado. O que fica é o espelho no banco da empresa, sujeito às regras dela. As mídias ficam no bucket privado e abrem na Inbox por link curto de 10 minutos (item 12); os links vencidos saem da central em 1 hora.
