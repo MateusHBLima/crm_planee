@@ -1,7 +1,7 @@
 // Testes da Inbox (fases 1.1, 2.1 e 2.3): lista, conversa, rótulos por origem, mídia, citação, reação,
 // editada/apagada, não lidas, CPF mascarado e auditoria do master, isolamento entre empresas, permissão,
 // a resposta pelo painel contra um n8n falso (webhook painel_enviar) que também faz o papel do receptor,
-// e Assumir / Devolver pra Sara (com o aviso painel_retomar e a pausa por resposta no celular).
+// e Assumir / Devolver pra Sara (nome do agente em crm_config "agente"; com o aviso painel_retomar e a pausa por resposta no celular).
 // Roda pelo rodar.sh, depois do central.js (usa a Clínica Outra e o admin dela). Dados 100% fictícios.
 const { chromium } = require('playwright');
 const http = require('http');
@@ -92,6 +92,7 @@ const BIA = '5547900001001', CARLOS = '5547900001002', DANI = '5547900001003';
 const ONTEM = `(date_trunc('day', now() at time zone 'America/Sao_Paulo') - interval '12 hours') at time zone 'America/Sao_Paulo'`;
 const SEMENTE = `
 delete from wa_reacoes; delete from wa_mensagens; delete from wa_conversas; delete from wa_contatos;
+insert into crm_config (chave, valor) values ('agente', '{"nome": "Sara"}') on conflict (chave) do update set valor = excluded.valor;
 insert into wa_contatos (numero_id, wa_id, nome_perfil, nome_salvo) values
   ('${NUM}', '${BIA}', 'Bia perfil', 'Beatriz Ficticia'),
   ('${NUM}', '${CARLOS}', 'Carlos Ficticio', null),
@@ -145,6 +146,9 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // 15/10: a lista não mostra mais o selo "24h"; o cabeçalho só avisa quando a janela está fechada (teste mais abaixo).
   ok('lista sem o selo "24h"', (await item(p, 'Beatriz Ficticia').getByText('24h', { exact: true }).count()) === 0
     && (await item(p, 'Carlos Ficticio').getByText('24h', { exact: true }).count()) === 0);
+  // 27/10: a última de saída aparece como "Você:", em qualquer empresa (antes, "Clínica:" fixo no código).
+  ok('lista: última de saída com "Você:"', ((await item(p, 'Carlos Ficticio').textContent()) || '').includes('Você: Obrigado, até mais')
+    && !((await p.locator('section[aria-label="Conversas"]').textContent()) || '').includes('Clínica:'));
   ok('ordem: a mais recente primeiro', ((await p.locator('section[aria-label="Conversas"] li').first().textContent()) || '').includes('Beatriz'));
   ok('sem inbox.responder: aviso de somente leitura', (await p.getByText('Somente leitura: sua conta não tem a permissão para responder pelo painel.').count()) === 1);
 
@@ -430,7 +434,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     && await (async () => { await conversa(p).locator('[data-menu-mais]').click(); const n = await conversa(p).locator('header a', { hasText: 'Abrir no WhatsApp' }).count(); await p.keyboard.press('Escape'); return n === 1; })()
     && (await conversa(p).getByText('Janela de 24 h fechada').count()) === 1);
   ok('fora da janela: caixa desligada com a explicação', (await p.locator('#resposta-inbox').isDisabled())
-    && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.').count()) === 1
+    && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o contato escrever.').count()) === 1
     && (await p.getByRole('button', { name: 'Enviar', exact: true }).isDisabled()));
   const nPed = n8n.pedidos.length;
   const fora = await chamarAcao(p, acaoEnviar, [NUM, CARLOS, 'Tentativa fora da janela']);
@@ -487,12 +491,17 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   // ---- Outra empresa: banco próprio, não vê as conversas da empresa de teste ----
   sql(`delete from wa_conversas; delete from wa_contatos;
        insert into wa_contatos (numero_id, wa_id, nome_perfil) values ('200000000000002', '5548900002001', 'Elisa Outra Ficticia');
-       insert into wa_conversas (numero_id, wa_id, ultima_em, ultima_resumo, ultima_direcao) values ('200000000000002', '5548900002001', now(), 'Conversa só da Clínica Outra', 'entrada');`, process.env.OUTRA_DATABASE_URL);
+       insert into wa_conversas (numero_id, wa_id, ultima_em, ultima_resumo, ultima_direcao) values ('200000000000002', '5548900002001', now(), 'Conversa só da Clínica Outra', 'entrada');
+       delete from crm_config where chave = 'agente';`, process.env.OUTRA_DATABASE_URL);
   sql(`update empresas set modulos = array_append(modulos, 'inbox.ver') where id = 'clinica-outra' and not 'inbox.ver' = any(modulos)`);
   [ctx, p] = await novo();
   await entrar(p, OUTRA, 'admin2@teste.local', 'senhaforte1');
   ok('admin da outra empresa abre a Inbox dela', p.url().endsWith('/inbox'), p.url());
   ok('e vê só as conversas do banco dela', (await item(p, 'Elisa Outra Ficticia').count()) === 1 && (await item(p, 'Beatriz Ficticia').count()) === 0 && (await item(p, 'Carlos Ficticio').count()) === 0);
+  // Sem crm_config "agente", o nome do agente é "IA": o "Sara" da empresa de teste não vaza para a outra.
+  await item(p, 'Elisa Outra Ficticia').getByRole('button').click();
+  await p.getByText('IA atendendo').first().waitFor({ timeout: 8000 }).catch(() => {});
+  ok('outra empresa sem nome de agente: "IA atendendo", sem "Sara"', (await p.getByText('IA atendendo').count()) >= 1 && (await p.getByText(/Sara/).count()) === 0);
   await ctx.close();
   sql(`update empresas set modulos = array_remove(modulos, 'inbox.ver') where id = 'clinica-outra'`);
 

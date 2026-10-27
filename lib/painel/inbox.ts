@@ -48,7 +48,7 @@ const SQL_COM_EQUIPE = `(dono = 'humano' and (dono_ate is null or dono_ate > now
 // O receptor grava o nome do tipo quando a mensagem não tem texto (resumo da lista); a tela mostra em português.
 const RESUMO_TIPO: Record<string, string> = {
   image: 'Foto', video: 'Vídeo', audio: 'Áudio', document: 'Documento', sticker: 'Figurinha', location: 'Localização',
-  contacts: 'Contato', unsupported: 'Tipo de mensagem não suportado', desconhecido: 'Mensagem da Sara',
+  contacts: 'Contato', unsupported: 'Tipo de mensagem não suportado', desconhecido: 'Mensagem enviada',
 };
 
 // Quem atende: 'ia' (Sara) ou 'humano' (equipe assumiu no painel). pausa_ate: a equipe respondeu pelo celular e
@@ -64,7 +64,7 @@ export type Conversa = {
   lida_por: string | null; lida_em: string | null;
 };
 // linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
-export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null };
+export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null; agente: string };
 
 export type Mensagem = {
   id: string; wamid: string; por: string | null; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
@@ -128,6 +128,7 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
   let r;
   // Os números da empresa (banco central) vêm junto, em paralelo: com um número só, a tela não mostra a linha.
   const linhas = linhasDaEmpresa(u);
+  const agente = nomeDoAgente(u);
   try {
     r = await consultar(() => db(u).query(
       `${SELECT_CONVERSA}
@@ -138,10 +139,26 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
         order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
   } catch (e) {
     // Banco ainda sem a 017: o filtro de follow-up volta vazio, em vez de erro.
-    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
+    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: await agente };
     throw e;
   }
-  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas };
+  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: await agente };
+}
+
+// Nome do agente de IA da empresa, para a Inbox (27/10): crm_config "agente" = {"nome": "..."}, gravado pela API
+// (PUT /api/v1/config/agente). Sem a chave, ou com valor estranho, "IA": nenhum nome de cliente fica no código.
+export const AGENTE_PADRAO = 'IA';
+export function nomeDoValorAgente(valor: unknown): string {
+  const nome = valor && typeof valor === 'object' ? (valor as { nome?: unknown }).nome : valor;
+  return typeof nome === 'string' && nome.trim() ? nome.trim().slice(0, 40) : AGENTE_PADRAO;
+}
+async function nomeDoAgente(u: Usuario): Promise<string> {
+  try {
+    const r = await db(u).query(`select valor from crm_config where chave = 'agente'`);
+    return nomeDoValorAgente(r.rows[0]?.valor);
+  } catch {
+    return AGENTE_PADRAO; // banco sem crm_config: a Inbox abre do mesmo jeito
+  }
 }
 
 // Números cadastrados da empresa (banco central). Com um só, a tela não mostra etiqueta de linha.
@@ -395,7 +412,7 @@ export async function marcarNaoLida(u: Usuario, numeroId: string, waId: string):
 const ENVIO_MS = 15000;
 const MAX_TEXTO = 4096;
 const WAMID = /^[A-Za-z0-9_.=:+/-]{1,200}$/;
-export const MSG_FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o paciente escrever.';
+export const MSG_FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o contato escrever.';
 
 // Manda a resposta ao receptor (POST /whatsapp/enviar, 26/10), que envia pela Meta com o token do número, grava no
 // espelho e repassa o eco para a IA da empresa ([EQUIPE] no histórico). Nenhum workflow de envio no n8n.
@@ -412,7 +429,7 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   const r = await consultar(() => banco.query(`select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
   if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
   const entrada = r.rows[0].ultima_entrada_em ? new Date(r.rows[0].ultima_entrada_em).getTime() : 0;
-  if (!entrada) throw new ErroApi(409, 'Este contato ainda não escreveu para a clínica: a Meta só permite começar a conversa com modelo aprovado. Responda pelo celular.');
+  if (!entrada) throw new ErroApi(409, 'Este contato ainda não escreveu para a empresa: a Meta só permite começar a conversa com modelo aprovado. Responda pelo celular.');
   if (Date.now() - entrada >= JANELA_MS) throw new ErroApi(409, MSG_FORA_DA_JANELA);
 
   const chave = process.env.RECEPTOR_CHAVE_INTERNA;
