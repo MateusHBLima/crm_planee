@@ -15,7 +15,6 @@ services:
       - PAINEL_CHAVE_CIFRA=${PAINEL_CHAVE_CIFRA:-}
       # Envio pela Inbox (26/10): o painel chama o receptor (POST /whatsapp/enviar) com a MESMA chave da stack do receptor.
       - RECEPTOR_CHAVE_INTERNA=${RECEPTOR_CHAVE_INTERNA:-}
-      - N8N_WEBHOOK_PAINEL_RETOMAR=${N8N_WEBHOOK_PAINEL_RETOMAR:-}
       - N8N_WEBHOOK_SEGREDO=${N8N_WEBHOOK_SEGREDO:-}
       - PAINEL_FUSO=America/Sao_Paulo
       - EMPRESA_BANCO_PADRAO=${EMPRESA_BANCO_PADRAO:-teste}

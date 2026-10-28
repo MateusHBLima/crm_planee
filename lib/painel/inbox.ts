@@ -7,6 +7,7 @@ import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/tel
 import { fuso, mascararTexto } from './crm';
 import { auditar } from './gestao';
 import { completarFalasDaIa } from './falas-ia';
+import { agenteDoValor, type ConfigAgente } from '@/lib/agente';
 import { nomeDoTipo, seloDoTelefone, SQL_EH_FOLLOWUP, type Selo } from '@/lib/automaticas';
 
 // Inbox: espelho do WhatsApp (fase 1.1) e resposta pelo painel (fase 2.3). Lê as tabelas wa_* que o receptor
@@ -38,9 +39,8 @@ const JANELA_MS = 24 * 60 * 60 * 1000;
 const POR_PAGINA = 100;
 const ID_NUMERO = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SO_DIGITOS = /^\d{5,20}$/;
-// Minutos que a Sara fica quieta depois de uma resposta da equipe, pelo celular ou pelo painel (o receptor usa a
-// mesma variável).
-const PAUSA_CELULAR_MS = () => (Number(process.env.SARA_PAUSA_CELULAR_MIN) || 7) * 60_000;
+// Minutos que a IA fica quieta depois de uma resposta da equipe, pelo celular ou pelo painel: por empresa
+// (lib/agente.ts, crm_config "agente".pausa_min). O receptor usa a mesma regra (GET /whatsapp/atendimento).
 // Horas que a conversa assumida "por 24 h" fica com a equipe depois da última resposta dela (o receptor usa a mesma).
 const ASSUMIR_HORAS = () => Number(process.env.INBOX_ASSUMIR_HORAS) || 24;
 // Conversa com a equipe agora: dono humano sem prazo (sempre) ou com o prazo ainda valendo.
@@ -65,7 +65,8 @@ export type Conversa = {
   lida_por: string | null; lida_em: string | null;
 };
 // linhas: nome de cada número da empresa (quando ela tem mais de um), para a lista mostrar por qual linha veio.
-export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null; agente: string };
+// assumir: a IA da empresa respeita o Assumir do painel (crm_config "agente".assumir); sem isso o botão não aparece.
+export type ListaConversas = { conversas: Conversa[]; fuso: string; lidoEm: string; linhas: Record<string, string> | null; agente: string; assumir: boolean };
 
 export type Mensagem = {
   id: string; wamid: string; por: string | null; direcao: 'entrada' | 'saida'; origem: 'contato' | 'celular' | 'api' | 'historico' | 'painel';
@@ -83,12 +84,12 @@ export type Mensagem = {
 // selo: mensagens automáticas da IA (follow-up, recusa), migração 017; null sem selo ou sem a 017.
 export type ConversaAberta = { conversa: Conversa; mensagens: Mensagem[]; temMais: boolean; fuso: string; selo: Selo | null };
 
-function limparConversa(u: Usuario, r: Record<string, unknown>): Conversa {
+function limparConversa(u: Usuario, r: Record<string, unknown>, pausaMin: number): Conversa {
   let resumo = r.ultima_resumo == null ? null : String(r.ultima_resumo);
   if (resumo && RESUMO_TIPO[resumo]) resumo = RESUMO_TIPO[resumo];
   if (resumo && u.master) resumo = mascararTexto(resumo);
   const entrada = r.ultima_entrada_em ? new Date(r.ultima_entrada_em as string).getTime() : 0;
-  const pausa = r.celular_em ? new Date(r.celular_em as string).getTime() + PAUSA_CELULAR_MS() : 0;
+  const pausa = r.celular_em ? new Date(r.celular_em as string).getTime() + pausaMin * 60_000 : 0;
   // Prazo vencido: a Sara já voltou (o receptor responde "sara_responde: true"), mesmo com dono = 'humano' gravado.
   const comEquipe = r.dono === 'humano' && (!r.dono_ate || new Date(r.dono_ate as string).getTime() > Date.now());
   return {
@@ -129,7 +130,7 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
   let r;
   // Os números da empresa (banco central) vêm junto, em paralelo: com um número só, a tela não mostra a linha.
   const linhas = linhasDaEmpresa(u);
-  const agente = nomeDoAgente(u);
+  const agente = lerAgente(u);
   try {
     r = await consultar(() => db(u).query(
       `${SELECT_CONVERSA}
@@ -140,25 +141,24 @@ export async function listarConversas(u: Usuario, busca?: string, filtro?: strin
         order by c.ultima_em desc nulls last limit 300`, [nome, dig]));
   } catch (e) {
     // Banco ainda sem a 017: o filtro de follow-up volta vazio, em vez de erro.
-    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: await agente };
+    if (followup && ['42P01', '42703'].includes((e as { code?: string }).code ?? '')) {
+      const a = await agente;
+      return { conversas: [], fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: a.nome, assumir: a.assumir };
+    }
     throw e;
   }
-  return { conversas: r.rows.map((x) => limparConversa(u, x)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: await agente };
+  const a = await agente;
+  return { conversas: r.rows.map((x) => limparConversa(u, x, a.pausaMin)), fuso: fuso(), lidoEm: new Date().toISOString(), linhas: await linhas, agente: a.nome, assumir: a.assumir };
 }
 
-// Nome do agente de IA da empresa, para a Inbox (27/10): crm_config "agente" = {"nome": "..."}, gravado pela API
-// (PUT /api/v1/config/agente). Sem a chave, ou com valor estranho, "IA": nenhum nome de cliente fica no código.
-export const AGENTE_PADRAO = 'IA';
-export function nomeDoValorAgente(valor: unknown): string {
-  const nome = valor && typeof valor === 'object' ? (valor as { nome?: unknown }).nome : valor;
-  return typeof nome === 'string' && nome.trim() ? nome.trim().slice(0, 40) : AGENTE_PADRAO;
-}
-async function nomeDoAgente(u: Usuario): Promise<string> {
+// Configuração do agente de IA da empresa (crm_config "agente"): lib/agente.ts.
+export { AGENTE_PADRAO, nomeDoValorAgente, agenteDoValor, type ConfigAgente } from '@/lib/agente';
+export async function lerAgente(u: Usuario): Promise<ConfigAgente> {
   try {
     const r = await db(u).query(`select valor from crm_config where chave = 'agente'`);
-    return nomeDoValorAgente(r.rows[0]?.valor);
+    return agenteDoValor(r.rows[0]?.valor);
   } catch {
-    return AGENTE_PADRAO; // banco sem crm_config: a Inbox abre do mesmo jeito
+    return agenteDoValor(null); // banco sem crm_config: a Inbox abre do mesmo jeito
   }
 }
 
@@ -180,9 +180,9 @@ function validar(numeroId: string, waId: string) {
 }
 
 async function lerConversaResumo(u: Usuario, numeroId: string, waId: string): Promise<Conversa> {
-  const r = await consultar(() => db(u).query(`${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2`, [numeroId, waId]));
+  const [r, a] = await Promise.all([consultar(() => db(u).query(`${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2`, [numeroId, waId])), lerAgente(u)]);
   if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
-  return limparConversa(u, r.rows[0]);
+  return limparConversa(u, r.rows[0], a.pausaMin);
 }
 
 // Quem abriu cada conversa fica na auditoria central (tela Registro): só o número da empresa e os 4 últimos
@@ -207,6 +207,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
   validar(numeroId, waId);
   if (antesDeId != null && !/^\d{1,18}$/.test(String(antesDeId))) throw new ErroApi(400, 'Página inválida.');
   const banco = db(u);
+  const agenteP = lerAgente(u); // em paralelo com a consulta: a pausa da IA é por empresa
   // Página mais recente, ou a anterior a uma mensagem (mesma ordem da tela: horário da Meta e id).
   const r = await consultar(() => banco.query(
     `with conv as (${SELECT_CONVERSA} where c.numero_id = $1 and c.wa_id = $2),
@@ -233,7 +234,7 @@ export async function lerConversa(u: Usuario, numeroId: string, waId: string, an
     [numeroId, waId, antesDeId ?? null, POR_PAGINA + 1]));
   const x = r.rows[0] ?? {};
   if (!x.conversa) throw new ErroApi(404, 'Conversa não encontrada.');
-  const conversa = limparConversa(u, x.conversa as Record<string, unknown>);
+  const conversa = limparConversa(u, x.conversa as Record<string, unknown>, (await agenteP).pausaMin);
   const todas = x.msgs as Record<string, unknown>[];
   const temMais = todas.length > POR_PAGINA;
   const linhas = todas.slice(0, POR_PAGINA).reverse();
@@ -413,6 +414,10 @@ export async function marcarNaoLida(u: Usuario, numeroId: string, waId: string):
 const ENVIO_MS = 15000;
 const MAX_TEXTO = 4096;
 const WAMID = /^[A-Za-z0-9_.=:+/-]{1,200}$/;
+// Texto que é só um comando ("/r", "/p"...): o n8n recebe o eco como se a equipe digitasse o comando ("/r" apaga o
+// histórico da conversa). Frase que começa com barra é texto normal.
+const SO_COMANDO = /^\/\S+$/;
+const MSG_COMANDO = 'Comandos (como /r) não podem ser enviados pelo painel.';
 export const MSG_FORA_DA_JANELA = 'Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o contato escrever.';
 
 // Manda a resposta ao receptor (POST /whatsapp/enviar, 26/10), que envia pela Meta com o token do número, grava no
@@ -426,6 +431,7 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   const t = String(texto ?? '').trim();
   if (!t) throw new ErroApi(400, 'Escreva a mensagem antes de enviar.');
   if (t.length > MAX_TEXTO) throw new ErroApi(400, 'A mensagem passou de 4.096 caracteres.');
+  if (SO_COMANDO.test(t)) throw new ErroApi(400, MSG_COMANDO);
 
   const r = await consultar(() => banco.query(`select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
   if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
@@ -476,6 +482,78 @@ export async function enviarMensagem(u: Usuario, numeroId: string, waId: string,
   throw new ErroApi(502, codigo ? `A Meta recusou o envio (código ${codigo}).` : 'O serviço de envio não confirmou a mensagem. Tente de novo em instantes.');
 }
 
+// ---- Foto, vídeo, áudio e documento pela Inbox (27/10) ----
+// O arquivo vai ao receptor (POST /whatsapp/enviar-midia), que converte quando precisa (áudio gravado na tela vira
+// mensagem de voz; vídeo fora de MP4 vira MP4), sobe na Meta, envia, guarda no Storage, grava no espelho e avisa a
+// IA. Mesmas travas do texto: permissão, janela de 24 h, auditoria sem conteúdo.
+const MB = 1024 * 1024;
+export const MAX_MIDIA = 25 * MB;
+const ENVIO_MIDIA_MS = 180000;
+const ERRO_MIDIA: Record<string, string> = {
+  grande_demais: 'Arquivo grande demais para o WhatsApp (foto até 5 MB vira documento; áudio e vídeo até 16 MB). Mande pelo celular.',
+  arquivo_vazio: 'O arquivo chegou vazio. Escolha de novo.',
+  conversao_falhou: 'Não consegui converter este arquivo para o WhatsApp. Tente outro formato ou mande pelo celular.',
+  upload_falhou: 'A Meta não aceitou o arquivo. Tente de novo ou mande pelo celular.',
+  sem_token: 'Este número ainda não tem o token da Meta cadastrado no painel.',
+};
+
+export async function enviarMidia(u: Usuario, numeroId: string, waId: string, arquivo: File | null, legenda: string, voz: boolean): Promise<{ wamid: string; tipo: string }> {
+  validar(numeroId, waId);
+  const banco = db(u);
+  if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para responder pelo painel nesta empresa.');
+  if (!arquivo || typeof arquivo === 'string' || !arquivo.size) throw new ErroApi(400, 'Escolha o arquivo antes de enviar.');
+  if (arquivo.size > MAX_MIDIA) throw new ErroApi(400, 'Arquivo acima de 25 MB: mande pelo celular.');
+  const l = String(legenda ?? '').trim();
+  if (l.length > 1024) throw new ErroApi(400, 'A legenda passou de 1.024 caracteres.');
+  if (SO_COMANDO.test(l)) throw new ErroApi(400, MSG_COMANDO);
+
+  const r = await consultar(() => banco.query(`select ultima_entrada_em from wa_conversas where numero_id = $1 and wa_id = $2`, [numeroId, waId]));
+  if (!r.rowCount) throw new ErroApi(404, 'Conversa não encontrada.');
+  const entrada = r.rows[0].ultima_entrada_em ? new Date(r.rows[0].ultima_entrada_em).getTime() : 0;
+  if (!entrada) throw new ErroApi(409, 'Este contato ainda não escreveu para a empresa: a Meta só permite começar a conversa com modelo aprovado. Responda pelo celular.');
+  if (Date.now() - entrada >= JANELA_MS) throw new ErroApi(409, MSG_FORA_DA_JANELA);
+
+  const chave = process.env.RECEPTOR_CHAVE_INTERNA;
+  if (!chave) throw new ErroApi(503, 'Envio pelo painel ainda não configurado (falta RECEPTOR_CHAVE_INTERNA na stack do painel).');
+
+  const alvo = `${numeroId}:${waId.slice(-4)}`;
+  const registrar = (resultado: string, tipo?: string) => auditar(central(), u, u.empresa!.id, 'enviar_midia', alvo, { resultado, tipo: tipo ?? null }).catch(() => undefined);
+  const nome = String(arquivo.name || '').slice(0, 120);
+  const mime = String(arquivo.type || 'application/octet-stream').slice(0, 100);
+  const dados = Buffer.from(JSON.stringify({ phone_number_id: numeroId, to: waId, nome, legenda: l, por: u.nome, voz: Boolean(voz) })).toString('base64url');
+  const ctrl = new AbortController();
+  const tempo = setTimeout(() => ctrl.abort(), ENVIO_MIDIA_MS);
+  let resposta: { ok?: unknown; wamid?: unknown; tipo?: unknown; erro?: unknown } | null = null;
+  let status = 0;
+  try {
+    const x = await fetch(`${baseReceptor()}/whatsapp/enviar-midia`, {
+      method: 'POST', signal: ctrl.signal, cache: 'no-store',
+      headers: { 'content-type': mime, 'x-receptor-chave': chave, 'x-envio': dados },
+      body: new Uint8Array(await arquivo.arrayBuffer()),
+    });
+    status = x.status;
+    resposta = await x.json().catch(() => null);
+  } catch (e) {
+    await registrar('sem_resposta');
+    throw new ErroApi(502, (e as { name?: string }).name === 'AbortError'
+      ? 'O envio demorou demais e não foi confirmado. Confira no WhatsApp antes de mandar de novo.'
+      : 'Não foi possível falar com o serviço de envio. Tente de novo em instantes.');
+  } finally {
+    clearTimeout(tempo);
+  }
+  if (status >= 200 && status < 300 && resposta?.ok === true && typeof resposta.wamid === 'string' && WAMID.test(resposta.wamid)) {
+    const tipo = typeof resposta.tipo === 'string' ? resposta.tipo.replace(/[^a-z]/g, '').slice(0, 20) : 'document';
+    await registrar('enviada', tipo);
+    return { wamid: resposta.wamid, tipo };
+  }
+  await registrar('falhou');
+  const codigo = resposta && resposta.ok === false && resposta.erro != null ? String(resposta.erro).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 30) : '';
+  if (codigo === '131047') throw new ErroApi(409, MSG_FORA_DA_JANELA);
+  if (ERRO_MIDIA[codigo]) throw new ErroApi(400, ERRO_MIDIA[codigo]);
+  if (status === 413) throw new ErroApi(400, 'Arquivo grande demais para o serviço de envio.');
+  throw new ErroApi(502, codigo ? `A Meta recusou o arquivo (código ${codigo}).` : 'O serviço de envio não confirmou o arquivo. Tente de novo em instantes.');
+}
+
 // ---- Quem atende: assumir e devolver para a Sara (fase 2.1, versão da Inbox) ----
 
 const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, extra?: Record<string, unknown>) =>
@@ -484,14 +562,18 @@ const auditarDono = (u: Usuario, acao: string, numeroId: string, waId: string, e
 export type PrazoDono = '24h' | 'sempre';
 
 // Assumir por 24 h (a Sara volta sozinha 24 h depois da última resposta da equipe) ou sempre (até alguém devolver).
-// Devolver: a Sara volta a responder; se a última mensagem é do contato, avisa o n8n (N8N_WEBHOOK_PAINEL_RETOMAR)
-// para ela responder já. Só quem pode responder.
+// Devolver: a IA volta a responder; se a última mensagem é do contato, avisa a IA da empresa (crm_config
+// "agente".avisos_url) para ela responder já. Só quem pode responder. Assumir só onde a IA respeita (agente.assumir).
 export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono: 'ia' | 'humano', prazo: PrazoDono = '24h'): Promise<Conversa> {
   validar(numeroId, waId);
   if (dono !== 'ia' && dono !== 'humano') throw new ErroApi(400, 'Escolha assumir ou devolver.');
   if (prazo !== '24h' && prazo !== 'sempre') throw new ErroApi(400, 'Escolha por 24 h ou sempre.');
   const banco = db(u);
   if (!pode(u, 'inbox.responder')) throw new ErroApi(403, 'Você não tem permissão para atender pelo painel nesta empresa.');
+  const agente = await lerAgente(u);
+  // A IA desta empresa ainda não consulta o dono da conversa: assumir não a calaria (27/10). Devolver continua, para
+  // limpar conversa assumida antes.
+  if (dono === 'humano' && !agente.assumir) throw new ErroApi(409, `A ${agente.nome} desta empresa ainda não respeita o Assumir. Responda pela conversa: ela fica quieta depois de cada resposta da equipe.`);
   const r = dono === 'humano'
     ? await consultar(() => banco.query(
       `update wa_conversas set dono = 'humano', dono_em = now(), dono_por = $3,
@@ -502,14 +584,15 @@ export async function mudarDono(u: Usuario, numeroId: string, waId: string, dono
         where numero_id = $1 and wa_id = $2 and ${SQL_COM_EQUIPE} returning ultima_direcao`, [numeroId, waId, u.nome]));
   if (r.rowCount) {
     await auditarDono(u, dono === 'humano' ? 'assumir_conversa' : 'devolver_conversa', numeroId, waId, dono === 'humano' ? { prazo } : undefined);
-    if (dono === 'ia' && r.rows[0].ultima_direcao === 'entrada') await avisarDevolvida(u, numeroId, waId);
+    if (dono === 'ia' && r.rows[0].ultima_direcao === 'entrada') await avisarDevolvida(u, numeroId, waId, agente.avisosUrl);
   }
   return lerConversaResumo(u, numeroId, waId);
 }
 
-// O aviso é extra: sem o endereço, ou com o n8n fora, a Sara responde na próxima mensagem do contato.
-async function avisarDevolvida(u: Usuario, numeroId: string, waId: string) {
-  const url = process.env.N8N_WEBHOOK_PAINEL_RETOMAR;
+// O aviso é extra: sem o endereço, ou com o n8n fora, a IA responde na próxima mensagem do contato.
+// O endereço é da empresa (crm_config "agente".avisos_url, 27/10): nunca um endereço único para todas, que mandaria
+// o telefone do cliente de uma empresa para a IA de outra.
+async function avisarDevolvida(u: Usuario, numeroId: string, waId: string, url: string | null) {
   if (!url) return;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
   await fetch(url, {

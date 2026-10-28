@@ -8,7 +8,7 @@ const SEGURANCA = [
   { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=(), payment=()' },
 ];
 
 const nextConfig: NextConfig = {
@@ -16,10 +16,10 @@ const nextConfig: NextConfig = {
   // Imagem Docker enxuta para o Swarm (decisão 27).
   output: 'standalone',
   poweredByHeader: false,
-  // Comprovante anexado pela tela (até 10 MB) vai numa ação do servidor.
+  // Comprovante anexado pela tela (até 10 MB) e arquivo enviado pela Inbox (até 25 MB, 27/10) vão numa ação do servidor.
   // staleTimes: voltar a uma tela visitada há menos de 30 s não pede a página de novo ao servidor (09/10). As telas
   // não trazem dados na página (vêm pelas leituras GET, que continuam conferindo sessão e permissão a cada pedido).
-  experimental: { serverActions: { bodySizeLimit: '12mb' }, staleTimes: { dynamic: 30 } },
+  experimental: { serverActions: { bodySizeLimit: '27mb' }, staleTimes: { dynamic: 30 } },
   async headers() {
     return [{ source: '/:path*', headers: SEGURANCA }];
   },

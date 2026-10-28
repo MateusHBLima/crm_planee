@@ -15,7 +15,7 @@ export function assinaturaValida(corpo, cabecalho) {
   });
 }
 
-const graph = (caminho) => `${config.graphUrl}/${config.graphVersao}/${caminho}`;
+export const graph = (caminho) => `${config.graphUrl}/${config.graphVersao}/${caminho}`;
 
 // Baixa a mídia pelo id: primeiro o endereço temporário (vale poucos minutos), depois os bytes.
 export async function baixarMidia(id, token) {

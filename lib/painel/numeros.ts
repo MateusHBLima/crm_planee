@@ -10,7 +10,7 @@ import { auditar } from './gestao';
 
 export type NumeroWhats = {
   phone_number_id: string; waba_id: string | null; empresa_id: string; nome: string | null; telefone: string | null;
-  encaminhar_url: string | null; ativo: boolean; tem_token: boolean; tem_segredo: boolean;
+  encaminhar_url: string | null; eco_url: string | null; ativo: boolean; tem_token: boolean; tem_segredo: boolean;
   conectar_pedido_em: string | null; conectado_em: string | null; conexao_erro: string | null; verificado_nome: string | null;
   historico_pedido_em: string | null; historico_status: string | null; historico_em: string | null;
 };
@@ -30,7 +30,7 @@ export async function listarNumeros(u: Usuario): Promise<NumeroWhats[]> {
     const r = await central().query(`select to_jsonb(n) as j from whatsapp_numeros n order by n.empresa_id, n.ativo desc, n.nome nulls last`);
     return r.rows.map(({ j }) => ({
       phone_number_id: j.phone_number_id, waba_id: j.waba_id ?? null, empresa_id: j.empresa_id, nome: j.nome ?? null,
-      telefone: j.telefone ?? null, encaminhar_url: j.encaminhar_url ?? null, ativo: Boolean(j.ativo),
+      telefone: j.telefone ?? null, encaminhar_url: j.encaminhar_url ?? null, eco_url: j.eco_url ?? null, ativo: Boolean(j.ativo),
       tem_token: Boolean(j.token_cifrado), tem_segredo: Boolean(j.app_secret_cifrado),
       conectar_pedido_em: iso(j.conectar_pedido_em), conectado_em: iso(j.conectado_em), conexao_erro: j.conexao_erro ?? null,
       verificado_nome: j.verificado_nome ?? null, historico_pedido_em: iso(j.historico_pedido_em),
@@ -46,7 +46,7 @@ const textoCurto = (v: unknown, max: number) => { const s = String(v ?? '').trim
 
 // Cria ou atualiza. Token e segredo em branco na edição = mantém o que já está guardado.
 export async function salvarNumero(u: Usuario, empresa: string, dados: {
-  phone_number_id: unknown; waba_id?: unknown; nome?: unknown; encaminhar_url?: unknown; token?: unknown; app_secret?: unknown;
+  phone_number_id: unknown; waba_id?: unknown; nome?: unknown; encaminhar_url?: unknown; eco_url?: unknown; token?: unknown; app_secret?: unknown;
 }) {
   exigirMaster(u);
   const id = String(dados.phone_number_id ?? '').trim();
@@ -56,6 +56,9 @@ export async function salvarNumero(u: Usuario, empresa: string, dados: {
   const nome = textoCurto(dados.nome, 80);
   const url = textoCurto(dados.encaminhar_url, 500);
   if (url && !/^https:\/\/[^\s]+$/.test(url)) throw new ErroApi(400, 'Repassar para: use o endereço https do webhook da Sara no n8n.');
+  // 27/10: empresa cuja IA recebe direto da Meta (sem repasse pelo receptor) recebe aqui só o aviso das respostas pelo painel.
+  const eco = textoCurto(dados.eco_url, 500);
+  if (eco && !/^https:\/\/[^\s]+$/.test(eco)) throw new ErroApi(400, 'Avisar a IA das respostas pelo painel: use o endereço https do webhook da IA.');
   const token = textoCurto(dados.token, 2000);
   const segredo = textoCurto(dados.app_secret, 200);
   if (token && !/^[A-Za-z0-9_\-.|]{20,}$/.test(token)) throw new ErroApi(400, 'Token da Meta: cole só o token (sem espaços nem "Bearer").');
@@ -76,9 +79,13 @@ export async function salvarNumero(u: Usuario, empresa: string, dados: {
            app_secret_cifrado = coalesce(excluded.app_secret_cifrado, whatsapp_numeros.app_secret_cifrado),
            atualizado_em = now()`,
         [id, waba, empresa, nome, url, token ? cifrar(token) : null, segredo ? cifrar(segredo) : null]);
+      // Coluna da migração 030: central ainda sem ela só falha se alguém tentar gravar o endereço.
+      const temEco = (await c.query(`select 1 from information_schema.columns where table_name = 'whatsapp_numeros' and column_name = 'eco_url' limit 1`)).rowCount;
+      if (temEco) await c.query('update whatsapp_numeros set eco_url = $2 where phone_number_id = $1', [id, eco]);
+      else if (eco) throw new ErroApi(503, 'O banco central ainda não tem a migração 030 (aviso à IA das respostas pelo painel).');
       // Nunca o token nem o segredo na auditoria: só se foram trocados.
       await auditar(c, u, empresa, atual.rowCount ? 'atualizar_numero' : 'cadastrar_numero', id,
-        { waba_id: waba, nome, repasse: Boolean(url), trocou_token: Boolean(token), trocou_segredo: Boolean(segredo) });
+        { waba_id: waba, nome, repasse: Boolean(url), eco: Boolean(eco), trocou_token: Boolean(token), trocou_segredo: Boolean(segredo) });
     }, central());
   } catch (e) {
     const code = (e as { code?: string }).code;

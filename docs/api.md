@@ -38,7 +38,16 @@ Rotas de cada recurso: `GET /api/v1/<recurso>` (lista, com filtros na URL), `POS
 
 Ferramentas do conector MCP: `descrever_crm`, `listar`, `obter`, `criar`, `atualizar`, `arquivar`, `ler_config`, `definir_config`, `ficha_do_contato`, `mover_no_funil`.
 
-**Nome do agente de IA** (27/10): configuração `agente` = `{"nome": "Sara"}` (`PUT /api/v1/config/agente` ou `definir_config`). A Inbox usa esse nome no autor das mensagens da API, em "Devolver pra …", "… atendendo" e "… pausada". Sem a chave, aparece "IA". O nome tem até 40 caracteres.
+**Agente de IA da empresa** (27/10): configuração `agente` (`PUT /api/v1/config/agente` ou `definir_config`; o valor é o objeto inteiro, mande todos os campos):
+
+| Campo | O que faz | Sem ele |
+|---|---|---|
+| `nome` | Nome na Inbox: autor das mensagens da API, "Devolver pra …", "… atendendo", "… pausada". Até 40 caracteres. Se a IA manda o próprio nome em cima do texto (`*Amanda:*` + quebra de linha), a Inbox esconde essa linha (o texto gravado não muda). | "IA" |
+| `pausa_min` | Minutos que a IA fica quieta depois de uma resposta da equipe, pelo celular ou pelo painel (1 a 1440). Vale para o "pausada até" da Inbox e para o `GET /whatsapp/atendimento` do receptor. | `SARA_PAUSA_CELULAR_MIN` (7) |
+| `assumir` | `true` quando a IA consulta o dono da conversa (`GET /whatsapp/atendimento`). Só então a Inbox mostra "Assumir". | botão escondido; a ação recusa |
+| `avisos_url` | Webhook da IA da empresa que recebe `conversa_devolvida` e `atendimento_finalizado` (https). | nada é avisado |
+
+Exemplo: `{"nome": "Amanda", "pausa_min": 120, "assumir": false}`.
 
 ## Para a IA (Sara)
 
@@ -145,7 +154,7 @@ Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com
 
 ## Painel → n8n
 
-Quando alguém finaliza um atendimento no painel, o painel avisa o n8n (para a IA poder retomar a conversa, tarefa 2.4): `POST` em `N8N_WEBHOOK_PAINEL_RETOMAR` com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem a variável, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
+Quando alguém finaliza um atendimento no painel, o painel avisa a IA da empresa (para ela poder retomar a conversa, tarefa 2.4): `POST` no `avisos_url` da configuração `agente` **da empresa** (27/10; antes era `N8N_WEBHOOK_PAINEL_RETOMAR`, um endereço só para todas as empresas) com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem o endereço, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).
 
 ## Módulos por empresa (decisão 46)
 

@@ -11,6 +11,7 @@ import type { LinhaEmpresa } from '@/lib/painel/gestao';
 import type { NumeroWhats } from '@/lib/painel/numeros';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
+import { NovaEmpresa } from './NovaEmpresa';
 import g from './gestao.module.css';
 
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -76,10 +77,10 @@ const fone = (t: string | null) => {
 };
 const pendente = (n: NumeroWhats) => Boolean(n.conectar_pedido_em || n.historico_pedido_em || n.historico_status?.startsWith('pedindo'));
 
-type Ficha = { phone_number_id: string; waba_id: string; nome: string; encaminhar_url: string; token: string; app_secret: string };
+type Ficha = { phone_number_id: string; waba_id: string; nome: string; encaminhar_url: string; eco_url: string; token: string; app_secret: string };
 const hostDe = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
-const vazia: Ficha = { phone_number_id: '', waba_id: '', nome: '', encaminhar_url: '', token: '', app_secret: '' };
+const vazia: Ficha = { phone_number_id: '', waba_id: '', nome: '', encaminhar_url: '', eco_url: '', token: '', app_secret: '' };
 
 function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
   empresa: string; inicial: Ficha; editando: boolean; ocupado: boolean; rodar: Rodar; fechar: () => void;
@@ -99,6 +100,8 @@ function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
       </div>
       <label className={g.campo}>Repassar para a IA (webhook do n8n; vazio = ao conectar, vale o endereço que recebe hoje na Meta)
         <input name="encaminhar_url" type="url" placeholder="https://..." {...campo('encaminhar_url')} /></label>
+      <label className={g.campo}>Avisar a IA das respostas pelo painel (só se a IA recebe direto da Meta, sem repasse; vazio = vai para o endereço de cima)
+        <input name="eco_url" type="url" placeholder="https://..." {...campo('eco_url')} /></label>
       <div className={g.linha}>
         <label className={g.campo}>Token da Meta {editando && '(vazio = mantém o guardado)'}
           <input name="token" type="password" autoComplete="off" {...campo('token')} /></label>
@@ -134,7 +137,7 @@ function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rod
             <span className={g.selo}>{n.tem_token ? 'Token guardado' : 'Token geral do receptor'}</span>
           </div>
           {n.conexao_erro && !n.conectar_pedido_em && <p className={g.erroLinha} data-erro>{n.conexao_erro}</p>}
-          {n.verificado_nome && <p className={g.dica}>Nome verificado na Meta: {n.verificado_nome}{n.encaminhar_url ? ` · repassa para a IA em ${hostDe(n.encaminhar_url)}` : ' · sem repasse para a IA'}</p>}
+          {n.verificado_nome && <p className={g.dica}>Nome verificado na Meta: {n.verificado_nome}{n.encaminhar_url ? ` · repassa para a IA em ${hostDe(n.encaminhar_url)}` : ' · sem repasse para a IA'}{n.eco_url ? ` · respostas pelo painel avisam a IA em ${hostDe(n.eco_url)}` : ''}</p>}
           {(n.historico_status || n.historico_pedido_em) && (
             <p className={g.dica} data-historico>Histórico: {n.historico_status}{n.historico_em ? ` (${quando(n.historico_em)})` : ''}</p>
           )}
@@ -160,7 +163,7 @@ function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rod
           </div>
           {editar === n.phone_number_id && (
             <FormNumero empresa={e.id} editando ocupado={ocupado} rodar={rodar} fechar={() => setEditar(null)}
-              inicial={{ ...vazia, phone_number_id: n.phone_number_id, waba_id: n.waba_id ?? '', nome: n.nome ?? '', encaminhar_url: n.encaminhar_url ?? '' }} />
+              inicial={{ ...vazia, phone_number_id: n.phone_number_id, waba_id: n.waba_id ?? '', nome: n.nome ?? '', encaminhar_url: n.encaminhar_url ?? '', eco_url: n.eco_url ?? '' }} />
           )}
         </div>
       ))}
@@ -282,7 +285,7 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
   );
 }
 
-export function Empresas({ inicial }: { inicial: LinhaEmpresa[] }) {
+export function Empresas({ inicial, sufixo = 'planeelabia.com' }: { inicial: LinhaEmpresa[]; sufixo?: string }) {
   const [empresas, setEmpresas] = useState(inicial);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
@@ -321,21 +324,27 @@ export function Empresas({ inicial }: { inicial: LinhaEmpresa[] }) {
         </div>
       )}
 
-      <form className={g.cartao} aria-labelledby="titulo-nova" onSubmit={(ev) => {
-        ev.preventDefault();
-        rodar(() => criarEmpresa({ id: nova.id, nome: nova.nome, modulos: nova.modulos }), `${nova.nome.trim()} foi criada.`,
-          () => setNova({ ...nova, nome: '', id: '', idManual: false }));
-      }}>
-        <h2 id="titulo-nova" className={g.blocoTitulo}>Nova empresa</h2>
-        <div className={g.linha}>
-          <label className={g.campo}>Nome<input id="nova-nome" value={nova.nome} required maxLength={80}
-            onChange={(ev) => setNova({ ...nova, nome: ev.target.value, id: nova.idManual ? nova.id : slug(ev.target.value) })} /></label>
-          <label className={g.campo}>Identificador<input id="nova-id" value={nova.id} required maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,39}"
-            onChange={(ev) => setNova({ ...nova, id: ev.target.value.toLowerCase(), idManual: true })} /></label>
-        </div>
-        <Modulos prefixo="nova" valor={nova.modulos} onChange={(v) => setNova({ ...nova, modulos: v })} />
-        <div className={g.linha}><button type="submit" className={g.botao} disabled={ocupado}>Criar empresa</button></div>
-      </form>
+      <NovaEmpresa sufixo={sufixo} aoMudar={(lista, texto) => { setEmpresas(lista); setAviso({ tipo: 'ok', texto }); }} />
+
+      <details className={g.cartao} data-so-cadastro>
+        <summary className={g.dica}>Criar só o cadastro, sem preparar o banco (banco que já existe)</summary>
+        <form className={g.bloco} aria-labelledby="titulo-nova" onSubmit={(ev) => {
+          ev.preventDefault();
+          rodar(() => criarEmpresa({ id: nova.id, nome: nova.nome, modulos: nova.modulos }), `${nova.nome.trim()} foi criada.`,
+            () => setNova({ ...nova, nome: '', id: '', idManual: false }));
+        }}>
+          <h3 id="titulo-nova" className={g.blocoTitulo}>Só o cadastro</h3>
+          <p className={g.dica}>Para empresa cujo banco já existe e recebe o SQL pelo Mateus, um comando por vez: depois, salve o banco, o domínio e o admin no cartão dela.</p>
+          <div className={g.linha}>
+            <label className={g.campo}>Nome<input id="nova-nome" value={nova.nome} required maxLength={80}
+              onChange={(ev) => setNova({ ...nova, nome: ev.target.value, id: nova.idManual ? nova.id : slug(ev.target.value) })} /></label>
+            <label className={g.campo}>Identificador<input id="nova-id" value={nova.id} required maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,39}"
+              onChange={(ev) => setNova({ ...nova, id: ev.target.value.toLowerCase(), idManual: true })} /></label>
+          </div>
+          <Modulos prefixo="nova" valor={nova.modulos} onChange={(v) => setNova({ ...nova, modulos: v })} />
+          <div className={g.linha}><button type="submit" className={g.botao} disabled={ocupado}>Criar empresa</button></div>
+        </form>
+      </details>
 
       {empresas.map((e) => <CartaoEmpresa key={`${e.id}-${e.modulos.join()}`} e={e} ocupado={ocupado} rodar={rodar} />)}
     </div>

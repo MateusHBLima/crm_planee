@@ -26,10 +26,11 @@ const aviso = async (p) => ((await p.locator('main [role=status], main [role=ale
   let [ctx, p] = await novo();
   await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/empresas');
   ok('master abre Empresas', p.url().endsWith('/empresas'), p.url());
+  await p.click('[data-so-cadastro] summary');
   await p.fill('#nova-nome', 'Clínica Outra');
   ok('identificador sugerido a partir do nome', (await p.inputValue('#nova-id')) === 'clinica-outra', await p.inputValue('#nova-id'));
   for (const id of ['inbox.ver', 'inbox.responder', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver']) await p.uncheck(`[id="nova-${id}"]`);
-  await p.click('text=Criar empresa'); await p.waitForTimeout(1200);
+  await p.click('[data-so-cadastro] button[type=submit]'); await p.waitForTimeout(1200);
   ok('empresa criada com só "Ver o CRM"', sql("select array_to_string(modulos, ',') from empresas where id='clinica-outra'") === 'crm.ver');
   const cartao = p.locator('article[data-empresa="clinica-outra"]');
   await cartao.locator('#dom-clinica-outra').fill('https://OUTRA.localhost/'); await cartao.getByRole('button', { name: 'Adicionar domínio' }).click(); await p.waitForTimeout(1000);

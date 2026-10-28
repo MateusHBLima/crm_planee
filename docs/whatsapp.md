@@ -186,8 +186,36 @@ x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>   (a mesma nas stacks do painel e do 
 O painel espera até 15 s. Sem `RECEPTOR_CHAVE_INTERNA` na stack do painel, a tela diz "Envio pelo painel ainda não configurado". O receptor:
 
 1. envia `POST /{phone_number_id}/messages` com `{ "messaging_product": "whatsapp", "to", "type": "text", "text": { "body" } }`;
-2. grava no espelho com origem `painel` e `por` (a Inbox mostra "Painel · <por>") e renova o dono da conversa (equipe);
-3. repassa para a IA (o `encaminhar_url` do número, o mesmo webhook que já recebe as mensagens) um **eco** no formato da Meta (`field: smb_message_echoes`, assinado com o segredo do app do número), igual ao de quando a equipe responde pelo celular. O n8n grava a fala como `[EQUIPE]` no histórico e a IA não responde junto. O corpo leva também `"painel": {"origem": "painel", "por": "<nome>"}`, fora do formato da Meta. `PAINEL_ECO_PARA_IA=0` na stack do receptor desliga o eco.
+2. logo depois do 200 da Meta, sem esperar o banco, manda para a IA um **eco** no formato da Meta (`field: smb_message_echoes`, assinado com o segredo do app do número), igual ao de quando a equipe responde pelo celular. O n8n grava a fala como `[EQUIPE]` no histórico e a IA não responde junto. O corpo leva também `"painel": {"origem": "painel", "por": "<nome>"}`, fora do formato da Meta. `PAINEL_ECO_PARA_IA=0` na stack do receptor desliga o eco. **Para onde (27/10):** o `eco_url` do número, quando a IA recebe direto da Meta (a SSA: a Meta entrega no n8n dela, sem repasse pelo receptor; migração 030, campo "Avisar a IA das respostas pelo painel" na tela Empresas); sem ele, o `encaminhar_url` (a clínica). Se o n8n devolver uma cópia do eco ao receptor (a SSA copia tudo o que recebe), a mensagem continua "Painel · <por>", sem duplicar;
+3. grava no espelho com origem `painel` e `por` (a Inbox mostra "Painel · <por>"). Não assume a conversa (27/10): só renova o prazo de quem já tinha clicado em Assumir.
+
+**Texto que é só um comando** (`/r`, `/p`, `/a`...) não sai pelo painel nem pelo receptor (400): o n8n recebe o eco como se a equipe digitasse o comando, e `/r` apaga o histórico da conversa. Frase que começa com barra é texto normal.
+
+**Foto, vídeo, áudio e documento (27/10).** A caixa de resposta tem 📎 (anexar; o texto vira a legenda; colar uma imagem também anexa) e 🎤 (gravar um áudio, que chega ao contato como mensagem de voz). O painel manda o arquivo ao receptor:
+
+```
+POST <RECEPTOR_URL>/whatsapp/enviar-midia
+content-type: <tipo do arquivo>
+x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
+x-envio: <base64url de {"phone_number_id","to","nome","legenda","por","voz"}>
+<corpo: os bytes do arquivo, até 25 MB>
+→ 200 { "ok": true, "wamid": "...", "tipo": "image|video|audio|document" }  ou  200 { "ok": false, "erro": "<código>" }
+```
+
+O receptor decide como a Meta recebe e converte com `ffmpeg` (instalado na imagem):
+
+| Arquivo | Vai como |
+|---|---|
+| áudio gravado na tela (`voz: true`, webm, ogg ou mp4 do navegador) | voz: ogg/opus mono, `audio.voice = true` |
+| áudio aac, amr, mp3, m4a ou ogg | áudio, como veio |
+| outro áudio (wav, webm...) | áudio ogg/opus |
+| foto JPG ou PNG até 5 MB | foto |
+| outra imagem, ou foto acima de 5 MB | documento, com o nome |
+| vídeo MP4 ou 3GP | vídeo |
+| outro vídeo (mov, webm) | vídeo MP4 (H.264 + AAC, até 1280 px) |
+| o resto (PDF, Word, planilha...) | documento, com o nome |
+
+Depois: sobe em `POST /{phone_number_id}/media`, envia, manda o eco à IA (com a mídia: `type`, `id`, `mime_type`, `caption`), guarda o arquivo no Storage (a Inbox mostra sem baixar de novo da Meta) e grava no espelho. Áudio não tem legenda no WhatsApp: a tela manda o texto numa mensagem à parte. Erros: `grande_demais` (áudio e vídeo acima de 16 MB), `arquivo_vazio`, `conversao_falhou`, `upload_falhou`, `sem_token` ou o código da Meta. Auditoria: `enviar_midia`, com o tipo e sem nome nem legenda. O painel aceita até 25 MB por arquivo (ação do servidor com limite de 27 MB) e libera o microfone só para o próprio site (`Permissions-Policy: microphone=(self)`).
 
 Erro da Meta volta só com o código (131047 = janela de 24 h fechada; a tela mostra a frase da janela). Se a mensagem saiu mas o espelho falhou, a resposta continua `ok: true` (a equipe não pode mandar de novo achando que não foi).
 
@@ -198,10 +226,10 @@ Cada conversa tem um dono em `wa_conversas.dono` (migração 009): `ia` (a Sara)
 | Situação | Cabeçalho | Botão | A Sara |
 |---|---|---|---|
 | `dono = ia`, sem resposta recente pelo celular | Sara atendendo | Assumir | responde |
-| `dono = ia`, equipe respondeu pelo celular há menos de `SARA_PAUSA_CELULAR_MIN` (padrão 7) min | Sara pausada até hh:mm (resposta pelo celular) | Assumir | quieta até o horário |
+| `dono = ia`, equipe respondeu pelo celular ou pelo painel há menos de N min (`agente.pausa_min` da empresa; sem ele, `SARA_PAUSA_CELULAR_MIN`, padrão 7) | Sara pausada até hh:mm (a equipe respondeu) | Assumir | quieta até o horário |
 | `dono = humano` | Equipe atendendo · nome | Devolver pra Sara | quieta até alguém devolver |
 
-Responder pelo painel também assume a conversa. Assumir e devolver vão para `central_auditoria` (`assumir_conversa`, `devolver_conversa`, alvo `numero_id:4 últimos dígitos`). A pausa pelo celular é a mesma regra de hoje (eco `smb_message_echoes`) e não muda o dono.
+Responder pelo painel não assume a conversa (27/10): vale como a resposta pelo celular. **Assumir só aparece onde a IA respeita** (`crm_config` `agente.assumir = true`, quando a ponte da IA consulta o `GET /whatsapp/atendimento`); sem isso o botão some e a ação recusa, porque prometeria uma pausa que a IA não faz. "Devolver" continua. Assumir e devolver vão para `central_auditoria` (`assumir_conversa`, `devolver_conversa`, alvo `numero_id:4 últimos dígitos`). A pausa pelo celular é a mesma regra de hoje (eco `smb_message_echoes`) e não muda o dono.
 
 **A Sara pergunta ao receptor antes de responder** (credencial Header Auth `x-receptor-chave` com a `RECEPTOR_CHAVE_INTERNA`, a mesma do item 8):
 
@@ -214,10 +242,10 @@ x-receptor-chave: <RECEPTOR_CHAVE_INTERNA>
 
 O número é achado com e sem o 9. Conversa que o espelho ainda não conhece responde `sara_responde: true`. **No n8n:** um nó HTTP logo antes de a Sara responder, com tempo limite de 3 s e "continuar em caso de erro"; só fica quieta se a resposta for 200 com `sara_responde: false`. Qualquer erro (receptor fora, 401, 404, 503) = a Sara responde, porque o agente não depende do painel (regra 8 do `CLAUDE.md`). Este pedido substitui o bloqueio de 7 minutos no Redis (tarefa 2.5).
 
-**Devolver com o contato esperando:** se a última mensagem da conversa é do contato, o painel avisa o n8n para a Sara responder já (sem o endereço, ela responde na próxima mensagem do contato):
+**Devolver com o contato esperando:** se a última mensagem da conversa é do contato, o painel avisa a IA da empresa para ela responder já (sem o endereço, ela responde na próxima mensagem do contato). O endereço é **da empresa** (27/10): `crm_config` `agente.avisos_url`. Antes era um só para o painel inteiro (`N8N_WEBHOOK_PAINEL_RETOMAR`), e a devolução de uma conversa da SSA mandaria o telefone do cliente para a IA da clínica.
 
 ```
-POST <N8N_WEBHOOK_PAINEL_RETOMAR>
+POST <agente.avisos_url da empresa>
 x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
 { "evento": "conversa_devolvida", "empresa": "<id>", "numero_id": "<phone_number_id>", "wa_id": "<contato>", "por": "<nome>" }
 ```
@@ -226,7 +254,7 @@ x-painel-segredo: <N8N_WEBHOOK_SEGREDO>
 
 
 **Por quanto tempo (Assumir):** a pessoa escolhe **Por 24 h** ou **Sempre** (migração 012, `wa_conversas.dono_ate`).
-- **Por 24 h:** `dono_ate` = agora + 24 h (`INBOX_ASSUMIR_HORAS`, no painel e no receptor). Cada resposta da equipe, pelo painel ou pelo celular, empurra o prazo para 24 h depois dela. Vencido, a Sara volta sozinha, sem ninguém clicar. Responder pelo painel assume por 24 h.
+- **Por 24 h:** `dono_ate` = agora + 24 h (`INBOX_ASSUMIR_HORAS`, no painel e no receptor). Cada resposta da equipe, pelo painel ou pelo celular, empurra o prazo para 24 h depois dela. Vencido, a Sara volta sozinha, sem ninguém clicar.
 - **Sempre:** `dono_ate` vazio. A conversa fica com a equipe até alguém clicar em "Devolver pra Sara". A lista mostra "Fixa" e fica vermelha quando o contato espera resposta há mais de 30 min.
 - A resposta do `GET /whatsapp/atendimento` ganha `sempre` (true/false) e `ate` (ISO ou null). Os campos que a Sara já usa não mudam.
 

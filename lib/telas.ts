@@ -9,6 +9,7 @@ const pode = (u: QuemVe, p: string) => u.permissoes.includes(p);
 // Caminhos dos ícones: função icones() do protótipo (traço 1,8px, 24x24).
 export const ICONES: Record<string, string> = {
   inbox: 'M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z',
+  filtro: 'M4 6h16M7 12h10M10 18h4',
   crm: 'M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v13h-4z',
   dash: 'M5 20V11M12 20V5M19 20v-7M3 20h18',
   config: 'M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4',

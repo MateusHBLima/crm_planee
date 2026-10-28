@@ -79,6 +79,22 @@ Se a versão nova não passar na verificação de saúde, o Swarm volta sozinho 
    ```
    O Traefik passa a ler os domínios das empresas no painel; o `adm.planeelabia.com` continua na etiqueta da stack.
 
+## Empresa nova em três passos (28/10)
+
+1. **Supabase:** criar o projeto do cliente e copiar a connection string em **Connect → Session pooler** (usuário `postgres.<ref>`, porta 5432), trocando `[YOUR-PASSWORD]` pela senha do banco. Não use a conexão direta (`db.<ref>.supabase.co`): é só IPv6, e o servidor não alcança.
+2. **Painel → Empresas → Nova empresa:** nome, apelido (vira `<apelido>.planeelabia.com`), modelo do CRM (clínica, assistência técnica ou contabilidade), nome do agente, pausa da IA, nome e e-mail do admin e a connection string → **Criar empresa completa**. O painel:
+   - no banco do cliente, cria o usuário `painel_app` (senha gerada na hora) e o schema `painel`, dono `painel_app`, e roda as migrações de `supabase/base-empresa.txt` como `painel_app`, numa transação. Nenhuma outra tabela é tocada. É a única exceção à regra "SQL de escrita passa pelo Mateus" (aprovada em 28/10);
+   - guarda cifrada só a connection string do `painel_app` (mesmo endereço do pooler, usuário `painel_app.<ref>`). A do `postgres` é usada nesta chamada e não fica em lugar nenhum, nem na auditoria;
+   - monta o CRM do modelo pela API (etapas, assuntos, `termo_contato`, `etapas_atendimento`) e o `crm_config` `agente` (`nome`, `pausa_min`, `assumir: false`);
+   - cria a chave da API `n8n` (escopos `leitura` e `crm`), mostrada **uma vez**: colar direto na credencial do n8n (`Authorization: Bearer …`, endereço `https://<apelido>.planeelabia.com/api/v1`);
+   - no central: a empresa com as permissões do modelo (Inbox e CRM; agendamentos e comprovantes só na clínica), o domínio e o admin, com o código de primeiro acesso (vale 7 dias).
+   Se cair no meio, clicar em Criar de novo com o mesmo apelido e o mesmo banco continua de onde parou. Banco que já é de outra empresa, ou com tabelas de fora do painel no schema `painel`, é recusado sem gravar nada.
+3. **Conectar número** (na mesma tela, logo depois): `phone_number_id`, WABA, token da Meta e como a IA recebe:
+   - **pelo painel** (recomendado): o receptor aponta o número para ele na Meta (override do número) e repassa cada mensagem à IA (webhook informado ou, vazio, o endereço que recebe hoje);
+   - **direto da Meta** (como a SSA): nada muda na Meta; o webhook informado vira o `eco_url` (aviso das respostas pela Inbox), e o n8n da IA repassa uma cópia de cada evento ao receptor.
+
+Banco que já existe com as tabelas do agente (como a clínica e a SSA) continua pelo caminho manual: "Criar só o cadastro" e o SQL pelo Mateus, um comando por vez (skill `cadastrar-cliente-painel`). `PAINEL_DOMINIO_EMPRESAS` (padrão `planeelabia.com`) muda o sufixo do endereço.
+
 ## Domínio de empresa (decisão 26)
 
 1. **Subdomínio nosso** (`clinica.planeelabia.com`): nada no DNS, o registro curinga `*` já aponta para o `Manager-01`.

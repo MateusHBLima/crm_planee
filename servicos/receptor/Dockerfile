@@ -1,5 +1,7 @@
 # Receptor do WhatsApp (decisão 28): serviço próprio, separado do painel. Se o painel cair, a Sara continua.
 FROM node:22-alpine
+# ffmpeg: áudio gravado na tela da Inbox vira mensagem de voz (ogg/opus) e vídeo fora de MP4 vira MP4 (27/10).
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production PORTA=3010 SPOOL_DIR=/dados
 COPY package.json package-lock.json ./

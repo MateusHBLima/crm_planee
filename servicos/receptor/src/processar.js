@@ -262,7 +262,10 @@ export async function processarEvento(texto) {
           for (const m of v.messages || []) { await mensagemViva(c, numero, digitos(m.from), m, 'entrada', 'contato'); resultado.mensagens++; }
           for (const s of v.statuses || []) { await status(c, numero, s); resultado.status++; }
         } else if (campo === 'smb_message_echoes') {
-          for (const m of v.message_echoes || []) { await mensagemViva(c, numero, digitos(m.to), m, 'saida', 'celular'); resultado.mensagens++; }
+          // Eco que o próprio receptor mandou para a IA (resposta pelo painel) e que o n8n devolveu numa cópia (a SSA
+          // copia para cá tudo o que recebe): continua "painel", em qualquer ordem de chegada.
+          const origemEco = corpo.painel?.origem === 'painel' ? 'painel' : 'celular';
+          for (const m of v.message_echoes || []) { await mensagemViva(c, numero, digitos(m.to), m, 'saida', origemEco); resultado.mensagens++; }
         } else if (campo === 'history') {
           resultado.historico += await historico(c, numero, v);
         } else if (campo === 'smb_app_state_sync') {
@@ -298,6 +301,12 @@ export function idadeDoEventoMin(corpo, agora = Date.now()) {
   return maior ? (agora / 1000 - maior) / 60 : null;
 }
 
+// Envio pelo painel (27/10): o receptor já guardou o arquivo no Storage; a Inbox mostra sem baixar da Meta.
+function midiaGuardada(midia, d) {
+  if (!midia || typeof d.caminho !== 'string' || !d.caminho) return midia;
+  return { ...midia, caminho: d.caminho, tamanho: Number(d.tamanho) || null, baixada_em: new Date().toISOString() };
+}
+
 // A Sara (n8n) avisa o que mandou pela API: a Meta só devolve o status, sem o conteúdo.
 // O mesmo caminho registra o que a equipe mandou pelo painel: origem 'painel' e quem mandou em "por" (fica no bruto).
 export async function registrarEnvio(d) {
@@ -309,7 +318,7 @@ export async function registrarEnvio(d) {
   const origem = d.origem === 'painel' ? 'painel' : 'api';
   const por = origem === 'painel' && typeof d.por === 'string' && d.por.trim() ? d.por.trim().slice(0, 80) : null;
   const m = { id: String(d.wamid), type: String(d.tipo || 'text'), timestamp: d.timestamp, text: { body: d.texto ?? '' } };
-  if (m.type !== 'text') m[m.type] = { caption: d.texto ?? null, id: d.midia_id ?? undefined, mime_type: d.mime_type ?? undefined, filename: d.filename ?? undefined };
+  if (m.type !== 'text') m[m.type] = { caption: d.texto ?? null, id: d.midia_id ?? undefined, mime_type: d.mime_type ?? undefined, filename: d.filename ?? undefined, voice: d.voz ? true : undefined };
   const bruto = { ...d, origem: 'registro' };
   if (por) bruto.por = por; else delete bruto.por;
   await transacao(bancoDaEmpresa(r), async (c) => {
@@ -318,12 +327,14 @@ export async function registrarEnvio(d) {
       `insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, midia, enviada_em, bruto, status, status_em)
        values ($1,$2,$3,'saida',$9,$4,$5,$6,$7,$8,'enviada',$7)
        on conflict (numero_id, wamid) do update set tipo = excluded.tipo, texto = excluded.texto,
-         midia = coalesce(wa_mensagens.midia, excluded.midia),
+         midia = case when wa_mensagens.midia is null then excluded.midia
+                      when (wa_mensagens.midia ->> 'caminho') is null and (excluded.midia ->> 'caminho') is not null then wa_mensagens.midia || excluded.midia
+                      else wa_mensagens.midia end,
          bruto = case when $10::text is not null then coalesce(wa_mensagens.bruto, '{}'::jsonb) || jsonb_build_object('por', $10::text)
                       else coalesce(wa_mensagens.bruto, excluded.bruto) end,
          origem = case when excluded.origem = 'painel' and wa_mensagens.origem = 'api' then 'painel' else wa_mensagens.origem end
        returning (xmax = 0) as nova`,
-      [numero, waId, m.id, m.type, textoDe(m), midiaDe(m), quando(m.timestamp), bruto, origem, por]);
+      [numero, waId, m.id, m.type, textoDe(m), midiaGuardada(midiaDe(m), d), quando(m.timestamp), bruto, origem, por]);
     await conversa(c, numero, waId, { em: quando(m.timestamp), resumo: resumo(m.type, textoDe(m)), direcao: 'saida', contarNaoLida: false, zerar: false });
     // O status chegou antes e a lista mostra o resumo provisório: troca pelo texto, se ela ainda for a última.
     await c.query(

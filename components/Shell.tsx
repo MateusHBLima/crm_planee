@@ -23,7 +23,7 @@ export function Shell({ atual, usuario, largo, children }: {
   const banco = bancoConfigurado();
   const sub = usuario.empresa ? usuario.empresa.nome : usuario.master ? 'Planee — visão geral' : 'Nenhuma empresa';
   return (
-    <div className={s.app}>
+    <div className={s.app} data-largo={largo ? 'true' : undefined}>
       <MenuCelular titulo={telas.find((t) => t.id === atual)?.nome ?? 'Painel Planee'} sub={sub}>
         <div className={s.marca}>
           <span className={s.logo}>P</span>

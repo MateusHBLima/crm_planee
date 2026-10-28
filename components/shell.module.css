@@ -53,7 +53,14 @@
 @media (min-width: 761px) { .conteudoLargo { height: 100vh; height: 100dvh; min-height: 0; overflow: auto; } }
 /* No celular, as telas largas também cabem na tela (abaixo da barra de 52 px): a Inbox fica com a caixa de resposta
    sempre à vista, como no WhatsApp, e o quadro do CRM rola por dentro (27/10). */
-@media (max-width: 760px) { .conteudoLargo { height: calc(100vh - 52px); height: calc(100dvh - 52px); min-height: 0; overflow: auto; } }
+@media (max-width: 760px) { .conteudoLargo { height: calc(100vh - 52px); height: calc(var(--altura-visivel, 100dvh) - 52px); min-height: 0; overflow: auto; overscroll-behavior: contain; } }
+/* 28/10: no iPhone, 100vh é a altura SEM a barra de endereço. A página ficava ~80 px mais alta que a tela e rolava
+   inteira junto com a lista ou o quadro ("a tela desce", sai do lugar). Nas telas largas a página agora tem
+   exatamente a altura visível (--altura-visivel, medida em MenuCelular.tsx, encolhe com o teclado) e não rola: só a
+   lista, a conversa ou o quadro rolam por dentro. */
+@media (max-width: 760px) {
+  .app[data-largo] { min-height: 0; height: 100vh; height: var(--altura-visivel, 100dvh); overflow: hidden; }
+}
 .faixaEmpresa { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 18px; padding: 9px 14px; border-radius: 10px; background: var(--sel); border: 1px solid var(--line-strong); font-size: 13px; color: var(--ink-2); }
 .faixaEmpresa strong { color: var(--ink); }
 .faixaEmpresa button { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; }

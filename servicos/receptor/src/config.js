@@ -42,6 +42,7 @@ export const config = {
   intervaloMs: num(env.WA_INTERVALO_MS, 1000),
   rotasMs: num(env.WA_ROTAS_MS, 60_000), // de quanto em quanto tempo relê os números (cadastro do painel)
   semLacos: env.WA_SEM_LACOS === '1', // testes: roda os laços à mão
+  ffmpeg: env.FFMPEG || 'ffmpeg', // converte o áudio gravado na tela (ogg/opus) e vídeo fora de MP4 (envio pelo painel)
 };
 
 // O token da Meta vem de cada número (cadastro no painel) ou, para os números antigos, de META_TOKEN.

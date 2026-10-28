@@ -1,0 +1,25 @@
+# Migrações da BASE de todo banco de dados de empresa, em ordem (26/10).
+# Quem lê: a tela Empresas → "Nova empresa" (lib/painel/nova-empresa.ts) e testes/painel/rodar.sh (banco da 2ª empresa).
+# Migração nova que vale para todo banco de empresa entra aqui, no fim. Nunca a 002 (semente fictícia dos testes).
+# Migração só do banco central (004, 006, 007, 011, 015, 019, 022, 030) não entra.
+001_crm_api.sql
+003_painel_login.sql
+005_dados_auditoria_sem_fk.sql
+008_whatsapp_dados.sql
+009_whatsapp_dono.sql
+010_whatsapp_nome.sql
+012_whatsapp_dono_prazo.sql
+013_servicos_pagamentos.sql
+014_comprovante_campos.sql
+016_avisos_dados.sql
+017_automaticas.sql
+018_agenda_espelho.sql
+020_midia_links_empresa.sql
+021_assunto_cor.sql
+023_funil_automatico.sql
+024_contato_telefones.sql
+025_contato_protocolo.sql
+026_conversa_lida_por.sql
+027_painel_empresa.sql
+028_pagamento_baixado.sql
+029_api_idempotencia.sql

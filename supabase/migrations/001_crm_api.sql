@@ -2,7 +2,8 @@
 -- Rodar primeiro no Supabase de teste (decisão 23). Idempotente: pode rodar de novo sem estragar.
 -- Nada de dado real aqui.
 
-create extension if not exists pgcrypto;
+-- Sem extensão (28/10): gen_random_uuid() e sha256() são do próprio Postgres (13+). No Supabase o pgcrypto fica no
+-- schema "extensions", fora do search_path do painel_app, e a função da chave falhava ali.
 
 -- Funil comercial
 create table if not exists crm_etapas (
@@ -130,9 +131,9 @@ alter table painel_auditoria enable row level security;
 create or replace function painel_criar_chave(p_nome text, p_escopos text[])
 returns text language plpgsql as $$
 declare
-  v_chave text := 'pk_' || encode(gen_random_bytes(24), 'hex');
+  v_chave text := 'pk_' || replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
 begin
   insert into api_chaves (nome, hash, escopos)
-  values (p_nome, encode(digest(v_chave, 'sha256'), 'hex'), p_escopos);
+  values (p_nome, encode(sha256(convert_to(v_chave, 'UTF8')), 'hex'), p_escopos);
   return v_chave;
 end $$;

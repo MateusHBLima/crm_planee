@@ -4,6 +4,7 @@
 //   POST /whatsapp/envio     a Sara (n8n) registra o que mandou pela API (cabeçalho x-receptor-chave)
 //   POST /whatsapp/historico carga das conversas antigas guardadas pela empresa (x-receptor-chave; até 500 por lote)
 //   POST /whatsapp/enviar    o painel manda a resposta da equipe: envia pela Meta, grava e avisa a IA (x-receptor-chave)
+//   POST /whatsapp/enviar-midia  o mesmo para foto, vídeo, áudio e documento (corpo = o arquivo; dados em x-envio)
 //   GET  /whatsapp/atendimento?numero=&wa_id=   a Sara pergunta se pode responder (equipe assumiu? cabeçalho x-receptor-chave)
 //   GET  /whatsapp/midia/<empresa>/<token>   arquivo de mídia por link curto criado pelo painel (Inbox: ouvir, ver, baixar)
 //   GET  /whatsapp/saude     fila, atraso e banco (para monitor externo)
@@ -15,7 +16,7 @@ import { bancoDaEmpresa, central } from './banco.js';
 import { assinaturaValida } from './meta.js';
 import { idadeDoEventoMin, NumeroSemDono, registrarEnvio, registrarHistorico, resumoDoEvento } from './processar.js';
 import { estadoDoAtendimento } from './atendimento.js';
-import { enviarPeloPainel } from './enviar.js';
+import { enviarMidiaPeloPainel, enviarPeloPainel } from './enviar.js';
 import { timingSafeEqual } from 'node:crypto';
 import { destinoDoRepasse, todasAsRotas } from './rotas.js';
 import { marcarRepasse, repassar } from './repasse.js';
@@ -128,6 +129,23 @@ async function enviar(req, res) {
   }
 }
 
+// Mídia pela Inbox (27/10). Corpo = os bytes do arquivo; content-type = o tipo dele; x-envio = JSON em base64url com
+// {phone_number_id, to, nome, legenda, por, voz}. Mesmas respostas do /enviar (200 {ok, wamid, tipo} ou {ok:false, erro}).
+async function enviarMidia(req, res) {
+  if (!chaveCerta(req.headers['x-receptor-chave'])) return responder(res, 401, { erro: 'chave inválida' });
+  let d;
+  try { d = JSON.parse(Buffer.from(String(req.headers['x-envio'] || ''), 'base64url').toString('utf8')); }
+  catch { return responder(res, 400, { erro: 'x-envio inválido' }); }
+  if (!d || typeof d !== 'object') return responder(res, 400, { erro: 'x-envio inválido' });
+  let bytes;
+  try { bytes = await lerCorpo(req); } catch (e) { return responder(res, e.status || 400, { erro: e.status === 413 ? 'grande demais' : 'corpo inválido' }); }
+  try { responder(res, 200, await comLimite(enviarMidiaPeloPainel({ ...d, mime: req.headers['content-type'], bytes }), 170000)); }
+  catch (e) {
+    if (e instanceof NumeroSemDono) return responder(res, 404, { erro: erroCurto(e) });
+    responder(res, 400, { erro: erroCurto(e) });
+  }
+}
+
 // Erro aqui nunca deve calar a Sara: o n8n trata qualquer resposta diferente de 200 como "pode responder".
 async function atendimento(req, res, q) {
   if (!chaveCerta(req.headers['x-receptor-chave'])) return responder(res, 401, { erro: 'chave inválida' });
@@ -213,6 +231,7 @@ export function criarServidor() {
       if (url.pathname === '/whatsapp/webhook' && req.method === 'POST') return await receberEvento(req, res);
       if (url.pathname === '/whatsapp/envio' && req.method === 'POST') return await envio(req, res);
       if (url.pathname === '/whatsapp/enviar' && req.method === 'POST') return await enviar(req, res);
+      if (url.pathname === '/whatsapp/enviar-midia' && req.method === 'POST') return await enviarMidia(req, res);
       if (url.pathname === '/whatsapp/historico' && req.method === 'POST') return await cargaHistorico(req, res);
       if (url.pathname === '/whatsapp/atendimento' && req.method === 'GET') return await atendimento(req, res, url.searchParams);
       if (url.pathname.startsWith('/whatsapp/midia/') && req.method === 'GET') return await midia(req, res, url.pathname.slice('/whatsapp/midia/'.length));
