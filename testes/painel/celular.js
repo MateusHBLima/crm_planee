@@ -54,6 +54,23 @@ const sobra = (p) => p.evaluate(() => document.documentElement.scrollWidth - win
   ok('celular: tocar numa tela navega e fecha a gaveta', p.url().endsWith('/crm') && (await p.getAttribute('[data-menu-celular]', 'aria-expanded')) === 'false'
     && ((await p.textContent('header[class*="barraCelular"]')) || '').includes('CRM'), p.url());
   ok('celular: o CRM não sai para o lado', (await sobra(p)) <= 0, String(await sobra(p)));
+  // 28/10: no iPhone a página rolava junto com o quadro (100vh maior que a tela) e o quadro rolava de lado e para baixo
+  // ao mesmo tempo. Agora: altura medida da tela, página travada, uma coluna por vez escolhida nas abas de assunto.
+  await p.locator('[data-colunas-celular]').waitFor({ timeout: 8000 }).catch(() => {});
+  ok('celular: a página usa a altura medida da tela e não rola por fora', await p.evaluate(() => getComputedStyle(document.documentElement).overflow === 'hidden'
+    && /px$/.test(document.documentElement.style.getPropertyValue('--altura-visivel'))), await p.evaluate(() => document.documentElement.style.getPropertyValue('--altura-visivel')));
+  const abas = p.locator('[data-colunas-celular] [role=tab]');
+  const nAbas = await abas.count();
+  ok('celular: CRM com abas de assunto e uma coluna só no quadro', nAbas >= 2 && (await p.locator('[class*="quadroCaixa"] section').count()) === 1, `${nAbas} abas`);
+  ok('celular: o quadro não rola de lado', await p.evaluate(() => { const q = document.querySelector('[data-quadro]'); return !q || q.scrollWidth <= q.clientWidth + 1; }));
+  const segunda = await abas.nth(1).getAttribute('data-coluna');
+  await abas.nth(1).click(); await p.waitForTimeout(300);
+  ok('celular: tocar numa aba troca a coluna', (await abas.nth(1).getAttribute('aria-selected')) === 'true'
+    && (await p.locator('[class*="quadroCaixa"] section').first().getAttribute('aria-label')) === (await abas.nth(1).textContent()).replace(/\s*\d+\s*$/, '').trim(), segunda);
+  ok('celular: filtros escondidos até tocar em Filtros', !(await p.locator('#ver-crm').isVisible()));
+  await p.click('[data-filtros-celular]'); await p.waitForTimeout(200);
+  ok('celular: Filtros mostra o resto da barra', await p.locator('#ver-crm').isVisible());
+  await p.click('[data-filtros-celular]');
 
   await p.goto(GERAL + '/inbox'); await p.waitForLoadState('networkidle').catch(() => {});
   const item = p.locator('section[aria-label="Conversas"] li', { hasText: 'Celia Celular Ficticia' });
@@ -65,6 +82,11 @@ const sobra = (p) => p.evaluate(() => document.documentElement.scrollWidth - win
   const resp = await caixa(p, '#resposta-inbox');
   ok('celular: na conversa, a caixa de resposta fica à vista sem rolar a página', resp && resp.bottom <= 844 && resp.top > 400, JSON.stringify(resp));
   ok('celular: a página não rola (quem rola é a conversa)', (await p.evaluate(() => document.documentElement.scrollHeight)) <= 846, String(await p.evaluate(() => document.documentElement.scrollHeight)));
+  ok('celular: cabeçalho da conversa compacto (até 160 px)', ((await caixa(p, 'header[class*="cabeca"]'))?.bottom ?? 999) - ((await caixa(p, 'header[class*="cabeca"]'))?.top ?? 0) <= 160, JSON.stringify(await caixa(p, 'header[class*="cabeca"]')));
+  await p.click('[data-menu-mais]'); await p.waitForTimeout(300);
+  const folha = await caixa(p, '[role=menu]');
+  ok('celular: o Mais abre de baixo, inteiro na tela', folha && folha.bottom <= 844 && folha.left >= 0 && folha.right <= 390 && folha.top > 500, JSON.stringify(folha));
+  await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   ok('celular: só a conversa aparece, com Voltar', !(await p.locator('section[aria-label="Conversas"]').isVisible()) && await p.getByRole('button', { name: 'Voltar para a lista' }).isVisible());
   ok('celular: a conversa não sai para o lado', (await sobra(p)) <= 0);
   const fonte = await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector('#resposta-inbox')).fontSize));

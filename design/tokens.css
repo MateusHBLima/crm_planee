@@ -89,3 +89,9 @@ html { -webkit-text-size-adjust: 100%; }
 @media (max-width: 760px) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px !important; }
 }
+
+/* Celular (28/10): nas telas largas (Inbox, CRM) a página não rola por fora nem "puxa" com o dedo; só a lista, a
+   conversa ou o quadro rolam (components/shell.module.css, .app[data-largo]). */
+@media (max-width: 760px) {
+  html:has([data-largo]), html:has([data-largo]) body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+}

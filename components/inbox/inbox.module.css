@@ -178,8 +178,17 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
   .voltar { display: inline-flex; }
 }
 @media (max-width: 760px) {
-  .tela { min-height: 360px; }
-  .cabeca { padding: 10px 12px; gap: 10px; }
+  .tela { min-height: 0; }
+  /* Cabeçalho da conversa compacto (28/10): ocupava 1/3 da tela. Voltar vira só a seta, "Lida por" sai, os botões
+     ficam menores numa linha só embaixo do nome, e o "Mais" abre de baixo, por cima da caixa de resposta. */
+  .cabeca { padding: 8px 12px 8px 8px; gap: 6px 8px; }
+  .voltar { width: 40px; height: 40px; padding: 0; justify-content: center; border: 0; font-size: 20px; }
+  .voltarTexto { display: none; }
+  .cabecaTexto { flex: 1 1 0; gap: 2px; }
+  .cabecaNome { font-size: 15px; }
+  .cabecaLinha { gap: 3px 8px; font-size: 11.5px; }
+  .lidaPor { display: none; }
+  .acoesCabeca .botaoDono, .acoesCabeca .botaoDonoForte { height: 30px; padding: 0 10px; font-size: 12.5px; }
   .avatarGrande { display: none; }
   .mensagens { padding: 14px 16px 18px; }
   .linha { max-width: 92%; }
@@ -194,7 +203,10 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .finalizarLista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-2); }
 .finalizarLista li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .finalizarLista strong { color: var(--ink); }
-@media (max-width: 760px) { .finalizarLista { padding: 10px 16px; } .acoesCabeca { justify-content: flex-start; } }
+@media (max-width: 760px) {
+  .finalizarLista { padding: 10px 16px; }
+  .acoesCabeca { flex: 1 1 100%; flex-wrap: nowrap; justify-content: flex-start; gap: 6px; padding-left: 46px; overflow-x: auto; scrollbar-width: none; }
+}
 
 /* Áudio, foto e arquivo dentro da bolha escura da equipe (15/10). */
 .bolha[data-tipo='equipe'] .tocar { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .35); color: inherit; }
@@ -206,6 +218,11 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .menuMaisLista > button:hover, .menuMaisLista > a:hover { background: var(--hover); }
 /* Quem leu por último (16/10): discreto, ao lado de quem atende. */
 .lidaPor { font-size: 12px; color: var(--ink-3); }
+/* Celular (28/10): o "Mais" abre de baixo, como folha, por cima da caixa de resposta. */
+@media (max-width: 760px) {
+  .menuMaisLista { position: fixed; left: 12px; right: 12px; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 60; }
+  .menuMaisLista > button, .menuMaisLista > a { height: 44px; font-size: 15px; }
+}
 
 /* Cartões em aberto do contato, na lateral da conversa (22/10). Cada um leva ao CRM com o cartão aberto. */
 .lateralCartoes { position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: min(360px, 100%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-2, var(--shadow-1)); }

@@ -514,7 +514,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
           <>
             <header className={c.cabeca}>
               <button type="button" className={c.voltar} onClick={() => { setAberta(null); setDados(null); }} aria-label="Voltar para a lista">
-                <span aria-hidden="true">←</span> Voltar
+                <span aria-hidden="true">←</span><span className={c.voltarTexto}> Voltar</span>
               </button>
               {atual && (
                 <>

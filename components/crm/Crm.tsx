@@ -32,6 +32,19 @@ export type PropsCrm = {
 // o quadro volta a ser o do banco e o aviso explica.
 const agoraIso = () => new Date().toISOString();
 
+// Celular (28/10): até 760 px o CRM mostra uma coluna por vez, escolhida nas abas de assunto, e os filtros ficam
+// atrás de "Filtros". Antes o topo ocupava 2/3 da tela e o quadro rolava de lado e para baixo ao mesmo tempo.
+function useCelular() {
+  const [celular, setCelular] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia('(max-width: 760px)');
+    const ver = () => setCelular(m.matches);
+    ver(); m.addEventListener('change', ver);
+    return () => m.removeEventListener('change', ver);
+  }, []);
+  return celular;
+}
+
 const chavePeriodo = (p: Intervalo | null | undefined) => (p ? `${p.de}|${p.ate}` : '');
 
 export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome, memoria }: PropsCrm) {
@@ -60,6 +73,8 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const [fase, setFase] = useState<Fase>('todas');
   // Ver uma coluna (assunto) por vez (15/10). null = todas as colunas.
   const [coluna, setColuna] = useState<string | null>(null);
+  const celular = useCelular();
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   // Finalizar em massa (15/10): modo Selecionar, os escolhidos e a confirmação.
   const [selecionando, setSelecionando] = useState(false);
   const [selecionados, setSelecionados] = useState<ReadonlySet<string>>(() => new Set());
@@ -206,6 +221,15 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const marcaveis = filtrar(quadro.cartoes, busca, origem, verFinalEfetivo, fase)
     .filter((k) => selecionavel(k) && (!colunaValida || k.topico_id === colunaValida));
   const escolhidos = marcaveis.filter((k) => selecionados.has(k.id));
+  // Abas de assunto do celular: quantos cartões cada coluna tem com os filtros de agora (sem finalizados escondidos).
+  const naTela = filtrar(quadro.cartoes, busca, origem, verFinalEfetivo, fase);
+  const idsTopicos = new Set(quadro.topicos.map((t) => t.id));
+  const abasColunas = [
+    ...quadro.topicos.map((t) => ({ id: t.id, nome: t.nome, n: naTela.filter((k) => k.topico_id === t.id).length })),
+    ...(naTela.some((k) => !k.topico_id || !idsTopicos.has(k.topico_id)) ? [{ id: '__sem', nome: 'Sem assunto', n: naTela.filter((k) => !k.topico_id || !idsTopicos.has(k.topico_id)).length }] : []),
+  ];
+  const colunaCelular = (coluna && abasColunas.some((a) => a.id === coluna) ? coluna : null) ?? abasColunas.find((a) => a.n > 0)?.id ?? abasColunas[0]?.id ?? null;
+  const filtrosLigados = (fase === 'esperando' || fase === 'respondido' ? 1 : 0) + (origem !== 'todos' ? 1 : 0) + (quadro.periodo ? 1 : 0) + (selecionando ? 1 : 0);
   const sairDaSelecao = () => { setSelecionando(false); setSelecionados(new Set()); setConfirmarMassa(false); };
   const alternarSelecao = (id: string) => {
     setConfirmarMassa(false);
@@ -231,7 +255,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
   const avisarOk = useCallback((t: string) => setAviso({ tipo: 'ok', texto: t }), []);
 
   return (
-    <div className={c.tela}>
+    <div className={c.tela} data-detalhe={cartaoAberto ? 'true' : undefined}>
       <header className={c.topo}>
         <div className={c.titulos}>
           <h1 className={c.titulo}>CRM</h1>
@@ -291,6 +315,11 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 </button>
               ))}
             </div>
+            <button type="button" className={c.botaoFiltros} aria-expanded={filtrosAbertos} aria-controls="filtros-crm" data-filtros-celular
+              onClick={() => setFiltrosAbertos((x) => !x)}>
+              <Icone nome="filtro" tamanho={14} /> Filtros{filtrosLigados ? ` (${filtrosLigados})` : ''}
+            </button>
+            <div id="filtros-crm" className={c.barraExtra} data-aberto={filtrosAbertos ? 'true' : 'false'}>
             {/* "Ver" (15/10): os dois filtros de resposta da equipe saíram dos botões de fase para um seletor. */}
             <label className={c.filtroColuna}>
               <span className={c.visivelLeitor}>Ver</span>
@@ -302,7 +331,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
               </select>
             </label>
             {/* Filtro de coluna (15/10): escolhe um assunto e o quadro mostra só a coluna dele. */}
-            <label className={c.filtroColuna}>
+            <label className={`${c.filtroColuna} ${c.filtroAssunto}`}>
               <span className={c.visivelLeitor}>Coluna</span>
               <select id="coluna-crm" value={coluna ?? ''} onChange={(e) => setColuna(e.target.value || null)} data-filtro-coluna>
                 <option value="">Todas as colunas</option>
@@ -351,6 +380,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
                 </>
               )}
             </MenuMaisCrm>
+            </div>
             {podeEditar && (
               <button type="button" className={c.botaoNovo} onClick={() => setNovo(true)}><Icone nome="nota" tamanho={14} /> Novo atendimento</button>
             )}
@@ -378,7 +408,17 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
             </div>
           )}
           {quadro.periodo && <p className={c.nota} data-nota-periodo>Atendimentos abertos neste período, em todas as etapas{quadro.cartoes.length >= 1000 ? ' (os 1.000 primeiros)' : ''}.</p>}
-          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={colunaValida} selecao={selecionando ? { ids: selecionados, alternar: alternarSelecao } : undefined} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
+          {celular && abasColunas.length > 1 && (
+            <div className={c.abasColunas} role="tablist" aria-label="Assuntos" data-colunas-celular>
+              {abasColunas.map((a) => (
+                <button key={a.id} type="button" role="tab" aria-selected={a.id === colunaCelular} className={c.abaColuna} data-coluna={a.id}
+                  onClick={() => setColuna(a.id)}>
+                  {a.nome} <strong>{a.n}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+          <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={celular ? colunaCelular : colunaValida} selecao={selecionando ? { ids: selecionados, alternar: alternarSelecao } : undefined} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onMover={acoes.mover}
             onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
         </>
