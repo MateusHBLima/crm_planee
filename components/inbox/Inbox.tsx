@@ -33,14 +33,18 @@ const linkWhatsApp = (waId: string) => `https://web.whatsapp.com/send?phone=${en
 // Quem mandou cada mensagem. O nome do agente de IA vem da empresa (crm_config "agente", 27/10), nunca do código.
 const AUTOR: Record<Exclude<Mensagem['origem'], 'api'>, string> = { contato: '', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
 const rotuloDe = (origem: Mensagem['origem'], agente: string) => (origem === 'api' ? agente : AUTOR[origem] ?? '');
-// A IA pode mandar o próprio nome em cima do texto ("*Amanda:*" + quebra de linha, como o contato vê). A bolha já tem o
-// nome em cima: na tela o prefixo sai, e o texto gravado continua igual (27/10).
+// A IA pode mandar o próprio nome em cima do texto ("*Sara*" ou "*Amanda:*" + quebra de linha, como o contato vê).
+// A bolha já tem o nome em cima: na tela o prefixo sai, e o texto gravado continua igual (27/10; sem os dois pontos
+// desde 28/10, e os modelos antigos da Meta ainda com eles). Nome solto, sem asteriscos nem dois pontos, fica.
 const escaparRegex = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const semPrefixo = (texto: string, agente: string) =>
-  agente ? texto.replace(new RegExp(`^\\s*\\*?${escaparRegex(agente)}:\\*?[ \\t]*(\\r?\\n|$)`, 'i'), '') : texto;
-// Na lista o resumo vem numa linha só ("*Amanda:* Olá…"): sai o nome com os asteriscos.
+const semPrefixo = (texto: string, agente: string) => {
+  if (!agente) return texto;
+  const a = escaparRegex(agente);
+  return texto.replace(new RegExp(`^\\s*(\\*${a}:?\\*|${a}:)[ \\t]*(\\r?\\n|$)`, 'i'), '');
+};
+// Na lista o resumo vem numa linha só ("*Sara* Olá…"): sai o nome com os asteriscos.
 const semPrefixoResumo = (texto: string, agente: string) =>
-  agente ? texto.replace(new RegExp(`^\\s*\\*${escaparRegex(agente)}:\\*\\s*`, 'i'), '') : texto;
+  agente ? texto.replace(new RegExp(`^\\s*\\*${escaparRegex(agente)}:?\\*\\s*`, 'i'), '') : texto;
 const MIDIA: Record<string, string> = {
   image: 'Foto', audio: 'Áudio', video: 'Vídeo', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contacts: 'Contato',
 };

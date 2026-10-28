@@ -18,6 +18,7 @@ import { fuso } from '@/lib/painel/crm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
 import { listarEmpresas, listarEquipe, listarLinksConvite } from '@/lib/painel/gestao';
+import { sufixoDominio } from '@/lib/painel/nova-empresa';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
 import { ErroApi } from '@/lib/db';
 import p from '../pagina.module.css';
@@ -156,7 +157,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'empresas') {
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <Empresas inicial={await listarEmpresas(usuario)} />
+        <Empresas inicial={await listarEmpresas(usuario)} sufixo={sufixoDominio()} />
       </Shell>
     );
   }

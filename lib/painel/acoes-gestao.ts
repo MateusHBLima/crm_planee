@@ -7,6 +7,7 @@ import { esquecerSessoes, usuarioAtual, type Usuario } from '@/lib/sessao';
 import { esquecerMigracoes } from '@/lib/modulos-servidor';
 import * as g from './gestao';
 import * as n from './numeros';
+import * as ne from './nova-empresa';
 import type { Resposta } from './acoes';
 
 // Ações das telas Empresas e Equipe. Cada uma confere a sessão e o nível de novo no servidor.
@@ -105,4 +106,19 @@ export async function gerarLinkConvite(permissoes: string[]) {
 }
 export async function cancelarLinkConvite(id: string) {
   return comUsuario((u) => g.cancelarLinkConvite(u, id));
+}
+
+// ---- Nova empresa em um formulário só (28/10, lib/painel/nova-empresa.ts). Só master. ----
+// A connection string do usuário postgres vem só nesta chamada e não é guardada (só a do painel_app, cifrada).
+export async function criarEmpresaCompleta(dados: ne.DadosNovaEmpresa) {
+  return comUsuario(async (u) => {
+    const r = await ne.criarEmpresaCompleta(u, dados);
+    return { resultado: r, empresas: await g.listarEmpresas(u) };
+  });
+}
+export async function conectarNumero(empresa: string, dados: ne.DadosConectar) {
+  return comUsuario(async (u) => {
+    const r = await ne.conectarNumero(u, empresa, dados);
+    return { ...r, empresas: await g.listarEmpresas(u) };
+  });
 }

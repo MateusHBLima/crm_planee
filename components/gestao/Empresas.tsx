@@ -11,6 +11,7 @@ import type { LinhaEmpresa } from '@/lib/painel/gestao';
 import type { NumeroWhats } from '@/lib/painel/numeros';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
+import { NovaEmpresa } from './NovaEmpresa';
 import g from './gestao.module.css';
 
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -284,7 +285,7 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
   );
 }
 
-export function Empresas({ inicial }: { inicial: LinhaEmpresa[] }) {
+export function Empresas({ inicial, sufixo = 'planeelabia.com' }: { inicial: LinhaEmpresa[]; sufixo?: string }) {
   const [empresas, setEmpresas] = useState(inicial);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
@@ -323,21 +324,27 @@ export function Empresas({ inicial }: { inicial: LinhaEmpresa[] }) {
         </div>
       )}
 
-      <form className={g.cartao} aria-labelledby="titulo-nova" onSubmit={(ev) => {
-        ev.preventDefault();
-        rodar(() => criarEmpresa({ id: nova.id, nome: nova.nome, modulos: nova.modulos }), `${nova.nome.trim()} foi criada.`,
-          () => setNova({ ...nova, nome: '', id: '', idManual: false }));
-      }}>
-        <h2 id="titulo-nova" className={g.blocoTitulo}>Nova empresa</h2>
-        <div className={g.linha}>
-          <label className={g.campo}>Nome<input id="nova-nome" value={nova.nome} required maxLength={80}
-            onChange={(ev) => setNova({ ...nova, nome: ev.target.value, id: nova.idManual ? nova.id : slug(ev.target.value) })} /></label>
-          <label className={g.campo}>Identificador<input id="nova-id" value={nova.id} required maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,39}"
-            onChange={(ev) => setNova({ ...nova, id: ev.target.value.toLowerCase(), idManual: true })} /></label>
-        </div>
-        <Modulos prefixo="nova" valor={nova.modulos} onChange={(v) => setNova({ ...nova, modulos: v })} />
-        <div className={g.linha}><button type="submit" className={g.botao} disabled={ocupado}>Criar empresa</button></div>
-      </form>
+      <NovaEmpresa sufixo={sufixo} aoMudar={(lista, texto) => { setEmpresas(lista); setAviso({ tipo: 'ok', texto }); }} />
+
+      <details className={g.cartao} data-so-cadastro>
+        <summary className={g.dica}>Criar só o cadastro, sem preparar o banco (banco que já existe)</summary>
+        <form className={g.bloco} aria-labelledby="titulo-nova" onSubmit={(ev) => {
+          ev.preventDefault();
+          rodar(() => criarEmpresa({ id: nova.id, nome: nova.nome, modulos: nova.modulos }), `${nova.nome.trim()} foi criada.`,
+            () => setNova({ ...nova, nome: '', id: '', idManual: false }));
+        }}>
+          <h3 id="titulo-nova" className={g.blocoTitulo}>Só o cadastro</h3>
+          <p className={g.dica}>Para empresa cujo banco já existe e recebe o SQL pelo Mateus, um comando por vez: depois, salve o banco, o domínio e o admin no cartão dela.</p>
+          <div className={g.linha}>
+            <label className={g.campo}>Nome<input id="nova-nome" value={nova.nome} required maxLength={80}
+              onChange={(ev) => setNova({ ...nova, nome: ev.target.value, id: nova.idManual ? nova.id : slug(ev.target.value) })} /></label>
+            <label className={g.campo}>Identificador<input id="nova-id" value={nova.id} required maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,39}"
+              onChange={(ev) => setNova({ ...nova, id: ev.target.value.toLowerCase(), idManual: true })} /></label>
+          </div>
+          <Modulos prefixo="nova" valor={nova.modulos} onChange={(v) => setNova({ ...nova, modulos: v })} />
+          <div className={g.linha}><button type="submit" className={g.botao} disabled={ocupado}>Criar empresa</button></div>
+        </form>
+      </details>
 
       {empresas.map((e) => <CartaoEmpresa key={`${e.id}-${e.modulos.join()}`} e={e} ocupado={ocupado} rodar={rodar} />)}
     </div>

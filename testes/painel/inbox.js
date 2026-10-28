@@ -472,6 +472,13 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await bolhaPre.waitFor({ timeout: 8000 }).catch(() => {});
   ok('"*Sara:*" no começo do texto da IA não aparece na bolha', (await bolhaPre.count()) === 1 && !((await bolhaPre.textContent()) || '').includes('*Sara:*')
     && sql(`select texto from wa_mensagens where wamid = 'wamid.PREFIXO'`).startsWith('*Sara:*'), ((await bolhaPre.textContent()) || '').slice(0, 120));
+  // 28/10: a Sara passou a mandar "*Sara*" (sem os dois pontos); os modelos antigos da Meta ainda têm "*Sara:*".
+  sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, enviada_em) values ('${NUM}', '${BIA}', 'wamid.PREFIXO2', 'saida', 'api', 'text', E'*Sara*\\nSeu retorno está confirmado.', 'entregue', now() - interval '110 minutes')`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  const bolhaPre2 = conversa(p).locator('[data-id]', { hasText: 'Seu retorno está confirmado.' });
+  await bolhaPre2.waitFor({ timeout: 8000 }).catch(() => {});
+  ok('"*Sara*" (sem dois pontos) também sai da bolha', (await bolhaPre2.count()) === 1 && !((await bolhaPre2.textContent()) || '').includes('*Sara*'),
+    ((await bolhaPre2.textContent()) || '').slice(0, 120));
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
   // As respostas pelo painel acima pausam a Sara por alguns minutos (como o celular); daqui em diante os testes
   // olham só o dono da conversa, então elas ficam no passado.

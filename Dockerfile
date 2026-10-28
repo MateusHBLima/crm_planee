@@ -20,6 +20,9 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 PAI
 RUN addgroup -S painel && adduser -S painel -G painel
 COPY --from=build --chown=painel:painel /app/.next/standalone ./
 COPY --from=build --chown=painel:painel /app/.next/static ./.next/static
+# Migrações da base: a tela Empresas → "Nova empresa" lê daqui para preparar o banco do cliente (supabase/base-empresa.txt).
+COPY --from=build --chown=painel:painel /app/supabase/base-empresa.txt ./supabase/base-empresa.txt
+COPY --from=build --chown=painel:painel /app/supabase/migrations ./supabase/migrations
 USER painel
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
