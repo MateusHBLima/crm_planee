@@ -153,7 +153,8 @@ export async function prepararMidia({ bytes, mime, nome, voz }) {
   const m = mimeBase(mime);
   if (!bytes?.length) throw Object.assign(new Error('Arquivo vazio.'), { codigo: ERROS_MIDIA.vazio });
   const extEntrada = extensao(m, nome) === 'bin' ? 'dat' : extensao(m, nome);
-  const opus = ['-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '24k', '-application', 'voip', '-f', 'ogg'];
+  // 28/10: 48 kbps (antes 24 kbps, som abafado no celular do contato), mono, 48 kHz, modo "audio" do Opus.
+  const opus = ['-vn', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-application', 'audio', '-f', 'ogg'];
   if (m.startsWith('audio/') || voz) {
     if (voz) return { tipo: 'audio', bytes: await converter(bytes, extEntrada, 'ogg', opus), mime: 'audio/ogg', voz: true };
     if (AUDIO_ACEITO.includes(m)) return { tipo: 'audio', bytes, mime: m, voz: false };
