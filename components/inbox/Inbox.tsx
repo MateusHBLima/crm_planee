@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
-import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, finalizarPelaConversa, localizarMensagem, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
+import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, enviarMidia, finalizarPelaConversa, localizarMensagem, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
 import { abrirConversa, carregarAbertosDaConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
 import type { AbertoDaConversa } from '@/lib/painel/crm';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
@@ -33,6 +33,14 @@ const linkWhatsApp = (waId: string) => `https://web.whatsapp.com/send?phone=${en
 // Quem mandou cada mensagem. O nome do agente de IA vem da empresa (crm_config "agente", 27/10), nunca do código.
 const AUTOR: Record<Exclude<Mensagem['origem'], 'api'>, string> = { contato: '', celular: 'Equipe (celular)', historico: 'Histórico', painel: 'Painel' };
 const rotuloDe = (origem: Mensagem['origem'], agente: string) => (origem === 'api' ? agente : AUTOR[origem] ?? '');
+// A IA pode mandar o próprio nome em cima do texto ("*Amanda:*" + quebra de linha, como o contato vê). A bolha já tem o
+// nome em cima: na tela o prefixo sai, e o texto gravado continua igual (27/10).
+const escaparRegex = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const semPrefixo = (texto: string, agente: string) =>
+  agente ? texto.replace(new RegExp(`^\\s*\\*?${escaparRegex(agente)}:\\*?[ \\t]*(\\r?\\n|$)`, 'i'), '') : texto;
+// Na lista o resumo vem numa linha só ("*Amanda:* Olá…"): sai o nome com os asteriscos.
+const semPrefixoResumo = (texto: string, agente: string) =>
+  agente ? texto.replace(new RegExp(`^\\s*\\*${escaparRegex(agente)}:\\*\\s*`, 'i'), '') : texto;
 const MIDIA: Record<string, string> = {
   image: 'Foto', audio: 'Áudio', video: 'Vídeo', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contacts: 'Contato',
 };
@@ -94,6 +102,8 @@ const ETAPA_CARTAO: Record<string, string> = { aguardando: 'Aguardando equipe', 
 export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
   const agente = lista.agente || 'IA'; // lista guardada antes de 27/10 não traz o nome
+  // Assumir só aparece onde a IA da empresa respeita (crm_config "agente".assumir, 27/10). Devolver continua.
+  const podeAssumir = lista.assumir === true;
   const inicialRef = useRef(inicial);
   // Memória da aba (lib/painel/memoria-cliente.ts): a lista sem busca e as conversas já abertas aparecem na hora.
   const memLista = `${empresaId}:conversas`;
@@ -273,6 +283,28 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     return null;
   }, [aplicarAtualizacao, atualizarLinha]);
 
+  // Foto, vídeo, áudio ou documento (27/10). Áudio não tem legenda no WhatsApp: o texto vai numa mensagem à parte.
+  const enviarArquivo = useCallback(async (arquivo: File, legenda: string, voz: boolean): Promise<string | null> => {
+    const k = abertaRef.current;
+    if (!k) return 'Abra uma conversa antes de responder.';
+    const f = new FormData();
+    f.set('numero_id', k.numero_id); f.set('wa_id', k.wa_id); f.set('arquivo', arquivo); f.set('voz', voz ? '1' : '0');
+    const audio = voz || arquivo.type.startsWith('audio/');
+    if (!audio) f.set('legenda', legenda);
+    const r = await enviarMidia(f);
+    if (!r.ok) {
+      if (r.sair) { window.location.href = `/entrar?motivo=sessao&volta=${encodeURIComponent(window.location.pathname)}`; return null; }
+      return r.erro;
+    }
+    ajuste.current = { tipo: 'fim' };
+    const rotulo = voz ? '🎤 Áudio gravado' : `📎 ${arquivo.name || MIDIA[r.dados.tipo] || 'Arquivo'}`;
+    setPendentes((ps) => [...ps, { chave: chaveDe(k), wamid: r.dados.wamid, texto: !audio && legenda.trim() ? `${rotulo} · ${legenda.trim()}` : rotulo, em: new Date().toISOString() }]);
+    if (audio && legenda.trim()) return enviar(legenda);
+    const conv = await abrirConversa(k.numero_id, k.wa_id);
+    if (conv.ok && mesma(abertaRef.current, k)) { aplicarAtualizacao(conv.dados); atualizarLinha(conv.dados.conversa); }
+    return null;
+  }, [aplicarAtualizacao, atualizarLinha, enviar]);
+
   // Assumir (a IA fica quieta nesta conversa) ou devolver para a IA.
   const trocarDono = useCallback(async (dono: 'ia' | 'humano', prazo: '24h' | 'sempre' = '24h') => {
     const k = abertaRef.current;
@@ -444,7 +476,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                     <span className={c.itemHora}>{datas.lista(k.ultima_em)}</span>
                   </span>
                   <span className={c.itemLinha}>
-                    <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Você: ' : ''}{k.ultima_resumo ?? ''}</span>
+                    <span className={c.previa}>{k.ultima_direcao === 'saida' ? 'Você: ' : ''}{k.ultima_direcao === 'saida' ? semPrefixoResumo(k.ultima_resumo ?? '', agente) : (k.ultima_resumo ?? '')}</span>
                     {lista.linhas && k.numero_id !== principal && <span className={c.tagLinha} data-linha={k.numero_id} title="Número da empresa que recebeu a conversa">{lista.linhas[k.numero_id] ?? k.numero_id}</span>}
                     {k.dono === 'humano' && (
                       <span className={c.tagEquipe} data-sempre={k.dono_sempre ? 'true' : undefined}
@@ -551,14 +583,14 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                       </a>
                     )}
                   </MenuMais>
-                  {podeResponder && (atual.dono === 'humano' || !escolhendoPrazo) && (
+                  {podeResponder && (atual.dono === 'humano' || (podeAssumir && !escolhendoPrazo)) && (
                     <button type="button" className={c.botaoDono} disabled={mudandoDono}
                       onClick={() => (atual.dono === 'humano' ? trocarDono('ia') : setEscolhendoPrazo(true))}
                       title={atual.dono === 'humano' ? `${agente} volta a responder esta conversa` : `${agente} fica quieta nesta conversa: por 24 h ou sempre`}>
                       {mudandoDono ? 'Aguarde…' : atual.dono === 'humano' ? `Devolver pra ${agente}` : 'Assumir'}
                     </button>
                   )}
-                  {podeResponder && atual.dono !== 'humano' && escolhendoPrazo && (
+                  {podeResponder && podeAssumir && atual.dono !== 'humano' && escolhendoPrazo && (
                     <span className={c.prazoDono} role="group" aria-label="Assumir por quanto tempo">
                       <button type="button" className={c.botaoDonoForte} disabled={mudandoDono} onClick={() => trocarDono('humano', '24h')}
                         title={`${agente} volta sozinha 24 h depois da última resposta da equipe`}>Por 24 h</button>
@@ -657,7 +689,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
               ))}
             </div>
             {podeResponder && atual && (
-              <Compositor key={chaveDe(aberta)} janelaAberta={atual.janela_aberta} onEnviar={enviar} link={linkWhatsApp(atual.wa_id)} />
+              <Compositor key={chaveDe(aberta)} janelaAberta={atual.janela_aberta} onEnviar={enviar} onEnviarArquivo={enviarArquivo} link={linkWhatsApp(atual.wa_id)} />
             )}
           </>
         )}
@@ -718,17 +750,89 @@ function NomeEditavel({ conversa, onSalvar }: { conversa: Conversa; onSalvar: (n
 }
 
 // Caixa de resposta: Enter envia, Shift+Enter quebra a linha. Fora da janela de 24 h fica desligada, com o motivo.
-function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; onEnviar: (texto: string) => Promise<string | null>; link: string }) {
+// 27/10: 📎 anexa foto, vídeo, áudio ou documento (o texto vira a legenda; colar uma imagem também anexa) e 🎤 grava
+// um áudio que chega ao contato como mensagem de voz.
+const MAX_ARQUIVO = 25 * 1024 * 1024;
+const tamanho = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const minSeg = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+// Formato da gravação: ogg/opus onde o navegador grava (Firefox); webm/opus no Chrome e Edge; mp4 no Safari.
+// O receptor converte para ogg/opus antes de mandar.
+function formatoGravacao(): string {
+  if (typeof MediaRecorder === 'undefined') return '';
+  return ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+}
+
+function Compositor({ janelaAberta, onEnviar, onEnviarArquivo, link }: {
+  janelaAberta: boolean; onEnviar: (texto: string) => Promise<string | null>;
+  onEnviarArquivo: (arquivo: File, legenda: string, voz: boolean) => Promise<string | null>; link: string;
+}) {
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const mandar = async () => {
-    if (enviando || !janelaAberta || !texto.trim()) return;
-    setEnviando(true); setErro(null);
-    const e = await onEnviar(texto);
-    setEnviando(false);
-    if (e) setErro(e); else setTexto('');
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [gravando, setGravando] = useState<{ inicio: number; segundos: number } | null>(null);
+  const seletor = useRef<HTMLInputElement>(null);
+  const gravador = useRef<{ rec: MediaRecorder; partes: Blob[]; stream: MediaStream; enviar: boolean } | null>(null);
+
+  // Fecha o microfone se a conversa trocar no meio da gravação.
+  useEffect(() => () => { const g = gravador.current; if (g) { g.enviar = false; if (g.rec.state !== 'inactive') g.rec.stop(); g.stream.getTracks().forEach((t) => t.stop()); } }, []);
+  useEffect(() => {
+    if (!gravando) return;
+    const t = setInterval(() => setGravando((g) => (g ? { ...g, segundos: Math.floor((Date.now() - g.inicio) / 1000) } : g)), 500);
+    return () => clearInterval(t);
+  }, [gravando]);
+
+  const escolher = (f: File | null | undefined) => {
+    setErro(null);
+    if (!f) return;
+    if (f.size > MAX_ARQUIVO) { setErro('Arquivo acima de 25 MB: mande pelo celular.'); return; }
+    if (!f.size) { setErro('O arquivo está vazio.'); return; }
+    setArquivo(f);
   };
+
+  const mandar = async () => {
+    if (enviando || !janelaAberta || (!texto.trim() && !arquivo)) return;
+    setEnviando(true); setErro(null);
+    const e = arquivo ? await onEnviarArquivo(arquivo, texto, false) : await onEnviar(texto);
+    setEnviando(false);
+    if (e) setErro(e); else { setTexto(''); setArquivo(null); }
+  };
+
+  const gravar = async () => {
+    setErro(null);
+    const tipo = formatoGravacao();
+    if (!tipo || !navigator.mediaDevices?.getUserMedia) { setErro('Este navegador não grava áudio. Use o Chrome, o Edge ou o Firefox, ou mande pelo celular.'); return; }
+    let stream: MediaStream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { setErro('Sem acesso ao microfone. Libere o microfone para o painel no navegador e tente de novo.'); return; }
+    const rec = new MediaRecorder(stream, { mimeType: tipo, audioBitsPerSecond: 32000 });
+    const g = { rec, partes: [] as Blob[], stream, enviar: false };
+    rec.ondataavailable = (ev) => { if (ev.data.size) g.partes.push(ev.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      gravador.current = null; setGravando(null);
+      if (!g.enviar) return;
+      const base = tipo.split(';')[0];
+      const blob = new Blob(g.partes, { type: base });
+      if (blob.size < 200) { setErro('A gravação ficou vazia. Tente de novo.'); return; }
+      const ext = base.endsWith('ogg') ? 'ogg' : base.endsWith('mp4') ? 'm4a' : 'webm';
+      setEnviando(true);
+      const e = await onEnviarArquivo(new File([blob], `gravacao.${ext}`, { type: base }), '', true);
+      setEnviando(false);
+      if (e) setErro(e);
+    };
+    gravador.current = g;
+    rec.start(1000);
+    setGravando({ inicio: Date.now(), segundos: 0 });
+  };
+  const pararGravacao = (enviar: boolean) => {
+    const g = gravador.current;
+    if (!g) return;
+    g.enviar = enviar;
+    if (g.rec.state !== 'inactive') g.rec.stop();
+  };
+
+  const desligado = !janelaAberta || enviando;
   return (
     <footer className={c.compositor}>
       {!janelaAberta && (
@@ -737,16 +841,43 @@ function Compositor({ janelaAberta, onEnviar, link }: { janelaAberta: boolean; o
           <a className={c.botaoDono} href={link} target="whatsapp-clinica" rel="noopener noreferrer">Abrir no WhatsApp</a>
         </div>
       )}
-      <div className={c.caixa} data-desligada={janelaAberta ? undefined : 'true'}>
-        <label htmlFor="resposta-inbox" className={c.visivelLeitor}>Resposta</label>
-        <textarea id="resposta-inbox" value={texto} maxLength={4096} disabled={!janelaAberta || enviando}
-          placeholder={janelaAberta ? 'Escreva a resposta. Enter envia; Shift+Enter quebra a linha.' : 'Resposta desligada fora da janela de 24 h'}
-          onChange={(e) => { setTexto(e.target.value); if (erro) setErro(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); mandar(); } }} />
-        <button type="button" className={c.enviar} onClick={mandar} disabled={!janelaAberta || enviando || !texto.trim()}>
-          {enviando ? 'Enviando…' : 'Enviar'}
-        </button>
-      </div>
+      {arquivo && (
+        <div className={c.anexo} data-anexo>
+          <span className={c.anexoNome}>📎 {arquivo.name || 'Arquivo'} · {tamanho(arquivo.size)}</span>
+          <span className={c.anexoDica}>{arquivo.type.startsWith('audio/') ? 'O texto vai numa mensagem à parte' : 'O texto vai como legenda'}</span>
+          <button type="button" className={c.anexoTirar} onClick={() => setArquivo(null)} disabled={enviando} aria-label="Tirar o arquivo">✕</button>
+        </div>
+      )}
+      {gravando ? (
+        <div className={c.gravando} role="status" data-gravando>
+          <span className={c.gravandoPonto} aria-hidden="true" />
+          <span>Gravando {minSeg(gravando.segundos)}</span>
+          <button type="button" className={c.botaoDonoTexto} onClick={() => pararGravacao(false)}>Cancelar</button>
+          <button type="button" className={c.enviar} onClick={() => pararGravacao(true)}>Parar e enviar</button>
+        </div>
+      ) : (
+        <div className={c.caixa} data-desligada={janelaAberta ? undefined : 'true'}>
+          <input ref={seletor} type="file" hidden data-seletor-arquivo
+            onChange={(e) => { escolher(e.target.files?.[0]); e.target.value = ''; }} />
+          <button type="button" className={c.botaoAnexo} onClick={() => seletor.current?.click()} disabled={desligado}
+            aria-label="Anexar foto, vídeo, áudio ou documento" title="Anexar foto, vídeo, áudio ou documento (até 25 MB)">📎</button>
+          <label htmlFor="resposta-inbox" className={c.visivelLeitor}>Resposta</label>
+          <textarea id="resposta-inbox" value={texto} maxLength={arquivo ? 1024 : 4096} disabled={desligado}
+            placeholder={!janelaAberta ? 'Resposta desligada fora da janela de 24 h' : arquivo ? 'Legenda (opcional). Enter envia.' : 'Escreva a resposta. Enter envia; Shift+Enter quebra a linha.'}
+            onChange={(e) => { setTexto(e.target.value); if (erro) setErro(null); }}
+            onPaste={(e) => { const f = e.clipboardData?.files?.[0]; if (f) { e.preventDefault(); escolher(f); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); mandar(); } }} />
+          {!texto.trim() && !arquivo ? (
+            <button type="button" className={c.botaoAnexo} onClick={gravar} disabled={desligado}
+              aria-label="Gravar áudio" title="Gravar áudio (chega como mensagem de voz)">🎤</button>
+          ) : (
+            <button type="button" className={c.enviar} onClick={mandar} disabled={desligado || (!texto.trim() && !arquivo)}>
+              {enviando ? 'Enviando…' : 'Enviar'}
+            </button>
+          )}
+        </div>
+      )}
+      {enviando && !texto.trim() && !arquivo && !gravando && <p className={c.foraJanela} role="status">Enviando o áudio…</p>}
       {erro && <p className={c.erroEnvio} role="alert">{erro}</p>}
     </footer>
   );
@@ -865,7 +996,7 @@ function Bolha({ m, agente, hora, nomeContato, numeroId, waId, onAvisar, destaca
     conteudo = <p className={c.semTexto}>Tipo de mensagem não suportado</p>;
   } else if (rotMidia) {
     const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
-    const legenda = m.texto && m.texto !== nomeArquivo ? m.texto : null;
+    const legenda = m.texto && m.texto !== nomeArquivo ? (m.origem === 'api' ? semPrefixo(m.texto, agente) : m.texto) || null : null;
     const temArquivo = ['image', 'sticker', 'audio', 'video', 'document'].includes(m.tipo);
     conteudo = (
       <>
@@ -877,7 +1008,8 @@ function Bolha({ m, agente, hora, nomeContato, numeroId, waId, onAvisar, destaca
     );
   } else {
     // O selo em cima da bolha já diz que é automática: o "[AUTOMÁTICA · followup_1h]" do texto sai (15/10).
-    const texto = m.texto ? m.texto.replace(/^\s*\[AUTOM[ÁA]TICA[^\]]*\]\s*/i, '') : '';
+    const limpo = m.texto ? m.texto.replace(/^\s*\[AUTOM[ÁA]TICA[^\]]*\]\s*/i, '') : '';
+    const texto = m.origem === 'api' || (m.origem === 'historico' && m.por === 'IA') ? semPrefixo(limpo, agente) : limpo;
     conteudo = texto ? <p className={c.texto}>{texto}</p> : <p className={c.semTexto}>Mensagem sem texto</p>;
   }
   return (

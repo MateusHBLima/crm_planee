@@ -2,7 +2,7 @@
 //   dono = 'humano' sem prazo (sempre)      → a equipe assumiu de vez: Sara quieta até devolverem.
 //   dono = 'humano' com prazo ainda valendo → assumida por 24 h (renovadas a cada resposta da equipe): Sara quieta.
 //   dono = 'humano' com prazo vencido       → a Sara volta sozinha (vale a regra do celular abaixo).
-//   resposta da equipe há < N minutos (celular ou painel, 27/10) → Sara quieta até passar o prazo. O motivo
+//   resposta da equipe há < N minutos (celular ou painel, 27/10; N por empresa) → Sara quieta até passar o prazo. O motivo
 //   continua "equipe_no_celular" para não mudar o que o n8n já trata.
 //   o resto                                 → Sara responde.
 // Conversa que o espelho ainda não conhece: Sara responde (o agente não depende do painel).
@@ -21,6 +21,19 @@ export function formasDoNumero(waId) {
   const sem9 = d.match(/^55(\d{2})([6-9]\d{7})$/);
   if (sem9) return [d, `55${sem9[1]}9${sem9[2]}`];
   return [d];
+}
+
+// Minutos de pausa da IA da empresa (27/10): crm_config "agente".pausa_min, gravado pela API (a clínica e a SSA têm
+// tempos diferentes). Sem a chave, ou banco sem CRM, vale SARA_PAUSA_CELULAR_MIN. Mesma regra da Inbox.
+export function pausaDoValor(valor, padrao = config.pausaCelularMin) {
+  const n = Number(valor && typeof valor === 'object' ? valor.pausa_min : NaN);
+  return Number.isFinite(n) && n >= 1 && n <= 24 * 60 ? n : padrao;
+}
+async function pausaMin(r) {
+  try {
+    const x = await bancoDaEmpresa(r).query(`select valor from crm_config where chave = 'agente'`);
+    return pausaDoValor(x.rows[0]?.valor);
+  } catch { return config.pausaCelularMin; }
 }
 
 export async function estadoDoAtendimento(numero, waId) {
@@ -44,7 +57,7 @@ export async function estadoDoAtendimento(numero, waId) {
     return { sara_responde: false, motivo: 'equipe_assumiu', dono: 'humano', por: c.dono_por ?? null, desde: iso(c.dono_em), pausa_ate: null,
              sempre: ateMs === null, ate: ateMs === null ? null : new Date(ateMs).toISOString() };
   }
-  const ate = c.celular_em ? new Date(c.celular_em).getTime() + config.pausaCelularMin * 60_000 : 0;
+  const ate = c.celular_em ? new Date(c.celular_em).getTime() + (await pausaMin(r)) * 60_000 : 0;
   if (ate > Date.now()) {
     return { sara_responde: false, motivo: 'equipe_no_celular', dono: 'ia', por: null, desde: iso(c.celular_em), pausa_ate: new Date(ate).toISOString(), sempre: false, ate: null };
   }

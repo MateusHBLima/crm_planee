@@ -27,6 +27,12 @@ export async function enviarMensagem(numeroId: string, waId: string, texto: stri
   return comUsuario((u) => inbox.enviarMensagem(u, numeroId, waId, texto), 'inbox');
 }
 
+// Foto, vídeo, áudio ou documento (27/10). FormData: numero_id, wa_id, arquivo, legenda, voz ("1" = gravado na tela).
+export async function enviarMidia(dados: FormData) {
+  return comUsuario((u) => inbox.enviarMidia(u, String(dados.get('numero_id') ?? ''), String(dados.get('wa_id') ?? ''),
+    dados.get('arquivo') as File | null, String(dados.get('legenda') ?? ''), dados.get('voz') === '1'), 'inbox');
+}
+
 // Assumir a conversa (a Sara fica quieta) ou devolver para a Sara. Devolve a linha da lista atualizada.
 // prazo: '24h' (a Sara volta 24 h depois da última resposta da equipe) ou 'sempre' (até alguém devolver).
 export async function assumirConversa(numeroId: string, waId: string, prazo: inbox.PrazoDono = '24h') {

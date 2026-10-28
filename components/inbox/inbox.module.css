@@ -144,6 +144,19 @@ a.botaoDono { display: inline-flex; align-items: center; text-decoration: none; 
 .caixa textarea:disabled { cursor: not-allowed; }
 .enviar { flex-shrink: 0; height: 36px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--ink); color: var(--inv) !important; font-size: 13px; font-weight: 600; }
 .enviar:hover:not(:disabled) { background: var(--ink-hover); }
+/* Anexar e gravar áudio (27/10) */
+.botaoAnexo { flex-shrink: 0; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 16px; line-height: 1; cursor: pointer; }
+.botaoAnexo:hover:not(:disabled) { border-color: var(--ink-3); }
+.botaoAnexo:disabled { opacity: .5; cursor: not-allowed; }
+.anexo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; padding: 6px 10px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+.anexoNome { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.anexoDica { color: var(--ink-3); font-size: 12px; }
+.anexoTirar { margin-left: auto; border: 0; background: transparent; color: var(--ink-3); font-size: 14px; cursor: pointer; padding: 2px 6px; }
+.gravando { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--field); font-size: 14px; }
+.gravando > span:nth-child(2) { flex-grow: 1; font-variant-numeric: tabular-nums; }
+.gravandoPonto { width: 10px; height: 10px; border-radius: 50%; background: var(--rs); animation: piscar 1s ease-in-out infinite; }
+@keyframes piscar { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .gravandoPonto { animation: none; } }
 .foraJanela { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--ag-bg); color: var(--ag-ink); font-size: 12.5px; line-height: 1.4; }
 .erroEnvio { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--rs-bg); color: var(--rs-ink); font-size: 12.5px; }
 .bolha[data-pendente='true'] { opacity: .65; }

@@ -12,7 +12,9 @@ const sql = (q, url = process.env.DATABASE_URL) => execSync(`psql -qAt -v ON_ERR
 const PORTA = new URL(process.env.BASE_URL || 'http://localhost:3100').port;
 const GERAL = `http://localhost:${PORTA}`;
 const OUTRA = `http://outra.localhost:${PORTA}`;
-const lancar = () => chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+// Microfone falso (27/10): o teste grava um áudio pela Inbox sem pedir permissão a ninguém.
+const lancar = () => chromium.launch({ ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 const res = []; const ok = (n, c, extra = '') => res.push((c ? 'OK   ' : 'FALHA') + ' ' + n + (extra ? ' — ' + extra : ''));
 async function entrar(p, base, email, senha = 'senha123', destino = '/inbox') {
   await p.goto(base + destino); await p.fill('#email', email); await p.fill('#senha', senha);
@@ -73,11 +75,34 @@ function receptorEnviar(req, res) {
   });
 }
 
+// Mídia pela Inbox (POST /whatsapp/enviar-midia, 27/10): corpo = o arquivo, dados em x-envio (base64url). Como o
+// receptor faria, grava a linha no espelho com origem 'painel' e o tipo que a Meta recebeu.
+function receptorEnviarMidia(req, res) {
+  const partes = []; req.on('data', (x) => partes.push(x)); req.on('end', () => {
+    const corpo = Buffer.concat(partes);
+    const d = (() => { try { return JSON.parse(Buffer.from(String(req.headers['x-envio'] || ''), 'base64url').toString('utf8')); } catch { return {}; } })();
+    const mime = String(req.headers['content-type'] || '');
+    n8n.pedidos.push({ url: req.url, chave: req.headers['x-receptor-chave'], corpo: d, mime, tamanho: corpo.length });
+    const responder = (st, o) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (req.headers['x-receptor-chave'] !== process.env.RECEPTOR_CHAVE_INTERNA) return responder(401, { erro: 'chave inválida' });
+    if (String(d.nome).includes('CONVERSAO')) return responder(200, { ok: false, erro: 'conversao_falhou' });
+    const tipo = d.voz || mime.startsWith('audio/') ? 'audio' : mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document';
+    const wamid = `wamid.MIDIA${++n8n.n}`;
+    const midia = JSON.stringify({ id: 'up' + n8n.n, mime_type: tipo === 'audio' ? 'audio/ogg' : mime, filename: tipo === 'document' ? d.nome : undefined });
+    sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, midia, status, status_em, enviada_em, bruto)
+           values (${dolar(d.phone_number_id)}, ${dolar(d.to)}, '${wamid}', 'saida', 'painel', '${tipo}', ${d.legenda ? dolar(d.legenda) : 'null'}, ${dolar(midia)}::jsonb, 'enviada', now(), now(),
+                   jsonb_build_object('origem', 'registro', 'por', ${dolar(d.por)}));
+         update wa_conversas set ultima_em = now(), ultima_direcao = 'saida' where numero_id = ${dolar(d.phone_number_id)} and wa_id = ${dolar(d.to)};`);
+    responder(200, { ok: true, wamid, tipo });
+  });
+}
+
 // Receptor falso (GET /whatsapp/midia/<token>): como o de verdade, só entrega enquanto o link vale na central.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const receptor = { pedidos: [] };
 const servidorReceptor = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/whatsapp/enviar') return receptorEnviar(req, res);
+  if (req.method === 'POST' && req.url === '/whatsapp/enviar-midia') return receptorEnviarMidia(req, res);
   const tok = (req.url.match(/^\/whatsapp\/midia\/(?:[a-z0-9-]+\/)?([A-Za-z0-9_-]{24,128})$/) || [])[1];
   const achou = tok ? sql(`select caminho || '|' || coalesce(mime, '') from wa_midia_links where token = '${tok}' and expira_em > now()`) : '';
   receptor.pedidos.push({ tok, achou });
@@ -92,7 +117,7 @@ const BIA = '5547900001001', CARLOS = '5547900001002', DANI = '5547900001003';
 const ONTEM = `(date_trunc('day', now() at time zone 'America/Sao_Paulo') - interval '12 hours') at time zone 'America/Sao_Paulo'`;
 const SEMENTE = `
 delete from wa_reacoes; delete from wa_mensagens; delete from wa_conversas; delete from wa_contatos;
-insert into crm_config (chave, valor) values ('agente', '{"nome": "Sara"}') on conflict (chave) do update set valor = excluded.valor;
+insert into crm_config (chave, valor) values ('agente', '{"nome": "Sara", "assumir": true, "avisos_url": "http://127.0.0.1:${process.env.PORTA_N8N || 3999}/painel-retomar"}') on conflict (chave) do update set valor = excluded.valor;
 insert into wa_contatos (numero_id, wa_id, nome_perfil, nome_salvo) values
   ('${NUM}', '${BIA}', 'Bia perfil', 'Beatriz Ficticia'),
   ('${NUM}', '${CARLOS}', 'Carlos Ficticio', null),
@@ -350,6 +375,14 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   ok('depois da resposta pelo painel: "Sara pausada até" (a equipe respondeu) e o botão Assumir',
     /Sara pausada até \d{2}:\d{2} \(a equipe respondeu\)/.test(((await cab().textContent()) || '').replace(/\s+/g, ' '))
     && (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 1, ((await cab().textContent()) || '').slice(0, 200));
+  // Pausa por empresa (27/10): crm_config "agente".pausa_min muda o "pausada até" (a clínica e a SSA têm tempos diferentes).
+  sql(`update crm_config set valor = valor || '{"pausa_min": 30}' where chave = 'agente'`);
+  const esperado30 = sql(`select to_char((max(enviada_em) + interval '30 minutes') at time zone 'America/Sao_Paulo', 'HH24:MI') from wa_mensagens where wa_id = '${BIA}' and origem in ('celular', 'painel')`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await cab().getByText(/pausada até/).waitFor({ timeout: 8000 }).catch(() => {});
+  ok('pausa da empresa (30 min): "Sara pausada até" 30 min depois da resposta', ((await cab().textContent()) || '').includes(`Sara pausada até ${esperado30}`),
+    `${esperado30} | ${((await cab().textContent()) || '').slice(0, 160)}`);
+  sql(`update crm_config set valor = valor - 'pausa_min' where chave = 'agente'`);
   // Para os testes de Devolver a seguir, a conversa fica com a equipe como se alguém tivesse clicado em Assumir.
   sql(`update wa_conversas set dono = 'humano', dono_por = 'Amanda Teste', dono_em = now(), dono_ate = now() + interval '24 hours' where wa_id = '${BIA}'`);
   await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
@@ -367,6 +400,78 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const erroE = (await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '';
   ok('erro da Meta aparece na caixa, sem vazar a resposta', erroE.includes('A Meta recusou o envio (código 131026)') && !respR.join('\n').includes('DADO_SENSIVEL')
     && (await p.inputValue('#resposta-inbox')) === 'Isto vai FALHAR', erroE);
+  // Comando ("/r") não sai pelo painel: o n8n trataria como a equipe digitando o comando (27/10).
+  const nCmd = n8n.pedidos.length;
+  await p.fill('#resposta-inbox', '/r'); await p.press('#resposta-inbox', 'Enter'); await p.waitForTimeout(1500);
+  ok('"/r" é recusado na hora, sem chegar ao receptor', ((await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '').includes('Comandos (como /r) não podem ser enviados')
+    && n8n.pedidos.length === nCmd);
+  await p.fill('#resposta-inbox', '');
+  // Foto com legenda (27/10): 📎, legenda na caixa, Enter envia; o receptor recebe o arquivo inteiro e os dados.
+  ok('caixa vazia mostra 📎 e 🎤 (gravar áudio)', await p.getByRole('button', { name: 'Anexar foto, vídeo, áudio ou documento' }).isEnabled()
+    && await p.getByRole('button', { name: 'Gravar áudio' }).isEnabled());
+  await p.setInputFiles('[data-seletor-arquivo]', { name: 'mapa.png', mimeType: 'image/png', buffer: PNG });
+  ok('arquivo escolhido aparece acima da caixa, com o tamanho', ((await conversa(p).locator('[data-anexo]').textContent().catch(() => '')) || '').includes('mapa.png')
+    && ((await conversa(p).locator('[data-anexo]').textContent()) || '').includes('O texto vai como legenda'));
+  const audMidiaAntes = Number(sql(`select count(*) from central_auditoria where acao = 'enviar_midia'`));
+  await p.fill('#resposta-inbox', 'Mapa da clínica fictícia'); await p.press('#resposta-inbox', 'Enter');
+  await conversa(p).locator('[data-id]', { hasText: 'Mapa da clínica fictícia' }).waitFor({ timeout: 10000 }).catch(() => {});
+  const pedFoto = n8n.pedidos.filter((x) => x.url === '/whatsapp/enviar-midia').pop() || { corpo: {} };
+  ok('foto: receptor recebe a chave, o arquivo inteiro, o tipo, a legenda e quem mandou', pedFoto.chave === process.env.RECEPTOR_CHAVE_INTERNA
+    && pedFoto.mime === 'image/png' && pedFoto.tamanho === PNG.length && pedFoto.corpo.nome === 'mapa.png' && pedFoto.corpo.legenda === 'Mapa da clínica fictícia'
+    && pedFoto.corpo.voz === false && pedFoto.corpo.por === 'Amanda Teste' && pedFoto.corpo.phone_number_id === NUM && pedFoto.corpo.to === BIA,
+    JSON.stringify({ ...pedFoto, chave: pedFoto.chave ? '…' : null }).slice(0, 300));
+  const bolhaFoto = conversa(p).locator('[data-id]', { hasText: 'Mapa da clínica fictícia' });
+  ok('foto: bolha "Painel · Amanda Teste" com a legenda, caixa e anexo limpos', (await bolhaFoto.count()) === 1 && ((await bolhaFoto.textContent()) || '').includes('Painel · Amanda Teste')
+    && (await p.inputValue('#resposta-inbox')) === '' && (await conversa(p).locator('[data-anexo]').count()) === 0);
+  const audM = sql(`select coalesce(detalhe::text, '') from central_auditoria where acao = 'enviar_midia' order by id desc limit 1`);
+  ok('mídia na auditoria central, sem legenda nem nome do arquivo', Number(sql(`select count(*) from central_auditoria where acao = 'enviar_midia'`)) === audMidiaAntes + 1
+    && audM.includes('enviada') && audM.includes('image') && !audM.includes('Mapa') && !audM.includes('mapa.png'), audM);
+  // Arquivo de áudio com texto: o áudio vai sem legenda e o texto vai numa mensagem à parte.
+  await p.setInputFiles('[data-seletor-arquivo]', { name: 'orientacao.mp3', mimeType: 'audio/mpeg', buffer: Buffer.alloc(4096, 1) });
+  ok('áudio escolhido avisa que o texto vai à parte', ((await conversa(p).locator('[data-anexo]').textContent()) || '').includes('O texto vai numa mensagem à parte'));
+  const nAud = n8n.pedidos.length;
+  await p.fill('#resposta-inbox', 'Ouça a orientação acima'); await p.press('#resposta-inbox', 'Enter');
+  await conversa(p).locator('[data-id]', { hasText: 'Ouça a orientação acima' }).waitFor({ timeout: 10000 }).catch(() => {});
+  const novosAud = n8n.pedidos.slice(nAud);
+  ok('áudio + texto: primeiro o áudio (sem legenda), depois o texto', novosAud.length === 2 && novosAud[0].url === '/whatsapp/enviar-midia' && novosAud[0].corpo.legenda === ''
+    && novosAud[0].mime === 'audio/mpeg' && novosAud[1].url === '/whatsapp/enviar' && novosAud[1].corpo.texto === 'Ouça a orientação acima', JSON.stringify(novosAud.map((x) => [x.url, x.mime, x.corpo.legenda ?? x.corpo.texto])));
+  // Gravar áudio pela tela: microfone (falso no teste) → "Parar e enviar" → mensagem de voz.
+  const nGrav = n8n.pedidos.length;
+  await p.getByRole('button', { name: 'Gravar áudio' }).click();
+  await conversa(p).locator('[data-gravando]').waitFor({ timeout: 8000 }).catch(() => {});
+  ok('gravando: mostra o tempo, Cancelar e Parar e enviar', ((await conversa(p).locator('[data-gravando]').textContent().catch(() => '')) || '').includes('Gravando 0:0'));
+  await p.waitForTimeout(2200);
+  await p.getByRole('button', { name: 'Parar e enviar' }).click();
+  await p.waitForTimeout(3000);
+  const pedVoz = n8n.pedidos.slice(nGrav).find((x) => x.url === '/whatsapp/enviar-midia') || { corpo: {} };
+  ok('áudio gravado vai como voz, com o arquivo do navegador', pedVoz.corpo.voz === true && /^audio\/(webm|ogg|mp4)/.test(pedVoz.mime || '') && pedVoz.tamanho > 200
+    && /^gravacao\.(webm|ogg|m4a)$/.test(pedVoz.corpo.nome || ''), JSON.stringify({ mime: pedVoz.mime, tamanho: pedVoz.tamanho, nome: pedVoz.corpo.nome, voz: pedVoz.corpo.voz }));
+  ok('depois de gravar, a caixa volta', (await conversa(p).locator('[data-gravando]').count()) === 0 && await p.locator('#resposta-inbox').isEnabled());
+  // Cancelar a gravação não manda nada.
+  const nCanc = n8n.pedidos.length;
+  await p.getByRole('button', { name: 'Gravar áudio' }).click();
+  await conversa(p).locator('[data-gravando]').waitFor({ timeout: 8000 }).catch(() => {});
+  await p.waitForTimeout(800);
+  await conversa(p).locator('[data-gravando]').getByRole('button', { name: 'Cancelar' }).click(); await p.waitForTimeout(1200);
+  ok('Cancelar a gravação não envia', n8n.pedidos.length === nCanc && (await conversa(p).locator('[data-gravando]').count()) === 0);
+  // Erro do receptor (conversão) aparece curto na caixa, e o arquivo continua escolhido para tentar de novo.
+  await p.setInputFiles('[data-seletor-arquivo]', { name: 'CONVERSAO.webm', mimeType: 'video/webm', buffer: Buffer.alloc(512, 2) });
+  await p.press('#resposta-inbox', 'Enter'); await p.waitForTimeout(2000);
+  ok('erro de conversão: mensagem clara e o arquivo fica', ((await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '').includes('Não consegui converter este arquivo')
+    && (await conversa(p).locator('[data-anexo]').count()) === 1);
+  await conversa(p).getByRole('button', { name: 'Tirar o arquivo' }).click();
+  // Arquivo acima de 25 MB não sai da tela.
+  const nGrande = n8n.pedidos.length;
+  await p.setInputFiles('[data-seletor-arquivo]', { name: 'grande.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(26 * 1024 * 1024) });
+  ok('arquivo acima de 25 MB é recusado na tela', ((await conversa(p).locator('[role=alert]').textContent().catch(() => '')) || '').includes('acima de 25 MB')
+    && (await conversa(p).locator('[data-anexo]').count()) === 0 && n8n.pedidos.length === nGrande);
+  // Nome da IA que vem no texto ("*Sara:*" + quebra) sai da bolha: o nome já está em cima (27/10).
+  sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, enviada_em) values ('${NUM}', '${BIA}', 'wamid.PREFIXO', 'saida', 'api', 'text', E'*Sara:*\nPosso confirmar seu horário?', 'entregue', now() - interval '2 hours')`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  const bolhaPre = conversa(p).locator('[data-id]', { hasText: 'Posso confirmar seu horário?' });
+  await bolhaPre.waitFor({ timeout: 8000 }).catch(() => {});
+  ok('"*Sara:*" no começo do texto da IA não aparece na bolha', (await bolhaPre.count()) === 1 && !((await bolhaPre.textContent()) || '').includes('*Sara:*')
+    && sql(`select texto from wa_mensagens where wamid = 'wamid.PREFIXO'`).startsWith('*Sara:*'), ((await bolhaPre.textContent()) || '').slice(0, 120));
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
   // As respostas pelo painel acima pausam a Sara por alguns minutos (como o celular); daqui em diante os testes
   // olham só o dono da conversa, então elas ficam no passado.
@@ -403,6 +508,15 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   const devolve2 = await chamarAcao(p, acaoDevolver, [NUM, BIA]);
   ok('devolver sem mensagem do contato pendente não avisa o n8n', devolve2.startsWith('200') && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia'
     && n8n.pedidos.filter((x) => x.url === '/painel-retomar').length === nRet + 1, devolve2.slice(0, 120));
+  // IA que ainda não respeita o Assumir (crm_config "agente" sem assumir: true, 27/10): o botão some e a ação recusa.
+  sql(`update crm_config set valor = valor - 'assumir' where chave = 'agente'`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
+  await p.waitForTimeout(500);
+  const semAssumir = await chamarAcao(p, acaoAssumir, [NUM, BIA, '24h']);
+  ok('IA sem "assumir": sem botão Assumir e a ação recusa com o motivo', (await p.getByRole('button', { name: 'Assumir', exact: true }).count()) === 0
+    && semAssumir.includes('ainda não respeita o Assumir') && sql(`select dono from wa_conversas where wa_id='${BIA}'`) === 'ia', semAssumir.slice(0, 160));
+  sql(`update crm_config set valor = valor || '{"assumir": true}' where chave = 'agente'`);
   // Assumir "Sempre": sem prazo, "Fixa" na lista e no cabeçalho; contato esperando há mais de 30 min fica vermelho
   await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
   await conversa(p).getByText('Pode ser às 15h?').waitFor({ timeout: 8000 }).catch(() => {});
@@ -449,7 +563,7 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
     && (await conversa(p).getByText('Janela de 24 h fechada').count()) === 1);
   ok('fora da janela: caixa desligada com a explicação', (await p.locator('#resposta-inbox').isDisabled())
     && (await p.getByText('Fora da janela de 24 h: a Meta só permite modelo aprovado. Responda pelo celular ou espere o contato escrever.').count()) === 1
-    && (await p.getByRole('button', { name: 'Enviar', exact: true }).isDisabled()));
+    && (await p.getByRole('button', { name: 'Gravar áudio' }).isDisabled()) && (await p.getByRole('button', { name: 'Anexar foto, vídeo, áudio ou documento' }).isDisabled()));
   const nPed = n8n.pedidos.length;
   const fora = await chamarAcao(p, acaoEnviar, [NUM, CARLOS, 'Tentativa fora da janela']);
   ok('fora da janela: a ação recusa mesmo chamada direto', fora.includes('Fora da janela de 24 h') && n8n.pedidos.length === nPed, fora.slice(0, 160));

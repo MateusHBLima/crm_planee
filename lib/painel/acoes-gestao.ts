@@ -72,7 +72,7 @@ export async function adicionarAdmin(empresa: string, nome: string, email: strin
 }
 
 // Números de WhatsApp da empresa (master). Conectar e puxar o histórico só marcam o pedido: o receptor executa.
-export async function salvarNumero(empresa: string, dados: { phone_number_id: string; waba_id?: string; nome?: string; encaminhar_url?: string; token?: string; app_secret?: string }) {
+export async function salvarNumero(empresa: string, dados: { phone_number_id: string; waba_id?: string; nome?: string; encaminhar_url?: string; eco_url?: string; token?: string; app_secret?: string }) {
   return comUsuario(async (u) => { await n.salvarNumero(u, empresa, dados); return g.listarEmpresas(u); });
 }
 export async function pedirNoNumero(phoneNumberId: string, pedido: 'conectar' | 'historico' | 'ativar' | 'desativar') {

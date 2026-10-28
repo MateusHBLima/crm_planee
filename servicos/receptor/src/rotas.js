@@ -20,7 +20,7 @@ export const segredosDosNumeros = () => segredosNumeros;
 export async function recarregarRotas() {
   try {
     const r = await central().query(
-      `select n.phone_number_id, n.empresa_id, n.encaminhar_url, n.baixar_midias, n.telefone, n.waba_id, e.banco_url_cifrado,
+      `select n.phone_number_id, n.empresa_id, n.encaminhar_url, to_jsonb(n) ->> 'eco_url' as eco_url, n.baixar_midias, n.telefone, n.waba_id, e.banco_url_cifrado,
               to_jsonb(n) ->> 'token_cifrado' as token_cifrado, to_jsonb(n) ->> 'app_secret_cifrado' as app_secret_cifrado
          from whatsapp_numeros n join empresas e on e.id = n.empresa_id
         where n.ativo and e.ativo`);
@@ -61,6 +61,13 @@ export function destinoDoRepasse(numero) {
   const r = rotaEmCache(numero);
   if (r) return r.encaminhar_url || '';
   return config.encaminharPadrao;
+}
+
+// Para onde vai o eco da resposta pelo painel (27/10): eco_url do número (a IA recebe direto da Meta, como a SSA;
+// só o eco vai para lá, nada mais é repassado) ou, sem ele, o mesmo destino do repasse.
+export function destinoDoEco(numero) {
+  const r = rotaEmCache(numero);
+  return r?.eco_url || destinoDoRepasse(numero);
 }
 
 // Token da Meta do número: o cadastrado no painel ou, sem cadastro, o META_TOKEN do receptor.

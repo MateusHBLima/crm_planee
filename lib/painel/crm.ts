@@ -7,6 +7,7 @@ import * as api from '@/lib/api/servico';
 import { atorDe, pode, podeArquivar, type Usuario } from '@/lib/sessao';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { nomeDoTipo, SQL_EH_FOLLOWUP } from '@/lib/automaticas-nomes';
+import { agenteDoValor } from '@/lib/agente';
 
 // Banco de dados da empresa escolhida pela pessoa (decisão 26). Sem empresa, nada de CRM.
 function db(u: Usuario) {
@@ -739,12 +740,14 @@ export async function salvarPrazos(u: Usuario, dados: Record<string, Record<stri
   await api.definirConfig(atorDe(u), 'prazos_atendimento', valor);
 }
 
-// Avisa o n8n quando a equipe finaliza um atendimento, para a IA poder retomar a conversa (fase 2, 2.4).
-// Só se o endereço estiver configurado; nunca atrasa nem derruba a tela.
+// Avisa a IA da empresa quando a equipe finaliza um atendimento, para ela poder retomar a conversa (fase 2, 2.4).
+// O endereço é da empresa (crm_config "agente".avisos_url, 27/10), nunca um só para todas. Sem ele, nada é avisado;
+// nunca atrasa nem derruba a tela.
 export async function avisarFinalizado(u: Usuario, atendimentoId: string, telefoneConhecido?: string | null) {
-  const url = process.env.N8N_WEBHOOK_PAINEL_RETOMAR;
-  if (!url) return;
   try {
+    const cfg = await db(u).query(`select valor from crm_config where chave = 'agente'`);
+    const url = agenteDoValor(cfg.rows[0]?.valor).avisosUrl;
+    if (!url) return;
     let telefone = telefoneConhecido;
     if (telefone === undefined) {
       const r = await db(u).query(`select c.telefone from atendimentos a left join contatos c on c.id = a.contato_id where a.id = $1`, [atendimentoId]);

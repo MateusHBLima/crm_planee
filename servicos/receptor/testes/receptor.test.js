@@ -40,7 +40,7 @@ async function ate(fn, ms = 8000) {
 
 // ---- Falsos: n8n, Graph API e Storage ----
 const n8n = { recebidos: [], falhar: false };
-const storage = { arquivos: {} };
+const storage = { arquivos: {}, brutos: {} };
 const servidores = [];
 function servidor(porta, fn) {
   const s = http.createServer((req, res) => { const p = []; req.on('data', (x) => p.push(x)); req.on('end', () => fn(req, res, Buffer.concat(p))); });
@@ -87,7 +87,7 @@ before(async () => {
   await admin.query('drop database if exists receptor_teste').catch(() => undefined);
   await admin.query('create database receptor_teste');
   await admin.end();
-  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql', '012_whatsapp_dono_prazo.sql']) {
+  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql', '012_whatsapp_dono_prazo.sql', '030_whatsapp_eco_url.sql']) {
     execSync(`psql -q -v ON_ERROR_STOP=1 "${DB}" -f "${path.join(RAIZ, 'supabase/migrations', f)}"`, { stdio: 'pipe' });
   }
   await q(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome, telefone, encaminhar_url) values ($1, 'teste', 'Número de teste', $2, 'http://127.0.0.1:3911/sara')`, [NUM, MEU]);
@@ -107,6 +107,9 @@ before(async () => {
       if (String(c.text?.body).includes('FALHAR')) return json(400, { error: { code: 131047, message: 'Re-engagement message' } });
       return json(200, { messaging_product: 'whatsapp', contacts: [{ input: c.to, wa_id: c.to }], messages: [{ id: `wamid.ENVIADA${graphPedidos.length}` }] });
     }
+    if (req.method === 'POST' && req.url.endsWith('/media')) { // mídia da Inbox (multipart)
+      return json(200, { id: `MIDIA.UP${graphPedidos.length}` });
+    }
     if (req.method === 'POST') return json(200, { success: true });
     if (req.url.includes('fields=webhook_configuration')) return json(200, { webhook_configuration: { application: 'http://127.0.0.1:3911/ia-de-hoje' }, id: '100000000000003' });
     if (req.url.includes('fields=')) return json(200, { display_phone_number: '+55 47 90000-0002', verified_name: 'Empresa Ficticia Dois', id: '100000000000002' });
@@ -123,6 +126,7 @@ before(async () => {
       res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(storage.arquivos[k]);
     }
     storage.arquivos[decodeURIComponent(req.url.replace('/storage/v1/object/', ''))] = corpo.toString();
+    storage.brutos[decodeURIComponent(req.url.replace('/storage/v1/object/', ''))] = corpo;
     res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}');
   });
   receptor = subirReceptor();
@@ -465,6 +469,132 @@ test('o painel envia pela Inbox: o receptor manda pela Meta, grava no espelho e 
   // Número sem dono: 404. Pedido mal formado: 400.
   assert.equal((await env({ phone_number_id: '999999', to: PAC, texto: 'oi' })).status, 404);
   assert.equal((await env({ phone_number_id: NUM, to: PAC, texto: '' })).status, 400);
+});
+
+// ---- 27/10: mídia pela Inbox, eco por número, comandos, eco devolvido pelo n8n e pausa por empresa ----
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'receptor-midia-'));
+const gerar = (nome, args) => { const f = path.join(tmp, nome); execSync(`ffmpeg -hide_banner -loglevel error -y ${args} "${f}"`); return fs.readFileSync(f); };
+const envM = (bytes, mime, dados, chave = 'chave-interna-teste') => fetch(`${B}/whatsapp/enviar-midia`, {
+  method: 'POST', body: bytes,
+  headers: { 'content-type': mime, 'x-receptor-chave': chave, 'x-envio': Buffer.from(JSON.stringify({ phone_number_id: NUM, to: PAC, por: 'Dr. Ficticio', ...dados })).toString('base64url') },
+});
+const envioMeta = (wamidAntes) => graphPedidos.slice(wamidAntes).filter((x) => x.url.endsWith(`/${NUM}/messages`)).map((x) => JSON.parse(x.corpo)).pop();
+const subida = (antes) => graphPedidos.slice(antes).find((x) => x.url.endsWith(`/${NUM}/media`));
+
+test('mídia pela Inbox: foto com legenda vai como foto, guarda no Storage e avisa a IA', async () => {
+  assert.equal((await envM(Buffer.from('x'), 'image/jpeg', {}, 'errada')).status, 401);
+  const foto = gerar('foto.jpg', '-f lavfi -i color=c=blue:s=64x64 -frames:v 1');
+  const antes = graphPedidos.length;
+  const j = await (await envM(foto, 'image/jpeg', { nome: 'foto.jpg', legenda: 'Segue o mapa da clínica' })).json();
+  assert.equal(j.ok, true, JSON.stringify(j)); assert.equal(j.tipo, 'image'); assert.match(j.wamid, /^wamid\.ENVIADA/);
+  const up = subida(antes);
+  assert.ok(up, 'não subiu na Meta'); assert.match(up.corpo, /image\/jpeg/); assert.equal(up.auth, 'Bearer token-meta-falso');
+  const c = envioMeta(antes);
+  assert.equal(c.type, 'image'); assert.match(c.image.id, /^MIDIA\.UP/); assert.equal(c.image.caption, 'Segue o mapa da clínica'); assert.equal(c.to, PAC);
+  const [m] = await msgs(`where wamid = '${j.wamid}'`);
+  assert.equal(m.origem, 'painel'); assert.equal(m.tipo, 'image'); assert.equal(m.texto, 'Segue o mapa da clínica'); assert.equal(m.bruto.por, 'Dr. Ficticio');
+  assert.equal(m.midia.caminho, `teste/${NUM}/${j.wamid}.jpg`); assert.equal(m.midia.mime_type, 'image/jpeg');
+  assert.equal(storage.brutos[`whatsapp/${m.midia.caminho}`]?.length, foto.length, 'arquivo inteiro no Storage');
+  const rep = await ate(() => n8n.recebidos.find((x) => x.corpo.includes(j.wamid)));
+  assert.ok(rep, 'eco da foto não chegou na IA'); assert.equal(rep.assinatura, assinar(rep.corpo));
+  const e = JSON.parse(rep.corpo).entry[0].changes[0].value.message_echoes[0];
+  assert.equal(e.type, 'image'); assert.equal(e.image.id, c.image.id); assert.equal(e.image.mime_type, 'image/jpeg'); assert.equal(e.image.caption, 'Segue o mapa da clínica');
+});
+
+test('mídia pela Inbox: áudio gravado na tela vira mensagem de voz (ogg/opus)', async () => {
+  const webm = gerar('gravado.webm', '-f lavfi -i sine=frequency=440:duration=2 -c:a libopus -f webm');
+  const antes = graphPedidos.length;
+  const j = await (await envM(webm, 'audio/webm;codecs=opus', { nome: 'gravacao.webm', voz: true, legenda: 'ignorada no áudio' })).json();
+  assert.equal(j.ok, true, JSON.stringify(j)); assert.equal(j.tipo, 'audio');
+  assert.match(subida(antes).corpo, /audio\/ogg/);
+  const c = envioMeta(antes);
+  assert.equal(c.type, 'audio'); assert.equal(c.audio.voice, true); assert.equal(c.audio.caption, undefined, 'áudio não tem legenda na Meta');
+  const [m] = await msgs(`where wamid = '${j.wamid}'`);
+  assert.equal(m.tipo, 'audio'); assert.equal(m.midia.mime_type, 'audio/ogg'); assert.equal(m.midia.voz, true);
+  const arq = storage.brutos[`whatsapp/${m.midia.caminho}`];
+  assert.ok(m.midia.caminho.endsWith('.ogg') && arq?.subarray(0, 4).toString() === 'OggS', 'guardado como ogg');
+  // Arquivo de áudio que a Meta aceita (mp3) vai como veio, sem virar voz.
+  const mp3 = gerar('musica.mp3', '-f lavfi -i sine=frequency=330:duration=1 -c:a libmp3lame');
+  const a2 = graphPedidos.length;
+  const j2 = await (await envM(mp3, 'audio/mpeg', { nome: 'aviso.mp3' })).json();
+  assert.equal(j2.tipo, 'audio'); assert.equal(envioMeta(a2).audio.voice, undefined); assert.match(subida(a2).corpo, /audio\/mpeg/);
+});
+
+test('mídia pela Inbox: vídeo .mov vira MP4; PDF e imagem webp vão como documento com o nome', async () => {
+  const mov = gerar('video.mov', '-f lavfi -i testsrc=duration=1:size=160x120:rate=10 -c:v libx264 -pix_fmt yuv420p -f mov');
+  let antes = graphPedidos.length;
+  const j = await (await envM(mov, 'video/quicktime', { nome: 'IMG_0001.MOV', legenda: 'Vídeo do exercício' })).json();
+  assert.equal(j.ok, true, JSON.stringify(j)); assert.equal(j.tipo, 'video');
+  assert.match(subida(antes).corpo, /video\/mp4/);
+  assert.equal(envioMeta(antes).video.caption, 'Vídeo do exercício');
+  const [m] = await msgs(`where wamid = '${j.wamid}'`);
+  assert.equal(storage.brutos[`whatsapp/${m.midia.caminho}`]?.subarray(4, 8).toString(), 'ftyp', 'guardado como mp4');
+
+  antes = graphPedidos.length;
+  const pdf = Buffer.from('%PDF-1.4\n% documento ficticio\n%%EOF\n');
+  const d = await (await envM(pdf, 'application/pdf', { nome: 'Laudo Ficticio.pdf', legenda: 'Seu laudo' })).json();
+  assert.equal(d.tipo, 'document');
+  const c = envioMeta(antes);
+  assert.equal(c.document.filename, 'Laudo Ficticio.pdf'); assert.equal(c.document.caption, 'Seu laudo');
+  const [md] = await msgs(`where wamid = '${d.wamid}'`);
+  assert.equal(md.tipo, 'document'); assert.equal(md.midia.filename, 'Laudo Ficticio.pdf'); assert.ok(md.midia.caminho.endsWith('.pdf'));
+
+  antes = graphPedidos.length;
+  const w = await (await envM(Buffer.from('RIFFxxxxWEBPVP8 '), 'image/webp', { nome: 'figura.webp' })).json();
+  assert.equal(w.tipo, 'document'); assert.equal(envioMeta(antes).document.filename, 'figura.webp');
+});
+
+test('mídia pela Inbox: arquivo vazio, comando na legenda e conversão que falha', async () => {
+  assert.deepEqual(await (await envM(Buffer.alloc(0), 'image/jpeg', {})).json(), { ok: false, erro: 'arquivo_vazio' });
+  assert.equal((await envM(Buffer.from('x'), 'image/jpeg', { legenda: '/r' })).status, 400);
+  const nRec = n8n.recebidos.length; const antes = graphPedidos.length;
+  assert.deepEqual(await (await envM(Buffer.from('isto nao e audio'), 'audio/webm', { voz: true })).json(), { ok: false, erro: 'conversao_falhou' });
+  assert.equal(subida(antes), undefined, 'nada subiu para a Meta'); assert.equal(n8n.recebidos.length, nRec);
+});
+
+test('texto que é só um comando não sai pelo painel', async () => {
+  const env = (texto) => fetch(`${B}/whatsapp/enviar`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' },
+    body: JSON.stringify({ phone_number_id: NUM, to: PAC, texto, por: 'x' }) });
+  const antes = graphPedidos.length;
+  for (const t of ['/r', '/P', ' /a ']) assert.equal((await env(t)).status, 400, t);
+  assert.equal(envioMeta(antes), undefined);
+  assert.equal((await env('/r para reiniciar')).status, 200, 'frase que começa com barra é texto normal');
+});
+
+test('eco_url do número: o eco vai só para lá; e o eco devolvido pela cópia do n8n continua "painel"', async () => {
+  await q(`update whatsapp_numeros set eco_url = 'http://127.0.0.1:3911/eco-ia' where phone_number_id = $1`, [NUM]);
+  await esperar(900); // o receptor relê os números a cada 500 ms nos testes
+  const r = await (await fetch(`${B}/whatsapp/enviar`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-receptor-chave': 'chave-interna-teste' },
+    body: JSON.stringify({ phone_number_id: NUM, to: PAC, texto: 'Resposta com eco por número', por: 'Equipe Teste' }) })).json();
+  const rep = await ate(() => n8n.recebidos.find((x) => x.corpo.includes(r.wamid)));
+  assert.equal(rep?.url, '/eco-ia', 'eco no eco_url, não no encaminhar_url');
+  // A IA (n8n) devolve a cópia do eco ao receptor, assinada: a mensagem continua "Painel · nome", sem duplicar.
+  await enviar(JSON.parse(rep.corpo));
+  await esperar(600);
+  const linhas = await msgs(`where wamid = '${r.wamid}'`);
+  assert.equal(linhas.length, 1); assert.equal(linhas[0].origem, 'painel'); assert.equal(linhas[0].bruto.por, 'Equipe Teste');
+  // Cópia que chega ANTES do registro (outra mensagem): já entra como painel.
+  const copia = eco('wamid.COPIA_ANTES', { type: 'text', text: { body: 'chegou pela cópia primeiro' } });
+  copia.painel = { origem: 'painel', por: 'Equipe Teste' };
+  await enviar(copia);
+  assert.equal((await ate(async () => (await msgs("where wamid = 'wamid.COPIA_ANTES'"))[0]))?.origem, 'painel');
+  await q(`update whatsapp_numeros set eco_url = null where phone_number_id = $1`, [NUM]);
+  await esperar(900);
+});
+
+test('pausa por empresa: crm_config agente.pausa_min muda o tempo que a IA fica quieta', async () => {
+  const P9 = '554788880009';
+  await enviar(ev('messages', { contacts: [{ profile: { name: 'Paciente Ficticio 9' }, wa_id: P9 }], messages: [{ from: P9, id: 'wamid.PZ1', timestamp: ts(), type: 'text', text: { body: 'oi' } }] }));
+  await enviar(ev('smb_message_echoes', { message_echoes: [{ from: MEU, to: P9, id: 'wamid.PZ2', timestamp: ts(), type: 'text', text: { body: 'equipe aqui' } }] }));
+  assert.ok(await ate(async () => (await msgs("where wamid = 'wamid.PZ2'")).length === 1));
+  const perguntar = async () => (await fetch(`${B}/whatsapp/atendimento?numero=${NUM}&wa_id=${P9}`, { headers: { 'x-receptor-chave': 'chave-interna-teste' } })).json();
+  await q(`insert into crm_config (chave, valor) values ('agente', '{"nome":"Sara","pausa_min":30}') on conflict (chave) do update set valor = excluded.valor`);
+  let falta = new Date((await perguntar()).pausa_ate).getTime() - Date.now();
+  assert.ok(falta > 29 * 60_000 && falta <= 30 * 60_000 + 5000, `pausa de 30 min (faltam ${Math.round(falta / 1000)} s)`);
+  await q(`update crm_config set valor = '{"nome":"Sara","pausa_min":"abc"}' where chave = 'agente'`);
+  falta = new Date((await perguntar()).pausa_ate).getTime() - Date.now();
+  assert.ok(falta <= 7 * 60_000 + 5000, 'valor estranho: volta para SARA_PAUSA_CELULAR_MIN');
+  await q(`delete from crm_config where chave = 'agente'`);
 });
 
 test('a Sara pergunta quem atende: equipe assumiu, equipe no celular ou ela', async () => {

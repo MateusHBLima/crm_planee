@@ -11,14 +11,14 @@ case "$DATABASE_URL" in *@localhost*|*@127.0.0.1*) ;; *) echo "Recusado: DATABAS
 PORTA_APP=${PORTA_APP:-3100}; PORTA_AUTH=${PORTA_AUTH:-54321}
 export BASE_URL="http://localhost:$PORTA_APP"
 
-echo "1/23 Banco: recria o schema, aplica as migrações 001 a 029 e a semente fictícia; cria o banco da 2ª empresa"
+echo "1/23 Banco: recria o schema, aplica as migrações 001 a 030 e a semente fictícia; cria o banco da 2ª empresa"
 psql -q "$DATABASE_URL" -c "drop schema public cascade; create schema public;"
 for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_ficticia.sql supabase/migrations/003_painel_login.sql "$T/semente.sql" \
          supabase/migrations/004_central_empresas.sql supabase/migrations/005_dados_auditoria_sem_fk.sql \
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
          supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/010_whatsapp_nome.sql supabase/migrations/011_whatsapp_cadastro.sql supabase/migrations/012_whatsapp_dono_prazo.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
          supabase/migrations/015_avisos_central.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql supabase/migrations/018_agenda_espelho.sql supabase/migrations/019_convite_link.sql supabase/migrations/020_midia_links_empresa.sql \
-         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql; do
+         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql supabase/migrations/030_whatsapp_eco_url.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
@@ -46,7 +46,6 @@ export SUPABASE_URL="http://localhost:$PORTA_AUTH" SUPABASE_ANON_KEY=anon-teste 
 # Webhook "painel_enviar" do n8n: um falso que o inbox.js sobe nesta porta (resposta pelo painel, fase 2.3).
 export PORTA_N8N=${PORTA_N8N:-3999}
 export N8N_WEBHOOK_SEGREDO="segredo-n8n-de-teste"
-export N8N_WEBHOOK_PAINEL_RETOMAR="http://127.0.0.1:$PORTA_N8N/painel-retomar"
 # Espelho da agenda: Feegow falsa (agenda.js), token só na variável, sem rodada automática durante os testes.
 export FEEGOW_API_URL="http://127.0.0.1:${PORTA_FEEGOW:-3997}" FEEGOW_TOKEN_TESTE="token-feegow-falso" PAINEL_AGENDA=0
 # Receptor falso (o inbox.js sobe): entrega as mídias pelo link curto que o painel cria.
