@@ -180,7 +180,8 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   ok('data inválida vira o quadro de agora', invalido.s === 200 && invalido.j.dados.periodo === null);
   // Celular: o filtro abre como folha embaixo, sem cortar a tela.
   const cel = await nova({ width: 390, height: 844 });
-  await entrar(cel.p, 'gestor@teste.local'); await cel.p.locator('#periodo-crm').waitFor({ timeout: 10000 });
+  // 28/10: no celular o período fica atrás de "Filtros".
+  await entrar(cel.p, 'gestor@teste.local'); await cel.p.locator('[data-filtros-celular]').click({ timeout: 10000 }); await cel.p.locator('#periodo-crm').waitFor({ timeout: 10000 });
   await cel.p.click('#periodo-crm'); await cel.p.waitForTimeout(300);
   const caixa = await cel.p.locator('[role=dialog][aria-label="Período do quadro"]').boundingBox();
   ok('no celular o calendário cabe na tela', caixa && caixa.x >= 0 && caixa.x + caixa.width <= 390 && caixa.y + caixa.height <= 844, JSON.stringify(caixa));
