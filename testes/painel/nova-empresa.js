@@ -56,14 +56,18 @@ sql(`create schema extensions; create extension pgcrypto schema extensions;
   };
 
   // ---- Erros que não gravam nada ----
-  await preencher(null, ADMIN_URL.replace(SENHA_ADMIN, 'senhaErrada'));
+  // No GitHub o Postgres de teste não confere senha (trust): ali o teste da senha errada não tem como recusar e fica de fora.
+  const SENHA_CONFERIDA = (() => { try { execSync(`psql -qAt "${ADMIN_URL.replace(SENHA_ADMIN, 'senhaErrada')}" -c "select 1"`, { stdio: 'pipe', env: { ...process.env, PGPASSWORD: '' } }); return false; } catch { return true; } })();
+  await preencher(null, SENHA_CONFERIDA ? ADMIN_URL.replace(SENHA_ADMIN, 'senhaErrada') : ADMIN_URL.replace('/cliente_novo', '/nao_existe'));
   ok('apelido sugerido a partir do nome', (await p.inputValue('#ne-apelido')) === 'loja-nova-assistencia', await p.inputValue('#ne-apelido'));
   ok('endereço previsto na tela', ((await p.textContent('[data-endereco-previsto]')) || '').includes('loja-nova-assistencia.localhost'));
   await p.fill('#ne-apelido', ID);
   await criar();
   let t = await alerta();
-  ok('senha errada do banco: recusa e não cria nada', /senha recusados/.test(t) && sql(`select count(*) from empresas where id='${ID}'`) === '0'
-    && sql(`select count(*) from pg_namespace where nspname='painel'`, CLIENTE) === '0', t);
+  if (SENHA_CONFERIDA) {
+    ok('senha errada do banco: recusa e não cria nada', /senha recusados/.test(t) && sql(`select count(*) from empresas where id='${ID}'`) === '0'
+      && sql(`select count(*) from pg_namespace where nspname='painel'`, CLIENTE) === '0', t);
+  }
   await p.fill('#ne-banco', ADMIN_URL.replace('/cliente_novo', '/nao_existe'));
   await criar(); t = await alerta();
   ok('banco que não existe: mensagem clara', /não existe/.test(t), t);
