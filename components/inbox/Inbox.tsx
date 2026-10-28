@@ -292,7 +292,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
     const k = abertaRef.current;
     if (!k) return 'Abra uma conversa antes de responder.';
     const f = new FormData();
-    f.set('numero_id', k.numero_id); f.set('wa_id', k.wa_id); f.set('arquivo', arquivo); f.set('voz', voz ? '1' : '0');
+    f.set('numero_id', k.numero_id); f.set('wa_id', k.wa_id); f.set('arquivo', await fotoEmPe(arquivo)); f.set('voz', voz ? '1' : '0');
     const audio = voz || arquivo.type.startsWith('audio/');
     if (!audio) f.set('legenda', legenda);
     const r = await enviarMidia(f);
@@ -761,6 +761,24 @@ const tamanho = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(
 const minSeg = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 // Formato da gravação: ogg/opus onde o navegador grava (Firefox); webm/opus no Chrome e Edge; mp4 no Safari.
 // O receptor converte para ogg/opus antes de mandar.
+// Foto do celular (28/10): a câmera grava a foto "deitada" e marca no EXIF para girar; o WhatsApp do contato ignora
+// essa marca e a foto chegava de lado. O navegador já mostra a foto em pé: redesenhamos assim, em JPEG 0,9, com no
+// máximo 3000 px no lado maior (fica abaixo do limite de 5 MB da Meta). Qualquer problema: manda o arquivo original.
+async function fotoEmPe(arquivo: File): Promise<File> {
+  if (!/^image\/(jpeg|jpg|heic|heif)$/i.test(arquivo.type) || typeof createImageBitmap === 'undefined') return arquivo;
+  try {
+    const img = await createImageBitmap(arquivo, { imageOrientation: 'from-image' });
+    const escala = Math.min(1, 3000 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * escala); canvas.height = Math.round(img.height * escala);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.close();
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.9));
+    if (!blob) return arquivo;
+    return new File([blob], arquivo.name.replace(/\.(jpe?g|heic|heif)$/i, '') + '.jpg', { type: 'image/jpeg' });
+  } catch { return arquivo; }
+}
+
 function formatoGravacao(): string {
   if (typeof MediaRecorder === 'undefined') return '';
   return ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
@@ -807,9 +825,11 @@ function Compositor({ janelaAberta, onEnviar, onEnviarArquivo, link }: {
     const tipo = formatoGravacao();
     if (!tipo || !navigator.mediaDevices?.getUserMedia) { setErro('Este navegador não grava áudio. Use o Chrome, o Edge ou o Firefox, ou mande pelo celular.'); return; }
     let stream: MediaStream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    // 28/10: voz mais limpa (cancelamento de eco, redução de ruído e ganho automático) e gravação em 128 kbps; o receptor
+    // converte uma vez só para a voz do WhatsApp. Antes gravava em 32 kbps e convertia para 24 kbps: o som ficava abafado.
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }); }
     catch { setErro('Sem acesso ao microfone. Libere o microfone para o painel no navegador e tente de novo.'); return; }
-    const rec = new MediaRecorder(stream, { mimeType: tipo, audioBitsPerSecond: 32000 });
+    const rec = new MediaRecorder(stream, { mimeType: tipo, audioBitsPerSecond: 128000 });
     const g = { rec, partes: [] as Blob[], stream, enviar: false };
     rec.ondataavailable = (ev) => { if (ev.data.size) g.partes.push(ev.data); };
     rec.onstop = async () => {
