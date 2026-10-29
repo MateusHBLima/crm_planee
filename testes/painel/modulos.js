@@ -137,6 +137,12 @@ function carregarPermissoes() {
   ok('master sem o módulo na empresa: não tem a permissão do módulo', !efetivas('master', ['crm.ver'], [], LIG).includes('m.teste_notas.ver')
     && efetivas('master', ['crm.ver'], [], LIG).includes('agente.config'));
   ok('master com o módulo marcado e ligado: tem', efetivas('master', ['m.teste_notas.ver'], [], LIG).includes('m.teste_notas.ver'));
+  // Recurso da empresa (29/10): Protocolos só onde a empresa tem; quem vê o CRM ganha junto.
+  ok('master em empresa sem protocolo: não tem', !efetivas('master', ['crm.ver', 'inbox.ver'], [], LIG).includes('protocolos.ver'));
+  ok('master em empresa com protocolo: tem', efetivas('master', ['crm.ver', 'protocolos.ver'], [], LIG).includes('protocolos.ver'));
+  ok('membro com "Ver o CRM" ganha o protocolo da empresa', efetivas('membro', ['crm.ver', 'protocolos.ver'], ['crm.ver'], LIG).includes('protocolos.ver'));
+  ok('membro sem "Ver o CRM" não ganha', !efetivas('membro', ['crm.ver', 'inbox.ver', 'protocolos.ver'], ['inbox.ver'], LIG).includes('protocolos.ver'));
+  ok('membro de empresa sem protocolo não ganha', !efetivas('membro', ['crm.ver'], ['crm.ver', 'protocolos.ver'], LIG).includes('protocolos.ver'));
   ok('admin com o módulo marcado mas sem o SQL: não tem', !efetivas('admin', ['crm.ver', 'm.teste_notas.ver'], [], new Set()).includes('m.teste_notas.ver')
     && efetivas('admin', ['crm.ver', 'm.teste_notas.ver'], [], new Set()).includes('crm.ver'));
   ok('membro: só o que o admin deu, dentro do que está ligado', JSON.stringify(efetivas('membro', ['crm.ver', 'm.teste_notas.ver', 'm.teste_notas.editar'], ['m.teste_notas.ver'], LIG)) === '["m.teste_notas.ver"]');

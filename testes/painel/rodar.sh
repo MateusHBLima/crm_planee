@@ -33,6 +33,8 @@ while read -r f; do
 done < supabase/base-empresa.txt
 # Cada banco diz de qual empresa é (migração 027): é o que trava o SQL de módulo no banco errado.
 psql -q "$DATABASE_URL" -c "insert into painel_empresa (id) values ('teste')" >/dev/null
+# A empresa de teste faz o papel da clínica: tem o acompanhamento de protocolo (recurso da empresa, 29/10).
+psql -q "$DATABASE_URL" -c "update empresas set modulos = array(select distinct unnest(modulos || array['protocolos.ver'])) where id = 'teste'" >/dev/null
 psql -q "$OUTRA_DATABASE_URL" -c "insert into painel_empresa (id) values ('clinica-outra')" >/dev/null
 psql -q "$OUTRA_DATABASE_URL" -c "delete from notas; delete from atendimentos; insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('00000000-0000-4000-8000-000000000001','receita','Cartão só da Clínica Outra','IA')" >/dev/null
 

@@ -54,7 +54,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'inbox' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} podeVerCrm={pode(usuario, 'crm.ver')} nome={usuario.nome} />
+        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} podeVerCrm={pode(usuario, 'crm.ver')} podeProtocolo={pode(usuario, 'protocolos.ver')} nome={usuario.nome} />
       </Shell>
     );
   }
@@ -63,7 +63,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
         <CrmTela key={usuario.empresa.id} empresaId={usuario.empresa.id} podeArquivar={podeArquivar(usuario)} podeEditar={pode(usuario, 'crm.editar')}
-          podeConfig={usuario.nivel === 'master'} podeConferir={pode(usuario, 'pagamentos.conferir')} mascarado={usuario.master} nome={usuario.nome} />
+          podeConfig={usuario.nivel === 'master'} podeConferir={pode(usuario, 'pagamentos.conferir')} podeProtocolo={pode(usuario, 'protocolos.ver')} mascarado={usuario.master} nome={usuario.nome} />
       </Shell>
     );
   }

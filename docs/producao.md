@@ -134,3 +134,16 @@ Em último caso, `PAINEL_MFA_MASTER=0` na stack desliga a exigência até o fato
 Quem cadastra uma pessoa (a Planee em Empresas, o admin em Equipe) recebe na hora um **código de primeiro acesso**
 (8 letras e números, vale 7 dias) para enviar a ela. Sem o código, ninguém cria a senha de um e-mail cadastrado.
 Perdeu ou venceu: botão **Novo código** na Equipe.
+
+## Protocolos é recurso da empresa (29/10)
+
+O acompanhamento de protocolo (tela Protocolos, bloco no cartão do CRM e na ficha do contato, item "Protocolo" no menu da conversa) só aparece na empresa que tem **Acompanhamento de protocolo** marcado na tela Empresas. Quem tem "Ver o CRM" nessa empresa ganha junto; não é marcado pessoa por pessoa na Equipe. O master também só vê onde a empresa tem.
+
+Antes do merge, no **banco do painel** (central), para a clínica não ficar sem a tela nem por um minuto:
+
+```sql
+update empresas set modulos = array(select distinct unnest(modulos || array['protocolos.ver'])) where id = 'neuro-essentia';
+select id, modulos from empresas where id in ('neuro-essentia', 'ssa');
+```
+
+A versão de antes ignora a chave nova, então rodar antes do merge não muda nada até a versão nova entrar.
