@@ -99,11 +99,11 @@ function criarDatas(fuso: string) {
 
 // podeFinalizar (crm.editar): botão Finalizar no cabeçalho, para os atendimentos em aberto do número (14/10).
 // podeVerCrm (crm.ver): botão Cartões, que abre na lateral os cartões em aberto do número, cada um levando ao CRM (22/10).
-export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; podeVerCrm?: boolean; nome: string; empresaId?: string };
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; podeVerCrm?: boolean; podeProtocolo?: boolean; nome: string; empresaId?: string };
 
 const ETAPA_CARTAO: Record<string, string> = { aguardando: 'Aguardando equipe', em_atendimento: 'Em atendimento', pendente: 'Pendente interno' };
 
-export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, nome, empresaId = '' }: PropsInbox) {
+export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, podeProtocolo = false, nome, empresaId = '' }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
   const agente = lista.agente || 'IA'; // lista guardada antes de 27/10 não traz o nome
   // Assumir só aparece onde a IA da empresa respeita (crm_config "agente".assumir, 27/10). Devolver continua.
@@ -574,7 +574,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                   )}
                   {/* Menu "Mais" (15/10): Protocolo, Não lida e Abrir no WhatsApp saem do cabeçalho para despoluir. */}
                   <MenuMais>
-                    {podeFinalizar && (
+                    {podeFinalizar && podeProtocolo && (
                       <button type="button" data-protocolo-conversa onClick={() => { setProtocoloAberto((x) => !x); setCartoesAberto(false); }}
                         title="Acompanhamento de protocolo deste contato">{protocoloAberto ? 'Fechar protocolo' : 'Protocolo'}</button>
                     )}
@@ -607,7 +607,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                 </>
               )}
             </header>
-            {protocoloAberto && atual && podeFinalizar && (
+            {protocoloAberto && atual && podeFinalizar && podeProtocolo && (
               <div className={c.finalizarLista} data-painel-protocolo>
                 <div className={cc.tela} style={{ flexGrow: 0 }}>
                   <ProtocoloRapido alvo={{ telefone: atual.wa_id, nome: atual.nome }} fuso={lista.fuso} podeEditar={podeFinalizar}

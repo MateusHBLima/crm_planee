@@ -26,6 +26,9 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
     return { ctx, p };
   };
 
+  // Acompanhamento de protocolo é recurso da empresa (29/10): a empresa de teste tem, como a clínica.
+  sql(`update empresas set modulos = array(select distinct unnest(modulos || array['protocolos.ver'])) where id = 'teste'`);
+
   // ---------- Secretária (crm.editar, sem configurar nem arquivar) ----------
   let { ctx, p } = await nova();
   await entrar(p, 'amanda@teste.local');
@@ -467,6 +470,37 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   ok('filtro "Não lidas" mostra a conversa marcada', (await p.locator('button[data-wa="554755550001"]').count()) === 1);
   await p.screenshot({ path: out + '18b_inbox_finalizar_nao_lida.png' });
   await ctx.close();
+
+  // ---------- Empresa sem acompanhamento de protocolo (29/10): nem a equipe nem a Planee veem ----------
+  sql(`update empresas set modulos = array_remove(modulos, 'protocolos.ver') where id = 'teste'`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'amanda@teste.local'); await p.waitForTimeout(800);
+  ok('sem o recurso, Protocolos some do menu da equipe', (await p.locator('nav a[href="/protocolos"]').count()) === 0
+    && (await p.locator('nav a[href="/crm"]').count()) === 1);
+  await p.goto(B + '/protocolos'); await p.waitForTimeout(500);
+  ok('sem o recurso, a tela Protocolos não abre (volta para a primeira tela)', !new URL(p.url()).pathname.startsWith('/protocolos')
+    && (await p.locator('[data-filtro-protocolo]').count()) === 0, p.url());
+  const cartSem = sql(`insert into atendimentos (contato_id, topico_id, resumo, aberto_por) values ('${contE}', 'receita', 'SEM-PROTOCOLO pediu receita', 'IA') returning id`);
+  await p.goto(B + `/crm?cartao=${cartSem}`); await p.locator('[data-abrir-inbox]').waitFor({ timeout: 10000 }); await p.waitForTimeout(800);
+  ok('sem o recurso, o cartão não tem o bloco de protocolo', (await p.locator('[data-protocolo-cartao]').count()) === 0);
+  const lerSem = (await p.request.get(B + '/api/painel/ler/protocolos')).status();
+  ok('sem o recurso, a leitura dos protocolos recusa', lerSem === 403 || lerSem === 404, String(lerSem));
+  await p.goto(B + '/inbox?tel=' + TELE); await p.waitForTimeout(1500);
+  if (await p.locator('[data-menu-mais]').count()) await p.click('[data-menu-mais]');
+  ok('sem o recurso, o menu Mais da conversa não tem Protocolo', (await p.locator('[data-protocolo-conversa]').count()) === 0
+    && (await p.locator('[data-nao-lida]').count()) === 1);
+  await ctx.close();
+  sql(`update atendimentos set etapa = 'finalizado', finalizado_em = now() where id = '${cartSem}'`);
+  ({ ctx, p } = await nova());
+  await entrar(p, 'planee@teste.local');
+  if (await p.locator('#trocar-empresa').count()) { await Promise.all([p.waitForURL(/\/(crm|inbox)$/), p.selectOption('#trocar-empresa', 'teste')]).catch(() => undefined); }
+  await p.waitForTimeout(800);
+  ok('sem o recurso, nem a Planee (master) vê Protocolos', (await p.locator('nav a[href="/protocolos"]').count()) === 0
+    && (await p.locator('nav a[href="/crm"]').count()) === 1);
+  await p.goto(B + '/equipe'); await p.waitForTimeout(800);
+  ok('Equipe não lista o protocolo como permissão por pessoa', (await p.getByText('Acompanhamento de protocolo').count()) === 0);
+  await ctx.close();
+  sql(`update empresas set modulos = array(select distinct unnest(modulos || array['protocolos.ver'])) where id = 'teste'`);
 
   // ---------- Acompanhamento de protocolo (14/10) ----------
   ({ ctx, p } = await nova());

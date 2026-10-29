@@ -14,6 +14,7 @@ const BASE = [
   { id: 'crm.editar', nome: 'Assumir, mover e anotar atendimentos', grupo: 'CRM' },
   { id: 'crm.arquivar', nome: 'Arquivar atendimentos', grupo: 'CRM' },
   { id: 'crm.config', nome: 'Configurar o CRM (etapas, assuntos)', grupo: 'CRM' },
+  { id: 'protocolos.ver', nome: 'Acompanhamento de protocolo', grupo: 'CRM' },
   { id: 'pagamentos.ver', nome: 'Ver agendamentos e comprovantes de pagamento', grupo: 'CRM' },
   { id: 'pagamentos.conferir', nome: 'Conferir comprovantes e registrar pagamentos', grupo: 'CRM' },
   { id: 'resultados.ver', nome: 'Ver resultados', grupo: 'Gestão' },
@@ -28,6 +29,12 @@ export const PERMISSOES: ItemPermissao[] = [
 ];
 export const TODAS: Permissao[] = PERMISSOES.map((p) => p.id);
 const DA_BASE: Permissao[] = BASE.map((p) => p.id);
+
+// Recursos da empresa (29/10): a empresa tem ou não tem; quem tem a permissão indicada ao lado ganha junto, sem
+// marcar pessoa por pessoa na Equipe. O master também só vê quando a empresa tem (a SSA via Protocolos, que é da
+// clínica). Marcar na tela Empresas.
+export const DA_EMPRESA: Partial<Record<Permissao, Permissao>> = { 'protocolos.ver': 'crm.ver' };
+export const ehDaEmpresa = (p: string) => Object.prototype.hasOwnProperty.call(DA_EMPRESA, p);
 
 // Modelos prontos que o admin aplica com um clique.
 export const MODELOS: Record<'secretaria' | 'gestor', { nome: string; permissoes: Permissao[] }> = {
@@ -52,9 +59,10 @@ export function efetivas(nivel: Nivel, modulosEmpresa: readonly string[], doVinc
   const doModuloLigado = (p: Permissao) => !ehPermissaoDeModulo(p) || ligados.has(moduloDaPermissao(p)?.id ?? '');
   if (nivel === 'master') {
     const temNaEmpresa = new Set(empresa);
-    return TODAS.filter((p) => (DA_BASE.includes(p) || temNaEmpresa.has(p)) && doModuloLigado(p));
+    return TODAS.filter((p) => ((DA_BASE.includes(p) && !ehDaEmpresa(p)) || temNaEmpresa.has(p)) && doModuloLigado(p));
   }
   if (nivel === 'admin') return empresa.filter(doModuloLigado);
   const minhas = new Set(doVinculo);
-  return empresa.filter((p) => minhas.has(p) && doModuloLigado(p));
+  const junto = (p: Permissao) => { const base = DA_EMPRESA[p]; return Boolean(base && minhas.has(base)); };
+  return empresa.filter((p) => (minhas.has(p) || junto(p)) && doModuloLigado(p));
 }

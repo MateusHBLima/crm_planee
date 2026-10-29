@@ -28,6 +28,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function banco(u: Usuario) {
   if (!u.empresa) throw new ErroApi(403, 'Escolha uma empresa para abrir o CRM.');
   if (!pode(u, 'crm.ver')) throw new ErroApi(403, 'Você não tem acesso ao CRM nesta empresa.');
+  // 29/10: o acompanhamento de protocolo é recurso da empresa (só quem tem, como a clínica).
+  if (!pode(u, 'protocolos.ver')) throw new ErroApi(403, 'Esta empresa não usa o acompanhamento de protocolo.');
   return bancoDaEmpresa(u.empresa);
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { MODELOS, NOME_NIVEL, PERMISSOES } from '@/lib/permissoes';
+import { MODELOS, NOME_NIVEL, PERMISSOES, ehDaEmpresa } from '@/lib/permissoes';
 import { adicionarPessoa, atualizarPessoa, cancelarLinkConvite, definirAvisosDaPessoa, gerarLinkConvite, novoConvite } from '@/lib/painel/acoes-gestao';
 import type { LinkConvite, Pessoa } from '@/lib/painel/gestao';
 import type { Resposta } from '@/lib/painel/acoes';
@@ -95,7 +95,8 @@ function ConvidarPorLink({ modulos, inicial, aoErro }: { modulos: string[]; inic
 
 // Permissões que a empresa tem, com modelos prontos. O servidor confere tudo de novo.
 function Permissoes({ modulos, valor, onChange, prefixo }: { modulos: string[]; valor: string[]; onChange: (v: string[]) => void; prefixo: string }) {
-  const lista = PERMISSOES.filter((p) => modulos.includes(p.id));
+  // Recurso da empresa (Protocolos) não é por pessoa: vem junto com a permissão base (lib/permissoes.ts).
+  const lista = PERMISSOES.filter((p) => modulos.includes(p.id) && !ehDaEmpresa(p.id));
   const marcar = (id: string, sim: boolean) => onChange(sim ? [...valor, id] : valor.filter((x) => x !== id));
   const aplicar = (m: keyof typeof MODELOS) => onChange(MODELOS[m].permissoes.filter((p) => modulos.includes(p)));
   if (!lista.length) return <p className={g.dica}>A empresa ainda não tem módulos liberados. Peça à Planee.</p>;

@@ -24,7 +24,7 @@ export type Origem = 'todos' | 'real' | 'sombra';
 const ATUALIZA_MS = 15000;
 
 export type PropsCrm = {
-  inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; podeConferir?: boolean; mascarado: boolean; nome: string;
+  inicial: TQuadro; podeArquivar: boolean; podeEditar: boolean; podeConfig: boolean; podeConferir?: boolean; podeProtocolo?: boolean; mascarado: boolean; nome: string;
   memoria?: string;   // chave da memória da tela (lib/painel/memoria-cliente.ts): voltar ao CRM mostra o último quadro na hora
 };
 
@@ -47,7 +47,7 @@ function useCelular() {
 
 const chavePeriodo = (p: Intervalo | null | undefined) => (p ? `${p.de}|${p.ate}` : '');
 
-export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, mascarado, nome, memoria }: PropsCrm) {
+export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferir = false, podeProtocolo = false, mascarado, nome, memoria }: PropsCrm) {
   const [quadro, setQuadroBruto] = useState(inicial);
   // Filtro de data (11/10): null = quadro de agora. Com um período, o quadro mostra os cartões abertos nele (todas as
   // etapas). Resposta do servidor de outro período (ex.: uma ação devolve o quadro de agora) é trocada pela certa.
@@ -425,7 +425,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       )}
       {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} podeArquivar={podeArquivar} onAviso={avisarOk} />}
       {aba === 'contatos' && (
-        <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
+        <Contatos busca={busca} quadro={quadro} podeEditar={podeEditar} podeConferir={podeConferir} podeProtocolo={podeProtocolo} mascarado={mascarado} onQuadro={setQuadro} onAviso={avisarOk} onErro={avisarErro}
           onAbrir={(id) => { setAba('atendimento'); setAberto(id); }} />
       )}
       {diasIa && <DiasSemIa onFechar={() => setDiasIa(false)} onSalvo={avisarOk} />}
@@ -435,7 +435,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       )}
 
       {cartaoAberto && (
-        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
+        <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} podeProtocolo={podeProtocolo} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
           onFechar={fechar} onMover={acoes.mover} onAssunto={acoes.assunto}
           onArquivar={acoes.arquivar} onErro={avisarErro} onAviso={avisarOk} passarAberto={passarAberto} onPassar={acoes.passar} />
       )}

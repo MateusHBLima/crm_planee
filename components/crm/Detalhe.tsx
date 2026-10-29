@@ -16,8 +16,8 @@ type Fmt = ReturnType<typeof criarFormatos>;
 
 export type DadosPassar = { topico: string; pessoa: { id: string; nome: string } | null; recado: string };
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, onAviso, passarAberto = false, onPassar }: {
-  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; nome: string; ocupado: boolean;
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, podeProtocolo = false, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, onAviso, passarAberto = false, onPassar }: {
+  cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; podeProtocolo?: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void; onAviso?: (t: string) => void;
   passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void;
@@ -95,7 +95,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
           </section>
 
           {/* Acompanhamento de protocolo direto no cartão (15/10): a situação do contato deste atendimento. */}
-          {k.contato_id && !k.sombra && (
+          {podeProtocolo && k.contato_id && !k.sombra && (
             <section className={c.detBloco} data-protocolo-cartao>
               <h3 className={c.rotuloSec}>Protocolo</h3>
               <ProtocoloRapido alvo={{ id: k.contato_id }} fuso={quadro.fuso} podeEditar={podeEditar} onErro={onErro} onAviso={onAviso ?? (() => undefined)} />
