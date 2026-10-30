@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Cartao, Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
 import { Icone } from '@/components/Icone';
 import type { Origem } from './Crm';
+import { BotaoEtiqueta, ChipsEtiquetas, temEtiquetas } from './Etiquetas';
 import { atraso, casaBusca, duracao, ha, nomeBonito, type Atraso, type criarFormatos } from './util';
 import c from './crm.module.css';
 
@@ -35,9 +36,9 @@ export function ordenar(a: Cartao, b: Cartao) {
 export type Selecao = { ids: ReadonlySet<string>; alternar: (id: string) => void };
 export const selecionavel = (k: Cartao) => k.etapa !== 'finalizado' && !k.sombra;
 
-export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna = null, selecao, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar }: {
+export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna = null, selecao, fmt, agora, ocupado, pendentes, podeEditar, podeConfig, onAbrir, onMover, onPassar, onEtiqueta }: {
   quadro: TQuadro; busca: string; origem: Origem; verFinal: boolean; fase?: Fase; coluna?: string | null; selecao?: Selecao; fmt: Fmt; agora: number | null; ocupado: boolean; pendentes?: ReadonlySet<string>; podeEditar: boolean; podeConfig: boolean;
-  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
+  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void; onEtiqueta?: (id: string, etiqueta: string) => void;
 }) {
   const vis = filtrar(quadro.cartoes, busca, origem, verFinal, fase).sort(ordenar);
   const ids = new Set(quadro.topicos.map((t) => t.id));
@@ -65,7 +66,7 @@ export function Quadro({ quadro, busca, origem, verFinal, fase = 'todas', coluna
               <span className={c.colNome} title={col.nome}>{col.nome}</span>
               <span className={c.colN}>{cs.length}</span>
             </div>
-            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} selecao={selecao} nivel={k.sombra ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} />)}
+            {cs.map((k) => <CartaoQuadro key={k.id} k={k} quadro={quadro} fmt={fmt} selecao={selecao} nivel={k.sombra || temEtiquetas(quadro) ? 'ok' : atraso(k, quadro.prazos, agora)} ocupado={ocupado || Boolean(pendentes?.has(k.id))} podeEditar={podeEditar} onAbrir={onAbrir} onMover={onMover} onPassar={onPassar} onEtiqueta={onEtiqueta} />)}
             {!cs.length && <div className={c.nadaAberto}>{busca ? 'Nada com essa busca' : fase === 'esperando' ? 'Ninguém esperando a equipe' : fase === 'respondido' ? 'Nenhum cartão respondido esperando finalizar' : fase !== 'todas' ? `Nada em ${quadro.etapas[fase]}` : 'Nada aberto'}</div>}
           </section>
         );
@@ -101,10 +102,13 @@ function RolagemQuadro({ chave, children }: { chave: number; children: React.Rea
 
 const TEXTO_ATRASO: Record<Exclude<Atraso, 'ok'>, string> = { amarelo: 'Atenção', vermelho: 'Atrasado' };
 
-function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onAbrir, onMover, onPassar }: {
+function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onAbrir, onMover, onPassar, onEtiqueta }: {
   k: Cartao; quadro: TQuadro; fmt: Fmt; selecao?: Selecao; nivel: Atraso; ocupado: boolean; podeEditar: boolean;
-  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void;
+  onAbrir: (id: string) => void; onMover: (id: string, e: Etapa) => void; onPassar?: (id: string) => void; onEtiqueta?: (id: string, etiqueta: string) => void;
 }) {
+  // Empresa com etiquetas (migração 032): as etiquetas no topo, como no Trello, e o botão Etiqueta no lugar de
+  // Finalizar/Passar. A etapa e os selos de resposta não aparecem (a coluna é que diz onde o cartão está).
+  const comEtiquetas = temEtiquetas(quadro);
   const fim = k.etapa === 'finalizado';
   const marcavel = Boolean(selecao) && selecionavel(k);
   const marcado = marcavel && selecao!.ids.has(k.id);
@@ -123,14 +127,15 @@ function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onA
       {/* Topo mais limpo (15/10): a etapa só aparece quando não é "aguardando" (o normal do quadro), e atraso e
           resposta da equipe viram uma linha só. */}
       <div className={c.cartaoTopo}>
-        {k.etapa !== 'aguardando' && <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />}
+        {comEtiquetas && <ChipsEtiquetas ids={k.etiquetas ?? []} etiquetas={quadro.etiquetas} />}
+        {!comEtiquetas && k.etapa !== 'aguardando' && <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />}
         {nivel !== 'ok' && (
           <span className={c.seloAtraso} data-atraso={nivel}>
             {k.alerta && k.etapa === 'aguardando' ? 'Alerta' : TEXTO_ATRASO[nivel]} · {k.etapa === 'pendente' ? 'parado ' : ''}<Relativo de={k.etapa === 'pendente' ? k.atualizado_em : k.aberto_em} />
           </span>
         )}
-        {k.esperandoEquipe && <span className={c.seloResposta} data-esperando title="Aberto pela IA e ninguém da equipe respondeu o contato desde então">sem resposta</span>}
-        {k.respondidoEquipe && <span className={c.seloResposta} data-respondido title="A equipe já respondeu o contato depois que o cartão abriu. Se resolveu, clique em Finalizar.">equipe respondeu</span>}
+        {!comEtiquetas && k.esperandoEquipe && <span className={c.seloResposta} data-esperando title="Aberto pela IA e ninguém da equipe respondeu o contato desde então">sem resposta</span>}
+        {!comEtiquetas && k.respondidoEquipe && <span className={c.seloResposta} data-respondido title="A equipe já respondeu o contato depois que o cartão abriu. Se resolveu, clique em Finalizar.">equipe respondeu</span>}
         {k.sombra && <span className={c.selo} title="Aberto pela Sara nova no modo sombra (não foi para o paciente)">sombra</span>}
       </div>
       <div className={c.cartaoNome}>
@@ -152,7 +157,9 @@ function CartaoQuadro({ k, quadro, fmt, selecao, nivel, ocupado, podeEditar, onA
           {k.lead && <span className={c.chipNeutro}>lead no funil</span>}
         </div>
       )}
-      {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} onPassar={onPassar} />}
+      {podeEditar && (comEtiquetas
+        ? onEtiqueta && <BotaoEtiqueta k={k} quadro={quadro} ocupado={ocupado} onEtiqueta={onEtiqueta} />
+        : <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} onPassar={onPassar} />)}
     </article>
   );
 }

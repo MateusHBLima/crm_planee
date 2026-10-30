@@ -1,5 +1,6 @@
 import 'server-only';
 import { CORES, corValida, limparCor } from '@/lib/cores';
+import { corEtiquetaValida, NOMES_CORES_ETIQUETA } from '@/lib/etiquetas';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { transacao, ErroApi, empresaDoBancoPadrao } from '@/lib/db';
@@ -63,6 +64,17 @@ function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
     if (!corValida(saida.cor)) throw new ErroApi(400, `Cor inválida. Use uma destas: ${CORES.map((c) => c.id).join(', ')} (ou vazio).`);
     saida.cor = limparCor(saida.cor);
   }
+  // Etiquetas (migração 032): cor do Trello, listas de ids, mostrar booleano.
+  if (r.nome === 'etiquetas') {
+    if ('cor' in saida) {
+      if (!corEtiquetaValida(saida.cor)) throw new ErroApi(400, `Cor inválida. Use uma destas: ${NOMES_CORES_ETIQUETA.join(', ')} (ou vazio).`);
+      saida.cor = saida.cor ? String(saida.cor) : null;
+    }
+    if ('topico_destino' in saida) saida.topico_destino = saida.topico_destino ? String(saida.topico_destino) : null;
+    if ('mover_de' in saida) saida.mover_de = listaDeIds(saida.mover_de, 'mover_de');
+    if ('mostrar' in saida) saida.mostrar = saida.mostrar !== false && saida.mostrar !== 'false';
+  }
+  if (r.nome === 'atendimentos' && 'etiquetas' in saida) saida.etiquetas = listaDeIds(saida.etiquetas, 'etiquetas');
   // Acompanhamento de protocolo (migração 025): só as situações conhecidas; vazio tira a pessoa do protocolo.
   if (r.nome === 'contatos') {
     if ('protocolo' in saida) {
@@ -81,6 +93,16 @@ function limparDados(r: Recurso, dados: unknown): Record<string, unknown> {
 }
 
 export const PROTOCOLOS = ['em_analise', 'em_protocolo', 'em_acompanhamento', 'encerrado'] as const;
+
+// Lista de ids de texto (etiquetas, colunas): vazio ou null = lista vazia; sem repetir; cada id no formato de id.
+function listaDeIds(v: unknown, campo: string): string[] {
+  if (v === null || v === undefined || v === '') return [];
+  if (!Array.isArray(v)) throw new ErroApi(400, `${campo} tem de ser uma lista de ids, ex.: ["id1", "id2"].`);
+  const ids = [...new Set(v.map((x) => String(x)))];
+  const ruim = ids.find((x) => !ID_TEXTO.test(x));
+  if (ruim !== undefined) throw new ErroApi(400, `${campo}: id inválido "${ruim}" (use letras minúsculas, números, _ ou -).`);
+  return ids;
+}
 
 function traduzErroBanco(e: unknown): never {
   const err = e as { code?: string; detail?: string; message?: string; constraint?: string };

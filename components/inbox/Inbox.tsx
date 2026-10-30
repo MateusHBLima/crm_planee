@@ -701,7 +701,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
       </section>
 
       {avisando && (
-        <AvisarPlanee alvo={avisando} onFechar={() => setAvisando(null)}
+        <AvisarPlanee alvo={avisando} agente={agente} onFechar={() => setAvisando(null)}
           onPronto={() => { setAvisando(null); setOk('Aviso enviado para a Planee. A resposta aparece na tela Planee.'); }} />
       )}
       <div className={c.aviso} role="status" aria-live="polite">

@@ -11,7 +11,7 @@ const ESTADO: Record<string, string> = { aberto: 'Aberto', em_analise: 'Em anál
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 // Tela "Planee" da empresa: os avisos que a equipe mandou (com a resposta da Planee), novidades e manutenções.
-export function PlaneeEmpresa({ empresa, semAcesso = false }: { empresa: string; semAcesso?: boolean }) {
+export function PlaneeEmpresa({ empresa, agente = 'IA', semAcesso = false }: { empresa: string; agente?: string; semAcesso?: boolean }) {
   const [dados, setDados] = useState<{ avisos: MeuAviso[]; novidades: Novidade[] } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [novo, setNovo] = useState(false);
@@ -33,7 +33,7 @@ export function PlaneeEmpresa({ empresa, semAcesso = false }: { empresa: string;
           <p className={s.rotulo}>{empresa}</p>
           <h1 className={s.titulo}>Planee</h1>
           <p className={s.sub}>
-            Avise a Planee quando a Sara errar ou algo não funcionar. Na Inbox, use o menu ⋯ da mensagem para o aviso ir junto com a conversa.
+            Avise a Planee quando a {agente} errar ou algo não funcionar. Na Inbox, use o menu ⋯ da mensagem para o aviso ir junto com a conversa.
             A resposta da Planee aparece aqui.
           </p>
         </div>
@@ -98,7 +98,7 @@ export function PlaneeEmpresa({ empresa, semAcesso = false }: { empresa: string;
         </>
       )}
 
-      {novo && <AvisarPlanee onFechar={() => setNovo(false)} onPronto={() => { setNovo(false); setOk('Aviso enviado para a Planee.'); carregar(); }} />}
+      {novo && <AvisarPlanee agente={agente} onFechar={() => setNovo(false)} onPronto={() => { setNovo(false); setOk('Aviso enviado para a Planee.'); carregar(); }} />}
       {ok && <div className={s.toast} data-tipo="ok" role="status">{ok}</div>}
     </div>
   );

@@ -10,18 +10,20 @@ import { Acoes, EtapaPill, Relativo } from './Quadro';
 import { cpfBonito, linkWhatsApp, telefoneBonito, type criarFormatos } from './util';
 import { HistoricoPaciente } from './Historico';
 import { ProtocoloRapido } from './Protocolo';
+import { EtiquetasDoDetalhe, temEtiquetas } from './Etiquetas';
 import c from './crm.module.css';
 
 type Fmt = ReturnType<typeof criarFormatos>;
 
 export type DadosPassar = { topico: string; pessoa: { id: string; nome: string } | null; recado: string };
 
-export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, podeProtocolo = false, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, onAviso, passarAberto = false, onPassar }: {
+export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, podeConferir, podeProtocolo = false, ocupado, onFechar, onMover, onAssunto, onArquivar, onErro, onAviso, passarAberto = false, onPassar, onEtiqueta }: {
   cartao: Cartao; quadro: TQuadro; fmt: Fmt; podeArquivar: boolean; podeEditar: boolean; podeConferir: boolean; podeProtocolo?: boolean; nome: string; ocupado: boolean;
   onFechar: () => void; onMover: (id: string, e: Etapa) => void;
   onAssunto: (id: string, t: string) => void; onArquivar: (id: string) => void; onErro: (t: string) => void; onAviso?: (t: string) => void;
-  passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void;
+  passarAberto?: boolean; onPassar?: (id: string, d: DadosPassar) => void; onEtiqueta?: (id: string, etiqueta: string) => void;
 }) {
+  const comEtiquetas = temEtiquetas(quadro);
   const [passando, setPassando] = useState(passarAberto);
   const [eventos, setEventos] = useState<Evento[] | null>(null);
   // O quadro traz o resumo cortado; o texto inteiro chega com o detalhe.
@@ -31,8 +33,9 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
   const [salvando, iniciar] = useTransition();
   const painel = useRef<HTMLElement>(null);
 
-  // Recarrega o histórico quando o cartão muda (etapa, responsável ou notas).
-  const assinatura = `${k.etapa}|${k.responsavel}|${k.notas}|${k.topico_id}`;
+  // Recarrega o histórico quando o cartão muda (etapa, responsável, notas, etiquetas) e quando chega o cartão do
+  // servidor (atualizado_em): a mudança feita na hora pela tela vem antes de a auditoria estar gravada.
+  const assinatura = `${k.etapa}|${k.responsavel}|${k.notas}|${k.topico_id}|${(k.etiquetas ?? []).join(',')}|${k.atualizado_em}`;
   useEffect(() => {
     let vivo = true;
     carregarDetalhe(k.id).then((r) => {
@@ -68,7 +71,7 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
       <aside ref={painel} tabIndex={-1} role="dialog" aria-modal="true" className={c.detalhe} aria-label={`Atendimento de ${k.nome || 'contato sem nome'}`}>
         <header className={c.detTopo}>
           <div className={c.detTitulo}>
-            <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />
+            {!comEtiquetas && <EtapaPill etapa={k.etapa} nome={quadro.etapas[k.etapa]} />}
             <h2>{k.nome || 'Contato sem nome'}</h2>
           </div>
           <button type="button" className={c.fechar} onClick={onFechar} aria-label="Fechar"><Icone nome="fechar" tamanho={18} /></button>
@@ -114,23 +117,25 @@ export function Detalhe({ cartao: k, quadro, fmt, podeArquivar, podeEditar, pode
 
           <section className={c.detBloco}>
             <h3 className={c.rotuloSec}>Andamento</h3>
-            {podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} />}
+            {comEtiquetas
+              ? <div data-etiquetas-detalhe><EtiquetasDoDetalhe k={k} quadro={quadro} ocupado={ocupado} podeEditar={podeEditar && Boolean(onEtiqueta)} onEtiqueta={onEtiqueta ?? (() => undefined)} /></div>
+              : podeEditar && <Acoes k={k} quadro={quadro} ocupado={ocupado} onMover={onMover} />}
             <div className={c.detCampos}>
-              <label className={c.campo}>
+              {!comEtiquetas && <label className={c.campo}>
                 <span>Etapa</span>
                 <select id="det-etapa" value={k.etapa} disabled={ocupado || !podeEditar || k.sombra} onChange={(e) => onMover(k.id, e.target.value as Etapa)}>
                   {(Object.keys(quadro.etapas) as Etapa[]).map((e) => <option key={e} value={e}>{quadro.etapas[e]}</option>)}
                 </select>
-              </label>
+              </label>}
               <label className={c.campo}>
-                <span>Assunto</span>
+                <span>{comEtiquetas ? 'Coluna' : 'Assunto'}</span>
                 <select id="det-assunto" value={k.topico_id ?? ''} disabled={ocupado || !podeEditar} onChange={(e) => onAssunto(k.id, e.target.value)}>
                   {!k.topico_id && <option value="">Sem assunto</option>}
                   {quadro.topicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
                 </select>
               </label>
             </div>
-            {podeEditar && onPassar && !k.sombra && (passando
+            {podeEditar && onPassar && !k.sombra && !comEtiquetas && (passando
               ? <Passar k={k} quadro={quadro} ocupado={ocupado} onErro={onErro} onCancelar={() => setPassando(false)} onPassar={(d) => onPassar(k.id, d)} />
               : <button type="button" id="det-passar" className={c.acaoSec} data-passar disabled={ocupado} onClick={() => setPassando(true)}>
                   <Icone nome="passar" tamanho={13} /> Passar para…
