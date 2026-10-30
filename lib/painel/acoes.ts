@@ -39,6 +39,12 @@ export async function mudarAssunto(id: string, topico: string) {
   return comUsuario(async (u) => { await crm.mudarAssunto(u, id, topico); return crm.lerQuadro(u); });
 }
 
+// Etiqueta (migração 032, 30/10): põe ou tira e, se a etiqueta tiver coluna de destino, move. Devolve o que
+// aconteceu (para o aviso) e o quadro atualizado.
+export async function etiquetarAtendimento(id: string, etiqueta: string) {
+  return comUsuario(async (u) => { const feito = await crm.etiquetar(u, id, etiqueta); return { ...feito, quadro: await crm.lerQuadro(u) }; });
+}
+
 // "Passar para…" (11/10): outro assunto e, se escolhida, outra pessoa. Devolve o quadro atualizado.
 export async function passarAtendimento(id: string, dados: { topico: string; pessoa?: string | null; recado?: string }) {
   return comUsuario(async (u) => { const feito = await crm.passar(u, id, dados); return { ...feito, quadro: await crm.lerQuadro(u) }; });

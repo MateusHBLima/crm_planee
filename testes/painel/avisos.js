@@ -1,6 +1,6 @@
 // Testes dos avisos para a Planee (08/10): "Avisar a Planee" no menu da mensagem da Inbox, a tela Planee da empresa,
 // a fila no Interno Planee (abrir, responder, resolver, link para a conversa), LGPD (no central só o índice),
-// novidades e manutenção (todas as empresas ou uma só), integrações com validade do token e o vigia
+// novidades (sempre de uma empresa só) e manutenção (todas as empresas ou uma só), integrações com validade do token e o vigia
 // (token vencendo com lembrete a cada 3 dias, envios falhando, comprovante suspeito), saúde dos clientes,
 // permissões e o link /ir (sem redirecionamento para fora). Roda pelo rodar.sh depois do inbox.js. Dados fictícios.
 const { chromium } = require('playwright');
@@ -140,19 +140,24 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   [ctx, p] = await novo();
   await entrar(p, GERAL, 'planee@teste.local', 'senha123', '/interno');
   await p.getByRole('tab', { name: 'Novidades e manutenção' }).click();
+  // Novidade é de uma empresa só (30/10): "todas as empresas" vale só para manutenção.
+  ok('novidade não pode ir para todas as empresas', (await p.locator('#nov-empresa option[value=""]').evaluate((o) => o.disabled)) === true);
+  await p.selectOption('#nov-empresa', 'teste');
   await p.fill('#nov-titulo', 'Nova tela Planee');
   await p.fill('#nov-texto', 'Agora a equipe avisa a Planee direto pela Inbox.');
   await p.getByRole('button', { name: 'Publicar' }).click();
   await p.getByText('Publicado.').waitFor({ timeout: 8000 }).catch(() => {});
   await p.selectOption('#nov-tipo', 'manutencao');
-  await p.selectOption('#nov-empresa', 'teste');
+  await p.selectOption('#nov-empresa', '');
   await p.fill('#nov-fim', campoLocal(2 * 3600000));
   await p.fill('#nov-titulo', 'Troca do servidor');
   await p.fill('#nov-texto', 'O painel pode ficar lento por alguns minutos.');
   await p.getByRole('button', { name: 'Publicar' }).click();
   await p.locator('[data-novidade]', { hasText: 'Troca do servidor' }).waitFor({ timeout: 8000 }).catch(() => {});
-  ok('novidade (todas) e manutenção (só teste) gravadas',
-    sql(`select string_agg(tipo || ':' || coalesce(empresa_id,'todas'), ',' order by tipo) from novidades`) === 'manutencao:teste,novidade:todas');
+  ok('novidade (só teste) e manutenção (todas) gravadas',
+    sql(`select string_agg(tipo || ':' || coalesce(empresa_id,'todas'), ',' order by tipo) from novidades`) === 'manutencao:todas,novidade:teste');
+  // Novidade antiga sem empresa (de antes da regra): não aparece para ninguém.
+  sql(`insert into novidades (tipo, titulo, texto, empresa_id, inicio, criado_por) values ('novidade', 'Antiga da Sara', 'Texto da clínica.', null, now(), 'Planee')`);
   await ctx.close();
 
   [ctx, p] = await novo();
@@ -160,7 +165,7 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
   const faixas = p.locator('[aria-label="Avisos da Planee"]');
   await faixas.waitFor({ timeout: 8000 }).catch(() => {});
   const fx = (await faixas.textContent().catch(() => '')) || '';
-  ok('faixa no topo: manutenção da empresa e novidade', fx.includes('Manutenção em andamento: Troca do servidor') && fx.includes('Novidade: Nova tela Planee'), fx.slice(0, 200));
+  ok('faixa no topo: manutenção e novidade da empresa, sem a antiga sem empresa', fx.includes('Manutenção em andamento: Troca do servidor') && fx.includes('Novidade: Nova tela Planee') && !fx.includes('Antiga da Sara'), fx.slice(0, 200));
   await p.getByRole('button', { name: 'Fechar a novidade Nova tela Planee' }).click();
   await p.reload(); await p.waitForTimeout(1500);
   const fx2 = (await p.locator('[aria-label="Avisos da Planee"]').textContent().catch(() => '')) || '';
@@ -169,10 +174,11 @@ const ler = (p, recurso) => p.evaluate(async (r) => { const x = await fetch('/ap
 
   [ctx, p] = await novo();
   await entrar(p, OUTRA, 'admin2@teste.local', 'senhaforte1', '/planee');
-  await p.getByText('Nova tela Planee').first().waitFor({ timeout: 8000 }).catch(() => {});
+  await p.getByText('Troca do servidor').first().waitFor({ timeout: 8000 }).catch(() => {});
   const outraTela = (await p.textContent('main')) || '';
-  ok('outra empresa vê a novidade de todos, não a manutenção da teste', outraTela.includes('Nova tela Planee') && !outraTela.includes('Troca do servidor'), outraTela.slice(0, 200));
+  ok('outra empresa vê a manutenção de todos, não a novidade da teste nem a antiga sem empresa', outraTela.includes('Troca do servidor') && !outraTela.includes('Nova tela Planee') && !outraTela.includes('Antiga da Sara'), outraTela.slice(0, 200));
   await ctx.close();
+  sql(`delete from novidades where titulo = 'Antiga da Sara'`);
 
   // ---- Integrações, vigia e saúde ----
   sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, erro, enviada_em)

@@ -42,12 +42,14 @@ const limparNovidade = (r: Record<string, unknown>): Novidade => ({
 });
 
 // O que a empresa vê: manutenções ainda não terminadas (inclusive as agendadas) e novidades dos últimos 90 dias.
+// Novidade é sempre de uma empresa só (30/10, Mateus: a SSA viu novidade que falava da Sara). "Todas as empresas"
+// vale só para manutenção do painel; novidade antiga sem empresa não aparece para ninguém.
 export async function novidadesDaEmpresa(u: Usuario): Promise<Novidade[]> {
   if (!u.empresa) return [];
   try {
     const r = await central().query(
       `select n.*, null as empresa_nome from novidades n
-        where not n.arquivado and (n.empresa_id is null or n.empresa_id = $1)
+        where not n.arquivado and (n.empresa_id = $1 or (n.empresa_id is null and n.tipo = 'manutencao'))
           and ((n.tipo = 'manutencao' and (n.fim is null or n.fim > now()))
             or (n.tipo = 'novidade' and n.inicio <= now() and n.inicio > now() - interval '90 days'))
         order by (n.tipo = 'manutencao') desc, n.inicio desc limit 30`, [u.empresa.id]);
@@ -92,6 +94,7 @@ export async function salvarNovidade(u: Usuario, d: { id?: unknown; tipo: unknow
   if (!corpo) throw new ErroApi(400, 'Escreva o texto.');
   const empresa = texto(d.empresa_id, 40);
   if (empresa && !ID_EMPRESA.test(empresa)) throw new ErroApi(400, 'Empresa inválida.');
+  if (tipo === 'novidade' && !empresa) throw new ErroApi(400, 'Novidade é de uma empresa só: escolha a empresa. "Todas as empresas" vale só para manutenção.');
   const inicio = data(d.inicio, 'Início') ?? new Date();
   const fim = data(d.fim, 'Fim');
   if (fim && fim <= inicio) throw new ErroApi(400, 'O fim precisa ser depois do início.');

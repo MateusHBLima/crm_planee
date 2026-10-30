@@ -43,6 +43,19 @@ export const RECURSOS: Record<string, Recurso> = {
     },
     filtros: ['arquivado'], ordem: 'ordem, nome',
   },
+  etiquetas: {
+    nome: 'etiquetas', tabela: 'crm_etiquetas', chave: 'id', idTipo: 'texto', idObrigatorioNaCriacao: true, escrita: 'config',
+    descricao: 'Etiquetas coloridas dos cartões do quadro (migração 032). Com pelo menos uma etiqueta, o cartão troca Finalizar/Passar pelo botão "Etiqueta": clicar põe ou tira a etiqueta e, se ela tiver topico_destino, leva o cartão para essa coluna.',
+    campos: {
+      ordem: 'número da posição no botão Etiqueta',
+      nome: 'nome exibido',
+      cor: 'cor do Trello: green | yellow | orange | red | purple | blue | sky | lime | pink | black, com _light ou _dark (ex.: green_light, red_dark); vazio = cinza',
+      topico_destino: 'id da coluna (assunto) para onde o cartão vai quando a etiqueta é posta; vazio = só marca',
+      mover_de: 'lista de ids das colunas de onde a etiqueta move o cartão; vazio = de qualquer coluna',
+      mostrar: 'true | false: aparece no botão Etiqueta (false = só nos cartões que já têm)',
+    },
+    filtros: ['arquivado'], ordem: 'ordem, nome',
+  },
   contatos: {
     nome: 'contatos', tabela: 'contatos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'crm',
     descricao: 'Pacientes ou clientes. Telefone no formato 55 + DDD + número, só dígitos.',
@@ -80,6 +93,7 @@ export const RECURSOS: Record<string, Recurso> = {
       aberto_por: 'IA ou nome de quem abriu',
       responsavel: 'nome de quem está atendendo',
       oportunidade_id: 'id da oportunidade ligada, se houver',
+      etiquetas: 'lista de ids de etiquetas do cartão (migração 032), na ordem em que foram postas. Pela API não move o cartão; quem move é o clique no painel',
     },
     filtros: ['contato_id', 'topico_id', 'etapa', 'responsavel', 'arquivado'], ordem: 'atualizado_em desc',
   },

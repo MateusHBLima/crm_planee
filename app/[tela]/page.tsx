@@ -17,6 +17,7 @@ import { ProtocolosTela } from '@/components/crm/Protocolo';
 import { fuso } from '@/lib/painel/crm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
+import { lerAgente } from '@/lib/painel/inbox';
 import { listarEmpresas, listarEquipe, listarLinksConvite } from '@/lib/painel/gestao';
 import { sufixoDominio } from '@/lib/painel/nova-empresa';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
@@ -149,7 +150,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'planee' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <PlaneeEmpresa key={usuario.empresa.id} empresa={usuario.empresa.nome} semAcesso={usuario.nivel === 'membro' && !usuario.permissoes.length} />
+        <PlaneeEmpresa key={usuario.empresa.id} empresa={usuario.empresa.nome} agente={(await lerAgente(usuario)).nome} semAcesso={usuario.nivel === 'membro' && !usuario.permissoes.length} />
       </Shell>
     );
   }

@@ -378,3 +378,12 @@
 .menuMaisLista > button[aria-pressed='true'] { font-weight: 700; }
 .menuMaisLista .meusAvisos { display: flex; }
 .titulos .fila { margin-top: 6px; }
+
+/* Etiquetas do cartão (migração 032, 30/10): cores do Trello, vindas da configuração da empresa. */
+.etiquetas { display: flex; flex-wrap: wrap; gap: 4px; }
+.etiqueta { display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acoesEtiqueta { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.escolherEtiquetas { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.etiquetaBotao { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 6px; font-size: 12px; font-weight: 700; text-align: left; cursor: pointer; }
+.etiquetaBotao:hover:not(:disabled) { filter: brightness(0.94); }
+.etiquetaBotao[aria-pressed="true"] { box-shadow: inset 0 0 0 2px rgba(23, 43, 77, 0.55); }

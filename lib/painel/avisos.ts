@@ -13,7 +13,7 @@ import { auditar } from './gestao';
 // O comentário, a conversa e o trecho da mensagem ficam no banco da empresa (avisos_detalhe).
 
 export const TIPOS_EQUIPE: Record<string, string> = {
-  sara_errou: 'A Sara errou',
+  sara_errou: 'A IA errou', // id antigo; o nome não cita o agente de uma empresa (30/10: a SSA via "Sara")
   info_errada: 'Informação errada',
   problema_tecnico: 'Problema técnico',
   sugestao: 'Sugestão',

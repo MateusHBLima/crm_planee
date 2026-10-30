@@ -6,20 +6,22 @@ import { Campo, Janela, useEnvio } from '@/components/crm/Formularios';
 import c from '@/components/crm/crm.module.css';
 import s from './planee.module.css';
 
-// Tipos que a equipe escolhe (mesma lista de lib/painel/avisos.ts: TIPOS_EQUIPE).
-export const TIPOS_AVISO: { id: string; nome: string; dica: string }[] = [
-  { id: 'sara_errou', nome: 'A Sara errou', dica: 'Resposta errada, fora do tom, prometeu o que não devia.' },
+// Tipos que a equipe escolhe (mesma lista de lib/painel/avisos.ts: TIPOS_EQUIPE). O nome do agente é o da empresa
+// (crm_config "agente"): nunca o de outra empresa (30/10).
+export const tiposAviso = (agente: string): { id: string; nome: string; dica: string }[] => [
+  { id: 'sara_errou', nome: `A ${agente} errou`, dica: 'Resposta errada, fora do tom, prometeu o que não devia.' },
   { id: 'info_errada', nome: 'Informação errada', dica: 'Preço, horário, endereço, convênio ou outra informação desatualizada.' },
   { id: 'problema_tecnico', nome: 'Problema técnico', dica: 'Mensagem que não chegou, tela com erro, algo travado.' },
-  { id: 'sugestao', nome: 'Sugestão', dica: 'Algo que a Sara ou o painel poderiam fazer melhor.' },
+  { id: 'sugestao', nome: 'Sugestão', dica: `Algo que a ${agente} ou o painel poderiam fazer melhor.` },
   { id: 'outro', nome: 'Outro', dica: '' },
 ];
 
 export type AlvoAviso = { numero_id: string; wa_id: string; wamid: string; trecho: string | null; autor: string };
 
 // "Avisar a Planee": tipo + comentário. Vindo de uma mensagem da Inbox, o aviso fica ligado a ela (conversa e empresa).
-export function AvisarPlanee({ alvo, onFechar, onPronto }: { alvo?: AlvoAviso | null; onFechar: () => void; onPronto: () => void }) {
-  const [tipo, setTipo] = useState(alvo?.autor === 'Sara' ? 'sara_errou' : '');
+export function AvisarPlanee({ alvo, agente = 'IA', onFechar, onPronto }: { alvo?: AlvoAviso | null; agente?: string; onFechar: () => void; onPronto: () => void }) {
+  const TIPOS_AVISO = tiposAviso(agente);
+  const [tipo, setTipo] = useState(alvo?.autor === agente ? 'sara_errou' : '');
   const [comentario, setComentario] = useState('');
   const { erro, enviando, enviar } = useEnvio<string>();
   const dica = TIPOS_AVISO.find((t) => t.id === tipo)?.dica;

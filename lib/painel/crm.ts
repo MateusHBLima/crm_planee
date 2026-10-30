@@ -1,4 +1,5 @@
 import 'server-only';
+import type { Etiqueta } from '@/lib/etiquetas';
 import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
 import { limparCor, type Cor } from '@/lib/cores';
 import { efetivas } from '@/lib/permissoes';
@@ -25,6 +26,7 @@ const NOMES_PADRAO: Record<Etapa, string> = {
   aguardando: 'Aguardando equipe', em_atendimento: 'Em atendimento', pendente: 'Pendente interno', finalizado: 'Finalizado',
 };
 
+export type { Etiqueta };
 export type Topico = { id: string; nome: string; icone: string; ordem: number; cor: Cor | null };
 export type Cartao = {
   id: string; topico_id: string | null; etapa: Etapa; resumo: string; sombra: boolean;
@@ -39,6 +41,8 @@ export type Cartao = {
   // "Equipe já respondeu, falta finalizar" (14/10, pedido da Letícia): cartão em aberto (não finalizado) com mensagem
   // da equipe (celular ou painel) para o contato depois que abriu. Lembra de clicar em Finalizar.
   respondidoEquipe?: boolean;
+  // Etiquetas do cartão (migração 032), ids na ordem em que foram postas. Banco sem a 032: lista vazia.
+  etiquetas: string[];
 };
 export type Automatica = { tipo: string; nome: string; quando: string };
 // Prazos do quadro, em minutos: depois de "amarelo" o cartão fica amarelo, depois de "vermelho", vermelho.
@@ -50,6 +54,8 @@ export const PRAZOS_PADRAO: Prazos = { aguardando: { amarelo: 12 * 60, vermelho:
 
 export type Quadro = {
   topicos: Topico[]; etapas: Record<Etapa, string>; cartoes: Cartao[]; finalizadosHoje: number; fuso: string; lidoEm: string;
+  // Etiquetas da empresa (migração 032). Com pelo menos uma, o cartão troca Finalizar/Passar pelo botão "Etiqueta".
+  etiquetas: Etiqueta[];
   prazos: Prazos;
   // Período escolhido no filtro de data (11/10): null = o quadro de agora (abertos e finalizados de hoje).
   periodo: Intervalo | null;
@@ -86,6 +92,7 @@ function limparCartao(u: Usuario, r: Record<string, unknown>): Cartao {
     atualizado_em: (iso(r.atualizado_em) ?? iso(r.aberto_em)) as string,
     assumido_em: iso(r.assumido_em),
     finalizado_em: iso(r.finalizado_em),
+    etiquetas: Array.isArray(r.etiquetas) ? (r.etiquetas as unknown[]).map(String) : [],
   };
   if (u.master) { c.resumo = mascararTexto(c.resumo); c.documento = mascararDoc(c.documento); }
   return c;
@@ -117,6 +124,7 @@ const SELECT_CARTAO = `
   select a.id, a.topico_id, a.etapa, a.resumo, a.aberto_por, a.aberto_em, a.atualizado_em, a.responsavel, a.assumido_em, a.finalizado_em,
          a.oportunidade_id, a.contato_id, c.nome, c.telefone, c.documento,
          coalesce((to_jsonb(a) ->> 'alerta')::boolean, false) as alerta,
+         coalesce(to_jsonb(a) -> 'etiquetas', '[]'::jsonb) as etiquetas,
          (select count(*) from notas n where n.alvo_tipo = 'atendimentos' and n.alvo_id = a.id and not n.arquivado) as notas
     from atendimentos a left join contatos c on c.id = a.contato_id`;
 
@@ -132,6 +140,13 @@ const SQL_AUTOMATICA = (contato: string) => `
     where e.contato_id = ${contato} and e.situacao = 'enviado' and ${SQL_EH_FOLLOWUP('e.tipo')} and e.quando > now() - interval '31 days'
     order by e.quando desc limit 1) as automatica`;
 const SEM_AUTOMATICA = 'null::json as automatica';
+// Etiquetas da empresa (migração 032) na mesma consulta do quadro. Banco sem a 032: roda de novo sem elas.
+const SQL_ETIQUETAS = `(select coalesce(json_agg(e order by e.ordem, e.nome), '[]'::json)
+    from (select id, nome, cor, ordem, topico_destino, mover_de, mostrar from crm_etiquetas where not arquivado) e) as etiquetas`;
+async function comEtiquetas<T>(rodar: (col: string) => Promise<T>): Promise<T> {
+  try { return await rodar(SQL_ETIQUETAS); }
+  catch (e) { if ((e as { code?: string }).code === '42P01' && /crm_etiquetas/.test(String((e as Error).message))) return rodar(`'[]'::json as etiquetas`); throw e; }
+}
 async function comAutomatica<T>(rodar: (col: (contato: string) => string) => Promise<T>): Promise<T> {
   try { return await rodar(SQL_AUTOMATICA); }
   catch (e) { if ((e as { code?: string }).code === '42P01') return rodar(() => SEM_AUTOMATICA); throw e; }
@@ -149,7 +164,7 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
   // Abertos primeiro e do mais antigo para o mais novo: com muito acúmulo, o limite corta os finalizados de hoje
   // e os abertos mais novos, nunca os que esperam há mais tempo.
   const banco = db(u);
-  const r = await comAutomatica((auto) => banco.query(
+  const r = await comEtiquetas((etq) => comAutomatica((auto) => banco.query(
     `with hoje as (select (date_trunc('day', now() at time zone $1) at time zone $1) as ini),
      cartoes as (
        ${SELECT_CARTAO_QUADRO.replace(' from atendimentos a', `, ${auto('a.contato_id')}
@@ -166,7 +181,8 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
        (select count(*)::int from atendimentos a where not a.arquivado and a.etapa = 'finalizado'
            and ($2::boolean or ${SQL_SEM_SOMBRA}) and a.finalizado_em >= (select ini from hoje)) as fin,
        (select coalesce(json_agg(c order by (c.etapa = 'finalizado'), c.aberto_em), '[]'::json) from cartoes c) as cartoes,
-       to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null]));
+       ${etq},
+       to_char(now() at time zone $1, 'YYYY-MM-DD') as dia`, [f, u.master, periodo?.de ?? null, periodo?.ate ?? null])));
   const x = r.rows[0];
   const cartoes = (x.cartoes as Record<string, unknown>[]).map((c) => limparCartao(u, c));
   await marcarEsperandoEquipe(banco, cartoes);
@@ -176,6 +192,7 @@ export async function lerQuadro(u: Usuario, periodoPedido?: Intervalo | null): P
     topicos: (x.topicos as Topico[]).map((t) => ({ ...t, cor: limparCor(t.cor) })), etapas: { ...NOMES_PADRAO, ...((x.etapas ?? {}) as Partial<Record<Etapa, string>>) },
     fuso: f, lidoEm: new Date().toISOString(), prazos: limparPrazos(x.prazos),
     cartoes, finalizadosHoje: x.fin,
+    etiquetas: ((x.etiquetas ?? []) as Etiqueta[]).map((e) => ({ ...e, ordem: Number(e.ordem) || 0, mover_de: Array.isArray(e.mover_de) ? e.mover_de.map(String) : [], mostrar: e.mostrar !== false })),
   };
 }
 
@@ -244,6 +261,7 @@ export async function lerDetalhe(u: Usuario, id: string): Promise<Detalhe> {
     if (d.passou_para) t = `Passou para ${d.passou_para}${d.responsavel ? ` · ${d.responsavel}` : ''}`;
     else if (d.etapa === 'em_atendimento' && d.responsavel) t = 'Assumiu';
     else if (d.etapa) t = `Moveu para ${etapas[d.etapa as Etapa] ?? d.etapa}`;
+    else if (d.etiqueta) t = `${d.acao === 'tirou' ? 'Tirou' : 'Pôs'} a etiqueta ${d.etiqueta_nome ?? d.etiqueta}${d.topico_nome ? ` · foi para ${d.topico_nome}` : ''}`;
     else if (d.topico_id) t = 'Mudou o assunto';
     else if (d.responsavel) t = `Responsável: ${d.responsavel}`;
     eventos.push({ quando: new Date(r.quando).toISOString(), texto: t, quem: r.quem, tipo: 'acao' });
@@ -367,6 +385,45 @@ export async function mudarAssunto(u: Usuario, id: string, topico: string) {
              select $3::uuid, 'atualizar', 'atendimentos', $1::text, jsonb_build_object('topico_id', $2::text) from upd)
      select exists (select 1 from upd) as feito`, [id, t, u.id]).catch(traduzir);
   if (!r.rows[0]?.feito) throw new ErroApi(404, `atendimentos/${id} não encontrado.`);
+}
+
+// Etiqueta (migração 032, 30/10): põe ou tira a etiqueta do cartão, num comando só. Pôr uma etiqueta com coluna de
+// destino leva o cartão para lá, se ele estiver numa das colunas de "mover_de" (vazio = qualquer uma). Tirar nunca
+// move. As etiquetas acumulam, como no Trello. Devolve o que aconteceu, para o aviso da tela.
+export async function etiquetar(u: Usuario, id: string, etiqueta: string): Promise<{ nome: string; tirou: boolean; foiPara: string | null }> {
+  const banco = exigirEditar(u);
+  if (!UUID.test(String(id))) throw new ErroApi(404, NAO_ACHADO);
+  const e = String(etiqueta ?? '');
+  if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(e)) throw new ErroApi(400, 'Etiqueta inválida.');
+  const r = await banco.query(
+    `with alvo as (select id, topico_id, etiquetas, ${SQL_E_SOMBRA} as sombra from atendimentos where id = $1 and not arquivado for update),
+     et as (select id, nome, topico_destino, mover_de from crm_etiquetas where id = $2 and not arquivado),
+     calc as (select alvo.id, et.nome, $2 = any(alvo.etiquetas) as tinha,
+                     case when $2 = any(alvo.etiquetas) then array_remove(alvo.etiquetas, $2::text) else alvo.etiquetas || $2::text end as novas,
+                     case when not ($2 = any(alvo.etiquetas)) and et.topico_destino is not null and et.topico_destino is distinct from alvo.topico_id
+                               and (cardinality(et.mover_de) = 0 or alvo.topico_id = any(et.mover_de))
+                               and exists (select 1 from crm_topicos t where t.id = et.topico_destino and not t.arquivado)
+                          then et.topico_destino end as vai
+                from alvo, et where not alvo.sombra),
+     upd as (update atendimentos a set etiquetas = calc.novas, topico_id = coalesce(calc.vai, a.topico_id), atualizado_em = now()
+               from calc where a.id = calc.id returning a.id),
+     aud as (insert into painel_auditoria (usuario_id, acao, recurso, alvo_id, detalhe)
+             select $3::uuid, 'atualizar', 'atendimentos', $1::text,
+                    jsonb_build_object('etiqueta', $2::text, 'etiqueta_nome', calc.nome, 'acao', case when calc.tinha then 'tirou' else 'pos' end)
+                      || case when calc.vai is not null then jsonb_build_object('topico_id', calc.vai,
+                           'topico_nome', (select t.nome from crm_topicos t where t.id = calc.vai)) else '{}'::jsonb end
+               from calc join upd on upd.id = calc.id)
+     select (select sombra from alvo) as sombra, (select count(*) from alvo)::int as achou, (select count(*) from et)::int as existe,
+            (select nome from calc) as nome, (select tinha from calc) as tinha,
+            (select t.nome from calc join crm_topicos t on t.id = calc.vai) as foi_para`, [id, e, u.id]).catch((err) => {
+    if ((err as { code?: string }).code === '42P01') throw new ErroApi(400, 'Este CRM ainda não tem etiquetas.');
+    return traduzir(err);
+  });
+  const x = r.rows[0];
+  if (!x?.achou || (x.sombra && !u.master)) throw new ErroApi(404, NAO_ACHADO);
+  if (x.sombra) throw new ErroApi(409, ERRO_SOMBRA);
+  if (!x.existe) throw new ErroApi(404, 'Etiqueta não encontrada. Ela pode ter sido apagada; o quadro foi atualizado.');
+  return { nome: String(x.nome), tirou: x.tinha === true, foiPara: x.foi_para ?? null };
 }
 
 // Nome e e-mail das pessoas, pelo id (banco central). Usado no histórico do cartão e na tela Registro.

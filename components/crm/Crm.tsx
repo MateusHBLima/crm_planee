@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { Etapa, Quadro as TQuadro } from '@/lib/painel/crm';
-import { arquivarAtendimento, finalizarAtendimentos, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
+import { arquivarAtendimento, etiquetarAtendimento, finalizarAtendimentos, moverAtendimento, mudarAssunto, passarAtendimento, salvarMeusAvisos, type Resposta } from '@/lib/painel/acoes';
 import type { Intervalo } from '@/lib/periodo';
 import { FiltroData } from '@/components/FiltroData';
 import { carregarQuadro } from '@/lib/painel/leitura-cliente';
@@ -10,6 +10,7 @@ import { lembrar } from '@/lib/painel/memoria-cliente';
 import { Icone } from '@/components/Icone';
 import { Quadro, filtrar, selecionavel, type Fase } from './Quadro';
 import { Detalhe } from './Detalhe';
+import { aplicarEtiqueta } from './Etiquetas';
 import { Comercial } from './Comercial';
 import { Contatos } from './Contatos';
 import { NovoAtendimento } from './Formularios';
@@ -181,6 +182,16 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
         return etapa === 'finalizado' && de !== 'finalizado' ? { ...n, finalizadosHoje: n.finalizadosHoje + 1 } : n;
       }, () => moverAtendimento(id, etapa, de), `Movido para ${quadro.etapas[etapa]}.`);
     },
+    // Etiqueta (migração 032): põe ou tira e, se a etiqueta tiver coluna de destino, o cartão vai para lá.
+    etiqueta: (id: string, etiqueta: string) => {
+      const k = quadro.cartoes.find((x) => x.id === id);
+      if (!k) return;
+      const nomeEt = quadro.etiquetas.find((e) => e.id === etiqueta)?.nome ?? 'Etiqueta';
+      const feito = aplicarEtiqueta(quadro, k, etiqueta);
+      executar(id, mudarCartao(id, () => feito.cartao),
+        async () => { const r = await etiquetarAtendimento(id, etiqueta); return r.ok ? { ok: true as const, dados: r.dados.quadro } : r; },
+        `${nomeEt}: ${feito.tirou ? 'etiqueta tirada' : 'etiqueta posta'}${feito.foiPara ? ` · foi para ${feito.foiPara}` : ''}.`);
+    },
     assunto: (id: string, topico: string) => executar(id, mudarCartao(id, (k) => ({ ...k, topico_id: topico })), () => mudarAssunto(id, topico), 'Assunto alterado.'),
     // "Passar para…" (11/10): outro assunto e, se escolhida, outra pessoa; o cartão volta para "aguardando".
     passar: (id: string, dados: { topico: string; pessoa: { id: string; nome: string } | null; recado: string }) => {
@@ -196,7 +207,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
     },
     recarregar: () => iniciar(async () => { const d = tratar(await carregarQuadro(periodoRef.current)); if (d) { versao.current++; setQuadro(d); setFalhouAtualizar(false); } }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [quadro.etapas, quadro.cartoes, quadro.topicos, tratar, executar, nome]);
+  }), [quadro.etapas, quadro.cartoes, quadro.topicos, quadro.etiquetas, tratar, executar, nome]);
 
   // Trocar o período: busca na hora (o quadro fica com o anterior até chegar).
   const mudarPeriodo = useCallback((p: Intervalo | null) => {
@@ -420,7 +431,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
           )}
           <Quadro quadro={quadro} busca={busca} origem={origem} verFinal={verFinalEfetivo} fase={fase} coluna={celular ? colunaCelular : colunaValida} selecao={selecionando ? { ids: selecionados, alternar: alternarSelecao } : undefined} fmt={fmt} agora={agora} ocupado={ocupado} pendentes={pendentes} podeEditar={podeEditar} podeConfig={podeConfig}
             onAbrir={(id) => { setPassarAberto(false); setAberto(id); }} onMover={acoes.mover}
-            onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} />
+            onPassar={podeEditar ? (id) => { setAberto(id); setPassarAberto(true); } : undefined} onEtiqueta={podeEditar ? acoes.etiqueta : undefined} />
         </>
       )}
       {aba === 'comercial' && <Comercial busca={busca} fuso={quadro.fuso} podeEditar={podeEditar} podeArquivar={podeArquivar} onAviso={avisarOk} />}
@@ -437,7 +448,7 @@ export function Crm({ inicial, podeArquivar, podeEditar, podeConfig, podeConferi
       {cartaoAberto && (
         <Detalhe key={cartaoAberto.id} cartao={cartaoAberto} quadro={quadro} fmt={fmt} podeArquivar={podeArquivar} podeEditar={podeEditar} podeConferir={podeConferir} podeProtocolo={podeProtocolo} nome={nome} ocupado={ocupado || pendentes.has(cartaoAberto.id)}
           onFechar={fechar} onMover={acoes.mover} onAssunto={acoes.assunto}
-          onArquivar={acoes.arquivar} onErro={avisarErro} onAviso={avisarOk} passarAberto={passarAberto} onPassar={acoes.passar} />
+          onArquivar={acoes.arquivar} onErro={avisarErro} onAviso={avisarOk} passarAberto={passarAberto} onPassar={acoes.passar} onEtiqueta={podeEditar ? acoes.etiqueta : undefined} />
       )}
     </div>
   );

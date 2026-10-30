@@ -406,7 +406,7 @@ function Novidades({ empresas, versao, tratar }: { empresas: EmpresaOpcao[]; ver
         </Campo>
         <Campo id="nov-empresa" rotulo="Para quem">
           <select id="nov-empresa" value={f.empresa_id} onChange={mudar('empresa_id')}>
-            <option value="">Todas as empresas</option>
+            <option value="" disabled={f.tipo === 'novidade'}>Todas as empresas (só manutenção)</option>
             {empresas.map((e) => <option key={e.id} value={e.id}>Só {e.nome}</option>)}
           </select>
         </Campo>
@@ -438,7 +438,7 @@ function Novidades({ empresas, versao, tratar }: { empresas: EmpresaOpcao[]; ver
               <div className={s.itemLinha}>
                 <span className={s.selo} data-tipo={n.tipo}>{n.tipo === 'manutencao' ? 'Manutenção' : 'Novidade'}</span>
                 <span className={s.itemTitulo}>{n.titulo}</span>
-                <span className={s.itemMeta}>{n.empresa_nome ? `só ${n.empresa_nome}` : 'todas as empresas'}{n.arquivado ? ' · arquivada' : ''}</span>
+                <span className={s.itemMeta}>{n.empresa_nome ? `só ${n.empresa_nome}` : n.tipo === 'novidade' ? 'sem empresa: não aparece para ninguém' : 'todas as empresas'}{n.arquivado ? ' · arquivada' : ''}</span>
                 <span className={s.espaco} />
                 <span className={s.itemMeta}>{dataHora(n.inicio)}{n.fim ? ` até ${dataHora(n.fim)}` : ''}</span>
                 <button type="button" className={`${s.botaoSec} ${s.peq}`} disabled={ocupado}
