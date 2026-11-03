@@ -34,6 +34,35 @@ async function entrar(p, email, destino) {
   ok('nenhum telefone nem texto de paciente na resposta', !/\d{10,}/.test(txt.replace(/"\d{4}-\d{2}-\d{2}T[^"]*"/g, '')) && !txt.includes('Beatriz'), txt.match(/\d{10,}/)?.[0] ?? '');
   ok('tela mostra os números', ((await p.textContent('[data-kpi="contatos"]')) || '').trim() === d.conversas.contatos.toLocaleString('pt-BR'));
 
+  // Agendamentos da IA marcados na Feegow (03/11): o espelho grava agendado_por; crm_config "agenda_ia" diz quem é a IA,
+  // quais pacientes são de teste e como começa a descrição de uma troca de modalidade.
+  const cont = sql(`select id from contatos limit 1`);
+  const fg = (por, pac, dias) => JSON.stringify({ feegow: { agendado_por: por, paciente_id: pac, marcado_em: sql(`select to_char((now() - interval '${dias} days') at time zone 'America/Sao_Paulo', 'YYYY-MM-DD"T"HH24:MI:SS')`) } });
+  const novo = (por, pac, situacao, tipo, descricao, dias = 1) => sql(`insert into servicos (contato_id, tipo, descricao, inicio, situacao, sistema, codigo_externo, detalhes, criado_por)
+    values ('${cont}', '${tipo}', ${descricao ? `'${descricao}'` : 'null'}, now() + interval '5 days', '${situacao}', 'feegow', 'IA-${Math.random().toString(36).slice(2, 9)}', '${fg(por, pac, dias)}', 'Feegow (espelho)')`);
+  const antes = d.agenda;
+  novo('Agendamento Online', 501, 'confirmado', 'Consulta Fictícia', 'Agendado pela Sara (IA)');
+  novo('Agendamento Online', 502, 'cancelado', 'Consulta Fictícia', 'Troca de modalidade pela Sara (IA), antes teleconsulta');
+  novo('Agendamento Online', 503, 'realizado', 'Bio Fictícia', 'Bio junto da consulta. Agendado pela Sara (IA)');
+  novo('Agendamento Online', 506, 'confirmado', 'Consulta Fictícia', null); // o paciente marcou sozinho pela página da Feegow
+  novo('Agendamento Online', 999, 'cancelado', 'Consulta Fictícia', 'TESTE');
+  novo('Secretária Fictícia', 504, 'confirmado', 'Consulta Fictícia', null);
+  novo('Agendamento Online', 505, 'confirmado', 'Consulta Fictícia', 'fora do período', 60);
+  const ler = async () => (await p.evaluate(async () => (await (await fetch('/api/painel/ler/resultados?periodo=30')).json()).dados)).agenda;
+  let a = await ler();
+  ok('sem crm_config agenda_ia: o marcado na Feegow pelo usuário da IA não conta como IA (como antes)', a.pelaIa === antes.pelaIa && a.total === antes.total + 6 && a.testes === 0, JSON.stringify({ antes: antes.pelaIa, a: a.pelaIa, t: a.total }));
+  sql(`insert into crm_config (chave, valor) values ('agenda_ia', '{"feegow_agendado_por":["Agendamento Online"],"descricao_contem":["pela Sara (IA)"],"pacientes_teste":["999"],"trocas_comecam_com":["Troca de modalidade"]}')
+       on conflict (chave) do update set valor = excluded.valor`);
+  a = await ler();
+  ok('com agenda_ia: conta os 3 da IA no período, sem o de teste, sem o de fora do período e sem o que o paciente marcou sozinho', a.pelaIa === antes.pelaIa + 3 && a.total === antes.total + 5 && a.testes === 1, JSON.stringify({ ia: a.pelaIa, t: a.total, testes: a.testes }));
+  ok('separa novos e trocas de modalidade', a.ia.trocas === 1 && a.ia.novos === a.pelaIa - 1, JSON.stringify(a.ia));
+  ok('da IA por situação e por tipo (o tipo sem as trocas)', a.ia.porSituacao.find((x) => x.situacao === 'realizado')?.qtde >= 1
+    && a.ia.porTipo.find((x) => x.tipo === 'Consulta Fictícia')?.qtde === 1 && a.ia.porTipo.find((x) => x.tipo === 'Bio Fictícia')?.qtde === 1, JSON.stringify(a.ia));
+  await p.reload(); await p.locator('[data-kpi="agenda"]').waitFor({ timeout: 10000 }); await p.waitForTimeout(800);
+  ok('tela mostra a conta da IA com novos e trocas', ((await p.textContent('[data-kpi-nota="agenda"]')) || '').includes(`${a.pelaIa} pela Sara (${a.ia.novos} novos, 1 troca)`)
+    && (await p.locator('[data-agenda-ia]').count()) === 1, (await p.textContent('[data-kpi-nota="agenda"]')) || '');
+  sql(`delete from servicos where codigo_externo like 'IA-%'; delete from crm_config where chave = 'agenda_ia'`);
+
   await p.click('#periodo-resultados'); await p.click('[data-atalho="7d"]'); await p.waitForTimeout(1500);
   const d7 = await p.evaluate(async () => (await (await fetch('/api/painel/ler/resultados?periodo=7')).json()).dados);
   ok('troca de período (7 dias)', d7.periodo === '7' && new Date(d7.de) > new Date(d.de) && ((await p.textContent('#periodo-resultados')) || '').includes('Últimos 7 dias'));
