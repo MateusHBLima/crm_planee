@@ -61,7 +61,13 @@ Nada no código diz **qual empresa** usa um módulo: isso é só `empresas.modul
 
 A ordem 1-2-3 ou 3-1-2 dá no mesmo: enquanto faltar o SQL, a tela avisa e a API responde `409`.
 
+## Módulos que existem
+
+| Módulo | Permissões | SQL | O que faz |
+|---|---|---|---|
+| `duvidas` (03/11) | `m.duvidas.ver` (usar a aba), `m.duvidas.valores` (ver valores) | `supabase/modulos/duvidas/001_duvidas.sql` | Aba Dúvidas: chat com o agente da empresa (crm_config `duvidas`, `docs/api.md`); histórico por pessoa em `mod_duvidas`. Testes: `testes/painel/duvidas.js`. |
+
 ## Testes
 
 `testes/painel/modulos.js` usa o módulo fictício `teste_notas`, que só existe no build dos testes
-(`NEXT_PUBLIC_PAINEL_MODULO_TESTE=1`, no `rodar.sh`). O build de produção não tem nenhum módulo neste PR.
+(`NEXT_PUBLIC_PAINEL_MODULO_TESTE=1`, no `rodar.sh`). O build de produção não tem o `teste_notas`.
