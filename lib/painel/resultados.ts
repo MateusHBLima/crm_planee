@@ -1,4 +1,5 @@
 import 'server-only';
+import { sqlPelaIa, sqlTeste, sqlTroca } from '@/lib/agenda-ia';
 import type { Pool } from 'pg';
 import { bancoDaEmpresa, ErroApi, registrarErro } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
@@ -26,7 +27,11 @@ export type Resultados = {
     agora: { topico: string; nome: string; aguardando: number; em_atendimento: number; pendente: number; abertos_periodo: number }[];
     pessoas: { nome: string; assumidos: number; finalizados: number }[];
   };
-  agenda: null | { total: number; pelaIa: number; porSituacao: { situacao: string; qtde: number }[]; porTipo: { tipo: string; qtde: number }[] };
+  agenda: null | {
+    total: number; pelaIa: number; testes: number; porSituacao: { situacao: string; qtde: number }[]; porTipo: { tipo: string; qtde: number }[];
+    // Só os da IA: novos (sem as trocas de modalidade), trocas, por situação e por tipo (o tipo não conta as trocas).
+    ia: { novos: number; trocas: number; porSituacao: { situacao: string; qtde: number }[]; porTipo: { tipo: string; qtde: number }[] };
+  };
   funil: null | { novas: number; ganhas: number; perdidas: number; valorGanho: number };
   automaticas: null | { tipo: string; enviado: number; falhou: number; cancelado: number }[];
   comprovantes: null | { total: number; suspeitos: number; conferidos: number; valor: number };
@@ -149,23 +154,35 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null, d
         pessoas: (x.pessoas as Record<string, unknown>[]).slice(0, 20).map((p) => ({ nome: String(p.nome), assumidos: n(p.assumidos), finalizados: n(p.finalizados) })),
       };
     }),
-    // Agendamentos marcados no período. "Pela IA": registrados por uma chave da API (a Sara), não por pessoa no
-    // painel. Os que vieram do espelho da Feegow contam pela data em que foram marcados lá (marcado_em), não pela
-    // data em que o espelho os copiou (a carga do histórico copia anos de uma vez).
+    // Agendamentos marcados no período. "Pela IA" (lib/agenda-ia.ts): registrados pela chave da API da IA ou marcados
+    // na Feegow pelo usuário da IA (crm_config "agenda_ia"). Pacientes de teste ficam fora de todas as contas. Os que
+    // vieram do espelho da Feegow contam pela data em que foram marcados lá (marcado_em), não pela data em que o
+    // espelho os copiou (a carga do histórico copia anos de uma vez).
     bloco('agenda', async () => {
       const r = await banco.query(
-        `with s as (select * from servicos where not arquivado
-                      and (case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else criado_em end) >= $1
-                      and (case when criado_por = 'Feegow (espelho)' then (detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else criado_em end) < $2)
+        `with p as (select s.*, ${sqlPelaIa('s')} as ia, ${sqlTroca('s')} as troca, ${sqlTeste('s')} as teste from servicos s where not s.arquivado
+                      and (case when s.criado_por = 'Feegow (espelho)' then (s.detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else s.criado_em end) >= $1
+                      and (case when s.criado_por = 'Feegow (espelho)' then (s.detalhes->'feegow'->>'marcado_em')::timestamp at time zone $3 else s.criado_em end) < $2),
+              s as (select * from p where not teste)
          select (select count(*) from s) as total,
-                (select count(*) from s where criado_por = 'IA' or criado_por in (select nome from api_chaves)) as ia,
+                (select count(*) from p where teste) as testes,
+                (select count(*) from s where ia) as ia,
+                (select count(*) from s where ia and troca) as ia_trocas,
                 (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select situacao, count(*) as qtde from s group by 1) x) as situacao,
-                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo`, P);
+                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s group by 1 order by 2 desc limit 8) x) as tipo,
+                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select situacao, count(*) as qtde from s where ia group by 1) x) as ia_situacao,
+                (select coalesce(json_agg(x order by x.qtde desc), '[]'::json) from (select tipo, count(*) as qtde from s where ia and not troca group by 1 order by 2 desc limit 8) x) as ia_tipo`, P);
       const x = r.rows[0];
+      const lista = (v: unknown, k: 'situacao' | 'tipo') => (v as Record<string, unknown>[]).map((y) => ({ [k]: String(y[k]), qtde: n(y.qtde) }));
       return {
-        total: n(x.total), pelaIa: n(x.ia),
-        porSituacao: (x.situacao as Record<string, unknown>[]).map((y) => ({ situacao: String(y.situacao), qtde: n(y.qtde) })),
-        porTipo: (x.tipo as Record<string, unknown>[]).map((y) => ({ tipo: String(y.tipo), qtde: n(y.qtde) })),
+        total: n(x.total), pelaIa: n(x.ia), testes: n(x.testes),
+        porSituacao: lista(x.situacao, 'situacao') as { situacao: string; qtde: number }[],
+        porTipo: lista(x.tipo, 'tipo') as { tipo: string; qtde: number }[],
+        ia: {
+          novos: n(x.ia) - n(x.ia_trocas), trocas: n(x.ia_trocas),
+          porSituacao: lista(x.ia_situacao, 'situacao') as { situacao: string; qtde: number }[],
+          porTipo: lista(x.ia_tipo, 'tipo') as { tipo: string; qtde: number }[],
+        },
       };
     }),
     bloco('funil', async () => {

@@ -1,4 +1,5 @@
 import 'server-only';
+import { sqlPelaIa } from '@/lib/agenda-ia';
 import { bancoDaEmpresa, ErroApi } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso } from './crm';
@@ -31,7 +32,7 @@ export async function lerAgenda(u: Usuario, diaPedido?: string | null): Promise<
   try {
     const r = await db.query(
       `select s.id, s.inicio, s.tipo, s.profissional, s.local, s.situacao, s.criado_por, s.detalhes->'feegow' as fg,
-              c.id as contato_id, c.nome, c.telefone, (s.criado_por = 'IA' or s.criado_por in (select nome from api_chaves)) as pela_ia
+              c.id as contato_id, c.nome, c.telefone, ${sqlPelaIa('s')} as pela_ia
          from servicos s join contatos c on c.id = s.contato_id
         where not s.arquivado and s.inicio >= ($1::date::timestamp at time zone $2) and s.inicio < (($1::date + 1)::timestamp at time zone $2)
         order by s.inicio, s.profissional nulls last limit 500`, [dia, f]);

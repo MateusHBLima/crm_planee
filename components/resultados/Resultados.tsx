@@ -94,7 +94,7 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
         <div className={c.kpi}>
           <span className={c.kpiRotulo}>Agendamentos registrados</span>
           <span className={c.kpiValor} data-kpi="agenda">{d.agenda ? inteiro(d.agenda.total) : '—'}</span>
-          <span className={c.kpiNota}>{d.agenda ? `${inteiro(d.agenda.pelaIa)} pela Sara` : 'Agendamentos ainda não instalados'}</span>
+          <span className={c.kpiNota} data-kpi-nota="agenda">{d.agenda ? `${inteiro(d.agenda.pelaIa)} pela Sara${d.agenda.ia.trocas ? ` (${inteiro(d.agenda.ia.novos)} novos, ${inteiro(d.agenda.ia.trocas)} ${d.agenda.ia.trocas === 1 ? 'troca' : 'trocas'})` : ''}` : 'Agendamentos ainda não instalados'}</span>
         </div>
         <div className={c.kpi}>
           <span className={c.kpiRotulo}>Pedidos para a equipe</span>
@@ -192,13 +192,25 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
         <section className={c.cartao} aria-label="Agendamentos">
           <div>
             <h2 className={c.cartaoTitulo}>Agendamentos registrados</h2>
-            <p className={c.cartaoSub}>por situação e por tipo, registrados no período</p>
+            <p className={c.cartaoSub}>por situação e por tipo, marcados no período{d.agenda?.testes ? ` · ${inteiro(d.agenda.testes)} de teste fora da conta` : ''}</p>
           </div>
           {d.agenda && d.agenda.total ? (
-            <div className={c.mini}>
-              {d.agenda.porSituacao.map((s) => <div key={s.situacao} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{SITUACAO[s.situacao] ?? s.situacao}</span></div>)}
-              {d.agenda.porTipo.map((s) => <div key={'t' + s.tipo} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{s.tipo}</span></div>)}
-            </div>
+            <>
+              <div className={c.mini}>
+                {d.agenda.porSituacao.map((s) => <div key={s.situacao} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{SITUACAO[s.situacao] ?? s.situacao}</span></div>)}
+                {d.agenda.porTipo.map((s) => <div key={'t' + s.tipo} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{s.tipo}</span></div>)}
+              </div>
+              <div>
+                <h3 className={c.cartaoTitulo}>Pela Sara: {inteiro(d.agenda.pelaIa)}</h3>
+                <p className={c.cartaoSub}>{inteiro(d.agenda.ia.novos)} agendamentos novos · {inteiro(d.agenda.ia.trocas)} {d.agenda.ia.trocas === 1 ? 'troca' : 'trocas'} de modalidade</p>
+              </div>
+              {d.agenda.pelaIa ? (
+                <div className={c.mini} data-agenda-ia>
+                  {d.agenda.ia.porSituacao.map((s) => <div key={'is' + s.situacao} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{SITUACAO[s.situacao] ?? s.situacao}</span></div>)}
+                  {d.agenda.ia.porTipo.map((s) => <div key={'it' + s.tipo} className={c.miniItem}><span className={c.miniValor}>{s.qtde}</span><span className={c.miniRotulo}>{s.tipo}</span></div>)}
+                </div>
+              ) : null}
+            </>
           ) : <div className={c.vazio}>Nenhum agendamento registrado no CRM no período.</div>}
         </section>
       </div>
