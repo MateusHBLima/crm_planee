@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from 'reac
 import type { Quadro as TQuadro } from '@/lib/painel/crm';
 import { criarAtendimento, criarOportunidade, salvarContato, type Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
+import { corDaEtiqueta } from '@/lib/etiquetas';
 import c from './crm.module.css';
 
 // Janela lateral (mesmo visual do detalhe do atendimento) para os formulários de criação e edição.
@@ -60,27 +61,45 @@ export function Campo({ id, rotulo, dica, children }: { id: string; rotulo: stri
   );
 }
 
-export function NovoAtendimento({ quadro, telefone = '', nome = '', onFechar, onPronto }: {
-  quadro: TQuadro; telefone?: string; nome?: string; onFechar: () => void; onPronto: (q: TQuadro) => void;
+// Também abre pela conversa da Inbox (03/11), com o telefone e o nome do contato já preenchidos. Empresa com
+// etiquetas (migração 032): a coluna se chama "Coluna" e dá para marcar as etiquetas já ao abrir.
+export function NovoAtendimento({ quadro, telefone = '', nome = '', titulo = 'Novo atendimento', onFechar, onPronto }: {
+  quadro: TQuadro; telefone?: string; nome?: string; titulo?: string; onFechar: () => void; onPronto: (q: TQuadro) => void;
 }) {
   const [f, setF] = useState({ telefone, nome, topico_id: quadro.topicos[0]?.id ?? '', resumo: '' });
+  const etiquetas = (quadro.etiquetas ?? []).filter((e) => e.mostrar);
+  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const alternar = (id: string) => setMarcadas((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
   const { erro, enviando, enviar } = useEnvio<TQuadro>();
   const mudar = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
-    <Janela titulo="Novo atendimento" onFechar={onFechar}>
-      <form className={c.formJanela} onSubmit={(e) => { e.preventDefault(); enviar(() => criarAtendimento(f), onPronto); }}>
+    <Janela titulo={titulo} onFechar={onFechar}>
+      <form className={c.formJanela} onSubmit={(e) => { e.preventDefault(); enviar(() => criarAtendimento({ ...f, etiquetas: marcadas }), onPronto); }}>
         <Campo id="na-telefone" rotulo="Telefone (WhatsApp)" dica="Se o número já for de um contato, o atendimento entra nele.">
           <input id="na-telefone" inputMode="tel" autoComplete="off" value={f.telefone} onChange={mudar('telefone')} placeholder="(47) 99999-1234" required />
         </Campo>
         <Campo id="na-nome" rotulo="Nome">
           <input id="na-nome" autoComplete="off" value={f.nome} onChange={mudar('nome')} maxLength={120} />
         </Campo>
-        <Campo id="na-assunto" rotulo="Assunto">
+        <Campo id="na-assunto" rotulo={etiquetas.length ? 'Coluna' : 'Assunto'}>
           <select id="na-assunto" value={f.topico_id} onChange={mudar('topico_id')}>
             <option value="">Sem assunto</option>
             {quadro.topicos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
           </select>
         </Campo>
+        {etiquetas.length > 0 && (
+          <div className={c.escolherEtiquetas} role="group" aria-label="Etiquetas" data-na-etiquetas>
+            {etiquetas.map((e) => {
+              const cor = corDaEtiqueta(e.cor);
+              return (
+                <button key={e.id} type="button" className={c.etiquetaBotao} style={{ background: cor.fundo, color: cor.texto }}
+                  aria-pressed={marcadas.includes(e.id)} data-na-etiqueta={e.id} onClick={() => alternar(e.id)}>
+                  <span>{e.nome}</span>{marcadas.includes(e.id) && <Icone nome="finalizado" tamanho={13} />}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <Campo id="na-resumo" rotulo="O que foi pedido">
           <textarea id="na-resumo" value={f.resumo} onChange={mudar('resumo')} maxLength={2000} rows={4} required />
         </Campo>

@@ -72,6 +72,16 @@ async function entrar(p, email) {
   await card2.locator('[data-botao-etiqueta]').click(); await card2.locator('[data-escolher-etiqueta="etq-avaliacao"]').click(); await p.waitForTimeout(1500);
   ok('fora de "mover_de", a etiqueta só marca (não move)', sql(`select topico_id || '|' || array_to_string(etiquetas, ',') from atendimentos where id = '${cart}'`) === 'docs|etq-urgente,etq-avaliacao');
 
+  // Novo atendimento com etiquetas já marcadas (03/11).
+  await p.goto(B + '/crm'); await p.waitForTimeout(800);
+  await p.getByRole('button', { name: 'Novo atendimento' }).first().click(); await p.locator('#na-resumo').waitFor({ timeout: 8000 });
+  ok('novo atendimento mostra "Coluna" e as etiquetas visíveis', (await p.locator('label', { hasText: 'Coluna' }).count()) >= 1 && (await p.locator('[data-na-etiqueta]').count()) === 3);
+  await p.fill('#na-telefone', '5547955550777'); await p.fill('#na-nome', 'Etiqueta Ficticia'); await p.fill('#na-resumo', 'ETQ-NOVO com etiqueta');
+  await p.click('[data-na-etiqueta="etq-urgente"]'); await p.click('form button[type=submit]:has-text("Abrir atendimento")'); await p.waitForTimeout(1500);
+  ok('novo atendimento grava as etiquetas marcadas', sql(`select array_to_string(etiquetas, ',') from atendimentos where resumo = 'ETQ-NOVO com etiqueta'`) === 'etq-urgente');
+  sql(`update atendimentos set arquivado = true where resumo = 'ETQ-NOVO com etiqueta'`);
+  const card2b = p.locator('article', { hasText: 'ETQ-1' }); await card2b.waitFor({ timeout: 8000 });
+
   // Detalhe: sem etapa, com a coluna e as etiquetas sempre à vista.
   await card2.getByRole('button', { name: 'Contato sem nome' }).click(); await p.locator('[data-etiquetas-detalhe]').waitFor({ timeout: 5000 });
   ok('detalhe sem a etapa e com "Coluna"', (await p.locator('#det-etapa').count()) === 0 && (await p.locator('label', { hasText: 'Coluna' }).count()) >= 1

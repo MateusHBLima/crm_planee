@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from 'next/link';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
 import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, enviarMidia, finalizarPelaConversa, localizarMensagem, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
-import { abrirConversa, carregarAbertosDaConversa, carregarConversas } from '@/lib/painel/leitura-cliente';
+import { abrirConversa, carregarAbertosDaConversa, carregarConversas, carregarQuadro } from '@/lib/painel/leitura-cliente';
+import type { Quadro as TQuadro } from '@/lib/painel/crm';
+import { NovoAtendimento } from '@/components/crm/Formularios';
 import type { AbertoDaConversa } from '@/lib/painel/crm';
 import { lembrado, lembrar } from '@/lib/painel/memoria-cliente';
 import type { Resposta } from '@/lib/painel/acoes';
@@ -40,8 +42,11 @@ const escaparRegex = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const semPrefixo = (texto: string, agente: string) => {
   if (!agente) return texto;
   const a = escaparRegex(agente);
-  return texto.replace(new RegExp(`^\\s*(\\*${a}:?\\*|${a}:)[ \\t]*(\\r?\\n|$)`, 'i'), '');
+  return texto.replace(new RegExp(`^\\s*(\\*${a}:?\\*|${a}:)[ \\t]*(\\r?\\n|$)`, 'i'), '').trim();
 };
+// Linhas em branco no começo e no fim do texto não aparecem na bolha (03/11: a Amanda manda "*Amanda*" + linha vazia,
+// e sobrava um espaço em cima). Vale para toda mensagem, de qualquer empresa.
+const aparado = (t: string) => t.replace(/^\s+|\s+$/g, '');
 // Na lista o resumo vem numa linha só ("*Sara* Olá…"): sai o nome com os asteriscos.
 const semPrefixoResumo = (texto: string, agente: string) =>
   agente ? texto.replace(new RegExp(`^\\s*\\*${escaparRegex(agente)}:?\\*\\s*`, 'i'), '') : texto;
@@ -137,6 +142,9 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
   const [protocoloAberto, setProtocoloAberto] = useState(false);
   // Cartões em aberto do número, na lateral da conversa (22/10).
   const [cartoesAberto, setCartoesAberto] = useState(false);
+  // "Novo cartão" pela conversa (03/11): o formulário do CRM com o contato preenchido. As colunas vêm do quadro.
+  const [novoCartao, setNovoCartao] = useState<TQuadro | null>(null);
+  const [abrindoCartao, setAbrindoCartao] = useState(false);
   const datas = useMemo(() => criarDatas(lista.fuso), [lista.fuso]);
   // "Ver na conversa" de um comprovante (/inbox?msg=<wamid>, 26/10): a conversa abre e vai buscando as páginas antigas
   // até achar a mensagem, que fica destacada no meio da tela.
@@ -572,6 +580,18 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
                       {abertosAgora.length ? `Cartões (${abertosAgora.length})` : 'Cartões'}
                     </button>
                   )}
+                  {podeFinalizar && (
+                    <button type="button" className={c.botaoDono} data-novo-cartao disabled={abrindoCartao}
+                      onClick={async () => {
+                        setAbrindoCartao(true);
+                        const r = await carregarQuadro().catch(() => ({ ok: false as const, erro: 'Sem conexão com o painel agora. Tente de novo.' }));
+                        setAbrindoCartao(false);
+                        if (r.ok) setNovoCartao(r.dados); else tratar(r);
+                      }}
+                      title="Abre um cartão no CRM para este contato">
+                      {abrindoCartao ? 'Abrindo…' : 'Novo cartão'}
+                    </button>
+                  )}
                   {/* Menu "Mais" (15/10): Protocolo, Não lida e Abrir no WhatsApp saem do cabeçalho para despoluir. */}
                   <MenuMais>
                     {podeFinalizar && podeProtocolo && (
@@ -700,6 +720,10 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
         {!podeResponder && <footer className={c.rodape}>Somente leitura: sua conta não tem a permissão para responder pelo painel.</footer>}
       </section>
 
+      {novoCartao && atual && (
+        <NovoAtendimento quadro={novoCartao} titulo="Novo cartão" telefone={atual.wa_id} nome={atual.nome ?? ''} onFechar={() => setNovoCartao(null)}
+          onPronto={() => { setNovoCartao(null); setOk('Cartão aberto no CRM.'); if (aberta) void buscarAbertos(aberta); }} />
+      )}
       {avisando && (
         <AvisarPlanee alvo={avisando} agente={agente} onFechar={() => setAvisando(null)}
           onPronto={() => { setAvisando(null); setOk('Aviso enviado para a Planee. A resposta aparece na tela Planee.'); }} />
@@ -1020,7 +1044,7 @@ function Bolha({ m, agente, hora, nomeContato, numeroId, waId, onAvisar, destaca
     conteudo = <p className={c.semTexto}>Tipo de mensagem não suportado</p>;
   } else if (rotMidia) {
     const nomeArquivo = m.tipo === 'document' ? m.midia?.filename : null;
-    const legenda = m.texto && m.texto !== nomeArquivo ? (m.origem === 'api' ? semPrefixo(m.texto, agente) : m.texto) || null : null;
+    const legenda = m.texto && m.texto !== nomeArquivo ? aparado(m.origem === 'api' ? semPrefixo(m.texto, agente) : m.texto) || null : null;
     const temArquivo = ['image', 'sticker', 'audio', 'video', 'document'].includes(m.tipo);
     conteudo = (
       <>
@@ -1033,7 +1057,7 @@ function Bolha({ m, agente, hora, nomeContato, numeroId, waId, onAvisar, destaca
   } else {
     // O selo em cima da bolha já diz que é automática: o "[AUTOMÁTICA · followup_1h]" do texto sai (15/10).
     const limpo = m.texto ? m.texto.replace(/^\s*\[AUTOM[ÁA]TICA[^\]]*\]\s*/i, '') : '';
-    const texto = m.origem === 'api' || (m.origem === 'historico' && m.por === 'IA') ? semPrefixo(limpo, agente) : limpo;
+    const texto = aparado(m.origem === 'api' || (m.origem === 'historico' && m.por === 'IA') ? semPrefixo(limpo, agente) : limpo);
     conteudo = texto ? <p className={c.texto}>{texto}</p> : <p className={c.semTexto}>Mensagem sem texto</p>;
   }
   return (
