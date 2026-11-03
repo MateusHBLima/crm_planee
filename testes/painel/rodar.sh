@@ -61,6 +61,9 @@ export RECEPTOR_CHAVE_INTERNA="chave-interna-de-teste"
 # Módulos (docs/modulos.md): o build dos testes tem o módulo fictício "teste_notas", e sem memória (o teste marca e
 # roda o SQL do módulo e confere na hora).
 export NEXT_PUBLIC_PAINEL_MODULO_TESTE=1 PAINEL_MODULOS_CACHE_MS=0
+# Aba Dúvidas (03/11): o agente falso do duvidas.js demora 6 s no caso da demora; aqui o limite é 3 s (produção: 60 s).
+# PWA: sem memória do crm_config "app", para o teste trocar e conferir na hora.
+export PAINEL_DUVIDAS_LIMITE_MS=3000 PAINEL_APP_CACHE_MS=0
 # Nova empresa (28/10): o endereço vira <apelido>.localhost, que o Chromium resolve sem DNS.
 export PAINEL_DOMINIO_EMPRESAS=localhost
 if curl -s -o /dev/null "$BASE_URL"; then echo "Porta $PORTA_APP ocupada: pare o app que está nela."; exit 1; fi
@@ -82,6 +85,9 @@ node "$T/central.js"
 
 echo "7/24 Módulos por empresa: SQL travado no banco certo, 409 sem SQL, 404 e catálogo por empresa, ficha, tela Empresas"
 node "$T/modulos.js"
+
+echo "7b/24 Aba Dúvidas (módulo duvidas): tela só com o módulo e a permissão, pergunta ao agente da empresa, valores, erro e demora; PWA por empresa"
+node "$T/duvidas.js"
 
 echo "8/24 Link de convite: uso único, vencido, cancelado, sem acesso ao entrar, admin libera depois, outra empresa"
 node "$T/convite.js"

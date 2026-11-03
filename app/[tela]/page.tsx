@@ -14,6 +14,8 @@ import { hostDeCabecalhos } from '@/lib/empresa';
 import { assuntosParaAvisos, lerConfigCrm } from '@/lib/painel/crm';
 import { ConfigCrm } from '@/components/crm/ConfigCrm';
 import { ProtocolosTela } from '@/components/crm/Protocolo';
+import { Duvidas } from '@/components/duvidas/Duvidas';
+import { minhasDuvidas } from '@/lib/painel/duvidas';
 import { fuso } from '@/lib/painel/crm';
 import { Interno } from '@/components/planee/Interno';
 import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
@@ -74,6 +76,17 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
         <ProtocolosTela key={usuario.empresa.id} fuso={fuso()} podeEditar={pode(usuario, 'crm.editar')} />
+      </Shell>
+    );
+  }
+
+  // Dúvidas (módulo duvidas, 03/11): chat com o agente da empresa; cada pessoa vê só as perguntas dela.
+  if (atual.id === 'duvidas' && usuario.empresa) {
+    const inicial = await tentar(() => minhasDuvidas(usuario));
+    if ('erro' in inicial) return aviso(inicial.erro);
+    return (
+      <Shell atual={atual.id} usuario={usuario}>
+        <Duvidas key={usuario.empresa.id} empresa={usuario.empresa.nome} inicial={inicial} valores={pode(usuario, 'm.duvidas.valores')} />
       </Shell>
     );
   }

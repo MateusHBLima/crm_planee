@@ -44,6 +44,7 @@ export const ICONES: Record<string, string> = {
   passar: 'M4 12h14M13 7l5 5-5 5',
   sino: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
   protocolo: 'M9 3h6v4H9zM9 5H6v16h12V5h-3M9 14l2 2 4-4',
+  duvida: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01',
 };
 
 // Telas do painel (decisão 26). Cada uma aparece para quem tem a permissão dela na empresa escolhida;
@@ -53,6 +54,7 @@ const TELAS: Tela[] = [
   { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'protocolos', nome: 'Protocolos', icone: 'protocolo', descricao: 'Acompanhamento de protocolo: quem está em análise, em protocolo, em acompanhamento ou encerrado.', exige: (u) => pode(u, 'protocolos.ver') },
+  { id: 'duvidas', nome: 'Dúvidas', icone: 'duvida', descricao: 'Pergunte sobre os sistemas da empresa; quem responde é o agente da empresa.', exige: (u) => pode(u, 'm.duvidas.ver') },
   { id: 'agenda', nome: 'Agenda', icone: 'agenda', descricao: 'Agendamentos do dia: o espelho da agenda da clínica e os que a Sara marcou.', exige: (u) => pode(u, 'pagamentos.ver') },
   { id: 'comprovantes', nome: 'Comprovantes', icone: 'valor', descricao: 'Fila dos comprovantes a conferir, com o contador no menu e a marca opcional de baixa na Feegow.', exige: (u) => pode(u, 'pagamentos.ver') },
   { id: 'resultados', nome: 'Resultados', icone: 'dash', descricao: 'Conversas por dia, espera pela equipe, quadro, agendamentos, mensagens automáticas e comprovantes.', exige: (u) => pode(u, 'resultados.ver') },

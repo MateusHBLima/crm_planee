@@ -49,6 +49,10 @@ Ferramentas do conector MCP: `descrever_crm`, `listar`, `obter`, `criar`, `atual
 
 Exemplo: `{"nome": "Amanda", "pausa_min": 120, "assumir": false}`.
 
+**Aba Dúvidas** (módulo `duvidas`, 03/11): configuração `duvidas` = `{"url": "https://..."}`, o webhook do agente da empresa que responde as perguntas da equipe. O painel faz `POST` nele com cabeçalho `x-painel-segredo: N8N_WEBHOOK_SEGREDO` e corpo `{"empresa", "usuario": {"id", "nome"}, "pode_ver_valores", "pergunta", "historico": [{"pergunta", "resposta"}], "id_pergunta"}` (histórico: as 10 últimas respostas sem erro da própria pessoa, da mais antiga para a mais nova; `pode_ver_valores` vem da permissão `m.duvidas.valores`). Resposta esperada: `{"resposta": "texto", "erro": null | "indisponivel" | "sem_permissao"}`; com `erro`, a tela mostra a `resposta` marcada como erro. Limite de 60 s. Sem `url`, a tela avisa que o agente não foi ligado.
+
+**Painel instalável no celular** (PWA, 03/11): configuração `app` = `{"nome", "nome_curto", "cor": "#rrggbb", "icone_192": "data:image/png;base64,...", "icone_512": "data:image/png;base64,..."}` (PNG de até 300 KB cada). Com os dois ícones, o endereço da empresa passa a ter `/manifest.webmanifest` e `/app-icone/192|512`, e o celular oferece "Adicionar à tela inicial" com o nome e o ícone dela. Sem `app`, nada muda.
+
 ## Para a IA (Sara)
 
 Dois atalhos pelo telefone, para o agente não precisar saber ids:

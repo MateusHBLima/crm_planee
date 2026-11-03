@@ -75,6 +75,7 @@ function textoCentral(acao: string, d: Record<string, unknown>, alvoNome: string
     case 'ler_conversa': return { area: 'inbox', texto: 'Abriu a conversa' };
     case 'marcar_nao_lida': return { area: 'inbox', texto: 'Marcou a conversa como não lida' };
     case 'abrir_comprovante': return { area: 'crm', texto: 'Abriu um comprovante' };
+    case 'duvidas_perguntar': return { area: 'crm', texto: s('resultado') && s('resultado') !== 'respondida' ? `Perguntou nas Dúvidas (${s('resultado')})` : 'Perguntou nas Dúvidas' };
     case 'adicionar_pessoa': return { area: 'equipe', texto: 'Adicionou pessoa à equipe' };
     case 'atualizar_pessoa': {
       const partes: string[] = [];

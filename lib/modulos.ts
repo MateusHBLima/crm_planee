@@ -31,7 +31,22 @@ const MODULO_TESTE: DefModulo = {
   pasta: 'testes/painel/modulos/teste_notas/',
 };
 
+// Dúvidas (03/11, pedido do Mateus para a SSA): chat em que a equipe pergunta sobre os sistemas da empresa. Quem
+// responde é um agente no n8n da própria empresa, no endereço de crm_config "duvidas".url (lib/painel/duvidas.ts).
+// O painel só guarda o histórico de cada pessoa (mod_duvidas) e repassa a pergunta.
+const DUVIDAS: DefModulo = {
+  id: 'duvidas', nome: 'Dúvidas',
+  descricao: 'Chat para a equipe perguntar sobre os sistemas da empresa; quem responde é o agente da empresa no n8n.',
+  permissoes: [
+    { id: 'm.duvidas.ver', nome: 'Usar a aba Dúvidas' },
+    { id: 'm.duvidas.valores', nome: 'Ver valores nas Dúvidas' },
+  ],
+  migracoes: ['duvidas/001'],
+  pasta: 'supabase/modulos/duvidas/',
+};
+
 export const MODULOS: DefModulo[] = [
+  DUVIDAS,
   ...(process.env.NEXT_PUBLIC_PAINEL_MODULO_TESTE === '1' ? [MODULO_TESTE] : []),
 ];
 
