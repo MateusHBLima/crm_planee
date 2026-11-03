@@ -77,7 +77,7 @@ export async function carregarAtendimentosDoContato(id: string) {
 
 // ---- Criar e editar pelo painel ----
 
-export async function criarAtendimento(dados: { telefone: string; nome: string; topico_id: string; resumo: string }) {
+export async function criarAtendimento(dados: { telefone: string; nome: string; topico_id: string; resumo: string; etiquetas?: string[] }) {
   return comUsuario(async (u) => { await crm.novoAtendimento(u, dados); return crm.lerQuadro(u); });
 }
 

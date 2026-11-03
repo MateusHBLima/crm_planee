@@ -469,6 +469,15 @@ const aviso = (p) => p.locator('main [role=status]').textContent().then((t) => t
   await p.click('[data-filtro-nao-lidas]'); await p.waitForTimeout(300);
   ok('filtro "Não lidas" mostra a conversa marcada', (await p.locator('button[data-wa="554755550001"]').count()) === 1);
   await p.screenshot({ path: out + '18b_inbox_finalizar_nao_lida.png' });
+  // Novo cartão pela conversa (03/11): o formulário do CRM com o contato preenchido.
+  await p.goto(B + `/inbox?tel=${TELE}`); await p.locator('[data-novo-cartao]').waitFor({ timeout: 10000 });
+  await p.click('[data-novo-cartao]'); await p.locator('#na-resumo').waitFor({ timeout: 8000 });
+  ok('Novo cartão abre com o telefone do contato', ((await p.inputValue('#na-telefone')) || '').replace(/\D/g, '').endsWith(TELE.slice(-8)));
+  await p.selectOption('#na-assunto', 'exames'); await p.fill('#na-resumo', 'NOVO-PELA-CONVERSA pediu resultado');
+  await p.click('form button[type=submit]:has-text("Abrir atendimento")'); await p.waitForTimeout(1500);
+  ok('cartão aberto pela conversa entra no contato do número', sql(`select count(*) from atendimentos a join contatos c on c.id = a.contato_id where a.resumo = 'NOVO-PELA-CONVERSA pediu resultado' and a.topico_id = 'exames' and right(c.telefone, 8) = right('${TELE}', 8)`) === '1');
+  ok('aviso de cartão aberto na conversa', /Cartão aberto no CRM/.test((await p.locator('[role=status]').allTextContents()).join(' ')));
+  sql(`update atendimentos set arquivado = true where resumo = 'NOVO-PELA-CONVERSA pediu resultado'`);
   await ctx.close();
 
   // ---------- Empresa sem acompanhamento de protocolo (29/10): nem a equipe nem a Planee veem ----------

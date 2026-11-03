@@ -479,6 +479,13 @@ insert into wa_reacoes (numero_id, wamid, autor, emoji, em) values ('${NUM}', 'w
   await bolhaPre2.waitFor({ timeout: 8000 }).catch(() => {});
   ok('"*Sara*" (sem dois pontos) também sai da bolha', (await bolhaPre2.count()) === 1 && !((await bolhaPre2.textContent()) || '').includes('*Sara*'),
     ((await bolhaPre2.textContent()) || '').slice(0, 120));
+  // 03/11: nome + linha em branco (como a Amanda da SSA manda) não deixa espaço em cima do texto.
+  sql(`insert into wa_mensagens (numero_id, wa_id, wamid, direcao, origem, tipo, texto, status, enviada_em) values ('${NUM}', '${BIA}', 'wamid.PREFIXO3', 'saida', 'api', 'text', E'*Sara*\\n\\nTexto sem espaço em cima.\\n', 'entregue', now() - interval '109 minutes')`);
+  await p.reload(); await item(p, 'Beatriz Ficticia').getByRole('button').click();
+  const bolhaPre3 = conversa(p).locator('[data-id]', { hasText: 'Texto sem espaço em cima.' });
+  await bolhaPre3.waitFor({ timeout: 8000 }).catch(() => {});
+  const textoPre3 = await bolhaPre3.locator('p').first().evaluate((e) => e.textContent).catch(() => null);
+  ok('nome + linha em branco: a bolha começa direto no texto', textoPre3 === 'Texto sem espaço em cima.', JSON.stringify(textoPre3));
   await p.screenshot({ path: out + '23_inbox_resposta.png' });
   // As respostas pelo painel acima pausam a Sara por alguns minutos (como o celular); daqui em diante os testes
   // olham só o dono da conversa, então elas ficam no passado.

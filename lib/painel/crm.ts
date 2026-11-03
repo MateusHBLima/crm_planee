@@ -654,11 +654,13 @@ export async function garantirContato(u: Usuario, telefone: unknown, nome: unkno
   return String(novo.id);
 }
 
-export async function novoAtendimento(u: Usuario, dados: { telefone: unknown; nome: unknown; topico_id: unknown; resumo: unknown }) {
+export async function novoAtendimento(u: Usuario, dados: { telefone: unknown; nome: unknown; topico_id: unknown; resumo: unknown; etiquetas?: unknown }) {
   const resumo = textoObrigatorio(dados.resumo, 'o resumo', 2000);
   const topico = String(dados.topico_id ?? '');
   const contato = await garantirContato(u, dados.telefone, dados.nome);
-  const a = await api.criar(atorDe(u), 'atendimentos', { contato_id: contato, topico_id: topico || null, resumo, aberto_por: u.nome });
+  // Etiquetas escolhidas ao abrir (migração 032, 03/11): só quando vieram; a API confere os ids.
+  const etiquetas = Array.isArray(dados.etiquetas) && dados.etiquetas.length ? { etiquetas: dados.etiquetas.map(String) } : {};
+  const a = await api.criar(atorDe(u), 'atendimentos', { contato_id: contato, topico_id: topico || null, resumo, aberto_por: u.nome, ...etiquetas });
   return String(a.id);
 }
 
