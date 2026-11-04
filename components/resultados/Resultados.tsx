@@ -65,6 +65,8 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
     if (!todosDias.length || todosDias[todosDias.length - 1].dia !== k) todosDias.push(porDiaMapa.get(k) ?? { dia: k, contatos: 0, recebidas: 0 });
   }
   const conv = d.conversas ? { ...d.conversas, porDia: todosDias } : null;
+  // Mensagens automáticas: só o que saiu ou falhou (as canceladas não chegaram ao paciente e confundiam, 03/11).
+  const automaticas = (d.automaticas ?? []).filter((a) => a.enviado + a.falhou > 0);
   const maxDia = Math.max(1, ...(conv?.porDia ?? []).map((x) => x.contatos));
   const totalEspera = d.espera?.respostas ?? 0;
   const acimaDeUmaHora = d.espera ? d.espera.faixas.slice(2).reduce((s, f) => s + f.qtde, 0) : 0;
@@ -99,7 +101,7 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
         <div className={c.kpi}>
           <span className={c.kpiRotulo}>Pedidos para a equipe</span>
           <span className={c.kpiValor} data-kpi="quadro">{d.quadro ? inteiro(d.quadro.abertos) : '—'}</span>
-          <span className={c.kpiNota}>{d.quadro ? `${inteiro(d.quadro.finalizados)} finalizados · assumir em ${minutos(d.quadro.mediana_assumir_min)} (mediana)` : '—'}</span>
+          <span className={c.kpiNota}>{d.quadro ? `${inteiro(d.quadro.finalizados)} finalizados` : '—'}</span>
         </div>
       </section>
 
@@ -168,31 +170,26 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
             </table>
           </div>
         ) : <div className={c.vazio}>Quadro indisponível.</div>}
-        {d.quadro && (
-          <p className={c.cartaoSub}>
-            Tempo até finalizar (mediana): {minutos(d.quadro.mediana_finalizar_min)} · assumidos no período: {inteiro(d.quadro.assumidos)}
-          </p>
-        )}
       </section>
 
       <div className={c.grade}>
         <section className={c.cartao} aria-label="Equipe">
           <div>
             <h2 className={c.cartaoTitulo}>Equipe no quadro</h2>
-            <p className={c.cartaoSub}>quem assumiu e finalizou pedidos no período</p>
+            <p className={c.cartaoSub}>pedidos finalizados por pessoa da equipe no período</p>
           </div>
           {d.quadro && d.quadro.pessoas.length ? (
             <table className={c.tabela}>
-              <thead><tr><th>Pessoa</th><th className={c.num}>Assumiu</th><th className={c.num}>Finalizou</th></tr></thead>
-              <tbody>{d.quadro.pessoas.map((p) => <tr key={p.nome}><td>{p.nome}</td><td className={c.num}>{p.assumidos}</td><td className={c.num}>{p.finalizados}</td></tr>)}</tbody>
+              <thead><tr><th>Pessoa</th><th className={c.num}>Finalizou</th></tr></thead>
+              <tbody>{d.quadro.pessoas.map((p) => <tr key={p.nome}><td>{p.nome}</td><td className={c.num}>{p.finalizados}</td></tr>)}</tbody>
             </table>
-          ) : <div className={c.vazio}>Ninguém assumiu ou finalizou pedidos pelo quadro no período.</div>}
+          ) : <div className={c.vazio}>Ninguém da equipe finalizou pedidos pelo quadro no período.</div>}
         </section>
 
         <section className={c.cartao} aria-label="Agendamentos">
           <div>
             <h2 className={c.cartaoTitulo}>Agendamentos registrados</h2>
-            <p className={c.cartaoSub}>por situação e por tipo, marcados no período{d.agenda?.testes ? ` · ${inteiro(d.agenda.testes)} de teste fora da conta` : ''}</p>
+            <p className={c.cartaoSub}>por situação e por tipo, marcados no período</p>
           </div>
           {d.agenda && d.agenda.total ? (
             <>
@@ -221,10 +218,10 @@ export function Resultados({ empresaId, empresaNome }: { empresaId: string; empr
             <h2 className={c.cartaoTitulo}>Mensagens automáticas da Sara</h2>
             <p className={c.cartaoSub}>lembretes, aniversários e follow-up registrados no CRM</p>
           </div>
-          {d.automaticas && d.automaticas.length ? (
+          {automaticas.length ? (
             <table className={c.tabela}>
-              <thead><tr><th>Tipo</th><th className={c.num}>Enviadas</th><th className={c.num}>Falharam</th><th className={c.num}>Canceladas</th></tr></thead>
-              <tbody>{d.automaticas.map((a) => <tr key={a.tipo}><td>{nomeDoTipo(a.tipo)}</td><td className={c.num}>{a.enviado}</td><td className={c.num}>{a.falhou}</td><td className={c.num}>{a.cancelado}</td></tr>)}</tbody>
+              <thead><tr><th>Tipo</th><th className={c.num}>Enviadas</th><th className={c.num}>Falharam</th></tr></thead>
+              <tbody>{automaticas.map((a) => <tr key={a.tipo}><td>{nomeDoTipo(a.tipo)}</td><td className={c.num}>{a.enviado}</td><td className={c.num}>{a.falhou}</td></tr>)}</tbody>
             </table>
           ) : <div className={c.vazio}>Nenhuma mensagem automática registrada no período.</div>}
         </section>
