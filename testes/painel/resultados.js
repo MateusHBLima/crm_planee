@@ -20,6 +20,8 @@ async function entrar(p, email, destino) {
   await entrar(p, 'gestor@teste.local', '/resultados');
   await p.locator('[data-kpi="contatos"]').waitFor({ timeout: 10000 });
 
+  // Cartão finalizado pela Planee (master): não entra em "Equipe no quadro".
+  sql(`insert into atendimentos (topico_id, resumo, aberto_por, etapa, responsavel, assumido_em, finalizado_em) values ('receita', 'RES-PLANEE finalizado pela Planee', 'IA', 'finalizado', 'Planee Teste', now(), now())`);
   const d = await p.evaluate(async () => (await (await fetch('/api/painel/ler/resultados?periodo=30')).json()).dados);
   const ini = "date_trunc('day', now() at time zone 'America/Sao_Paulo') at time zone 'America/Sao_Paulo' - interval '29 days'";
   ok('pessoas que escreveram batem com o banco', d.conversas.contatos === Number(sql(`select count(distinct wa_id) from wa_mensagens where direcao = 'entrada' and tipo <> 'reaction' and enviada_em >= ${ini}`)), String(d.conversas.contatos));
@@ -32,6 +34,11 @@ async function entrar(p, email, destino) {
   ok('espera pela equipe com faixas', d.espera && d.espera.faixas.length === 4 && d.espera.faixas.reduce((s, f) => s + f.qtde, 0) === d.espera.respostas);
   const txt = JSON.stringify(d);
   ok('nenhum telefone nem texto de paciente na resposta', !/\d{10,}/.test(txt.replace(/"\d{4}-\d{2}-\d{2}T[^"]*"/g, '')) && !txt.includes('Beatriz'), txt.match(/\d{10,}/)?.[0] ?? '');
+  // O que confundia a clínica saiu da tela (03/11): canceladas, tempos medianos do quadro, "Assumiu", Planee na equipe.
+  const tela = (await p.textContent('main')) || '';
+  ok('sem "Canceladas", "assumir em", "Tempo até finalizar", "Assumiu" e "de teste fora da conta"', !/Canceladas|assumir em|Tempo até finalizar|Assumiu|de teste fora da conta/.test(tela));
+  const daEquipe = sql(`select coalesce(string_agg(u.nome, '|'), '') from painel_vinculos v join painel_usuarios u on u.id = v.usuario_id where v.empresa_id = 'teste' and v.ativo and not u.master`).split('|');
+  ok('Equipe no quadro: só pessoas da equipe da empresa (sem a Planee)', d.quadro.pessoas.every((x) => daEquipe.includes(x.nome)) && !d.quadro.pessoas.some((x) => x.nome === 'Planee Teste'), JSON.stringify(d.quadro.pessoas));
   ok('tela mostra os números', ((await p.textContent('[data-kpi="contatos"]')) || '').trim() === d.conversas.contatos.toLocaleString('pt-BR'));
 
   // Agendamentos da IA marcados na Feegow (03/11): o espelho grava agendado_por; crm_config "agenda_ia" diz quem é a IA,
@@ -61,7 +68,7 @@ async function entrar(p, email, destino) {
   await p.reload(); await p.locator('[data-kpi="agenda"]').waitFor({ timeout: 10000 }); await p.waitForTimeout(800);
   ok('tela mostra a conta da IA com novos e trocas', ((await p.textContent('[data-kpi-nota="agenda"]')) || '').includes(`${a.pelaIa} pela Sara (${a.ia.novos} novos, 1 troca)`)
     && (await p.locator('[data-agenda-ia]').count()) === 1, (await p.textContent('[data-kpi-nota="agenda"]')) || '');
-  sql(`delete from servicos where codigo_externo like 'IA-%'; delete from crm_config where chave = 'agenda_ia'`);
+  sql(`delete from servicos where codigo_externo like 'IA-%'; delete from crm_config where chave = 'agenda_ia'; delete from atendimentos where resumo like 'RES-PLANEE%'`);
 
   await p.click('#periodo-resultados'); await p.click('[data-atalho="7d"]'); await p.waitForTimeout(1500);
   const d7 = await p.evaluate(async () => (await (await fetch('/api/painel/ler/resultados?periodo=7')).json()).dados);

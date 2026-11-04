@@ -1,7 +1,7 @@
 import 'server-only';
 import { sqlPelaIa, sqlTeste, sqlTroca } from '@/lib/agenda-ia';
 import type { Pool } from 'pg';
-import { bancoDaEmpresa, ErroApi, registrarErro } from '@/lib/db';
+import { bancoDaEmpresa, central, ErroApi, registrarErro } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso } from './crm';
 import { diasEntre, type Intervalo } from '@/lib/periodo';
@@ -145,13 +145,20 @@ export async function lerResultados(u: Usuario, periodoPedido?: string | null, d
                      from a where responsavel is not null and ((assumido_em >= $1 and assumido_em < $2) or (finalizado_em >= $1 and finalizado_em < $2))
                     group by responsavel) x) as pessoas`, [de, ate]);
       const x = r.rows[0];
+      const equipe = await central().query(
+        `select u.nome from painel_vinculos v join painel_usuarios u on u.id = v.usuario_id
+          where v.empresa_id = $1 and v.ativo and not u.master`, [u.empresa!.id])
+        .then((q) => new Set(q.rows.map((y) => String(y.nome)))).catch(() => null);
       return {
         abertos: n(x.abertos), finalizados: n(x.finalizados), assumidos: n(x.assumidos),
         mediana_assumir_min: nOuNulo(x.med_assumir), mediana_finalizar_min: nOuNulo(x.med_finalizar),
         agora: (x.agora as Record<string, unknown>[]).map((t) => ({
           topico: String(t.topico), nome: String(t.nome), aguardando: n(t.aguardando), em_atendimento: n(t.em_atendimento), pendente: n(t.pendente), abertos_periodo: n(t.abertos_periodo),
         })),
-        pessoas: (x.pessoas as Record<string, unknown>[]).slice(0, 20).map((p) => ({ nome: String(p.nome), assumidos: n(p.assumidos), finalizados: n(p.finalizados) })),
+        // Só quem é da equipe da empresa (vínculo ativo, sem a Planee): finalizar pela Planee ou por conta desligada
+        // aparecia como se fosse da clínica (03/11).
+        pessoas: (x.pessoas as Record<string, unknown>[]).filter((p) => equipe === null || equipe.has(String(p.nome)))
+          .slice(0, 20).map((p) => ({ nome: String(p.nome), assumidos: n(p.assumidos), finalizados: n(p.finalizados) })),
       };
     }),
     // Agendamentos marcados no período. "Pela IA" (lib/agenda-ia.ts): registrados pela chave da API da IA ou marcados
