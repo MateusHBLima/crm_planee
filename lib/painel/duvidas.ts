@@ -1,11 +1,12 @@
 import 'server-only';
+import { segredoN8n } from '@/lib/integracoes';
 import { bancoDaEmpresa, central, ErroApi, registrarErro } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { auditar } from './gestao';
 
 // Aba "Dúvidas" (módulo duvidas, 03/11). A equipe pergunta sobre os sistemas da empresa e quem responde é o agente da
 // própria empresa no n8n, no endereço de crm_config "duvidas".url (o painel não chama modelo de IA).
-// Pedido ao agente (POST, cabeçalho x-painel-segredo = N8N_WEBHOOK_SEGREDO):
+// Pedido ao agente (POST, cabeçalho x-painel-segredo = segredo do n8n da empresa, lib/integracoes.ts):
 //   { empresa, usuario: { id, nome }, pode_ver_valores, pergunta, historico: [{ pergunta, resposta }] (até 10), id_pergunta }
 // Resposta esperada: { resposta: "texto", erro: null | "indisponivel" | "sem_permissao" }. Com erro, a tela mostra a
 // resposta assim mesmo (o agente manda uma frase pronta). Sem resposta em 60 s, a tela mostra que não respondeu.
@@ -50,8 +51,8 @@ export async function perguntar(u: Usuario, texto: unknown): Promise<Duvida> {
   const cfg = await banco.query(`select valor from crm_config where chave = 'duvidas'`).catch(() => ({ rows: [] as { valor?: unknown }[] }));
   const url = (cfg.rows[0]?.valor as { url?: unknown } | undefined)?.url;
   if (typeof url !== 'string' || !URL_OK.test(url)) throw new ErroApi(503, 'O agente das Dúvidas ainda não foi ligado nesta empresa. Avise a Planee.');
-  const segredo = process.env.N8N_WEBHOOK_SEGREDO;
-  if (!segredo) throw new ErroApi(503, 'As Dúvidas ainda não foram configuradas (falta N8N_WEBHOOK_SEGREDO na stack do painel).');
+  const segredo = await segredoN8n(u.empresa!.id);
+  if (!segredo) throw new ErroApi(503, 'As Dúvidas ainda não foram configuradas: falta o segredo do n8n da empresa (tela Empresas).');
 
   const anteriores = await banco.query(
     `select pergunta, resposta from mod_duvidas

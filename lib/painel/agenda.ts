@@ -3,7 +3,7 @@ import { sqlPelaIa } from '@/lib/agenda-ia';
 import { bancoDaEmpresa, ErroApi } from '@/lib/db';
 import { pode, type Usuario } from '@/lib/sessao';
 import { fuso } from './crm';
-import { tokenFeegow } from '@/lib/agenda/feegow';
+import { tokenFeegow } from '@/lib/integracoes';
 
 // Tela Agenda (09/10): os agendamentos de um dia, de todos os profissionais, lidos de "servicos" no banco da empresa
 // (o espelho da Feegow e os que a Sara registra). Mostra também como está o espelho (última leitura, carga do
@@ -46,7 +46,7 @@ export async function lerAgenda(u: Usuario, diaPedido?: string | null): Promise<
     const r = await db.query(`select * from agenda_espelho where sistema = 'feegow'`);
     const x = r.rows[0];
     espelho = {
-      configurado: Boolean(tokenFeegow(u.empresa.id)), ultima_ok: iso(x?.ultima_ok), ultima_rodada: iso(x?.ultima_rodada),
+      configurado: Boolean(await tokenFeegow(u.empresa.id)), ultima_ok: iso(x?.ultima_ok), ultima_rodada: iso(x?.ultima_rodada),
       carga_ate: x?.carga_ate ? new Date(x.carga_ate).toISOString().slice(0, 10) : null, carga_completa: Boolean(x?.carga_completa),
       ultimo_erro: (x?.ultimo_erro as string) ?? null,
     };

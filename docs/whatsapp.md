@@ -279,6 +279,16 @@ O receptor e o painel precisam da **mesma central**: no stack do receptor, `CENT
 
 **Etiqueta da linha:** empresa com mais de um número mostra, em cada conversa, o nome do número que recebeu.
 
+## 12b. Conectar WhatsApp com um clique (06/11, decisão 47)
+
+Na tela Empresas → cartão → **Números de WhatsApp** → **Conectar WhatsApp**: abre o cadastro incorporado da Meta (coexistência). O cliente escolhe o WhatsApp Business e escaneia o QR no celular. A Meta devolve ao navegador a conta (WABA), o número e um código de uso único.
+
+1. O painel cadastra o número na empresa, com o webhook da IA (se preenchido) como repasse, guarda o código **cifrado** (`whatsapp_numeros.cadastro_codigo_cifrado`, migração 033) e pede a conexão.
+2. Em até 10 s o receptor troca o código pelo token do número (`oauth/access_token`, com a chave secreta do app em `META_APP_SECRET`), guarda o token cifrado, apaga o código e faz a conexão do item 12 (inscreve o app, aponta o número, lê o nome, pede o histórico).
+3. Código vencido ou recusado: a tela mostra o erro, o código é apagado e é só clicar de novo.
+
+Uma vez para a plataforma: no app da Planee na Meta, o cadastro incorporado com coexistência ligado; `META_APP_ID` e `META_CADASTRO_CONFIG_ID` na stack do painel. Sem eles, o botão avisa o que falta e o cadastro à mão (item 12) continua igual.
+
 ## 13. Carga do histórico guardado pela empresa (27/10)
 
 Para a Inbox não começar vazia quando o histórico da Meta (item 12, só nas 24 h da coexistência) não está mais disponível: a empresa manda as conversas que já tem guardadas (ex.: o histórico da IA no n8n).

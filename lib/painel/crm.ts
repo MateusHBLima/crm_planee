@@ -1,4 +1,5 @@
 import 'server-only';
+import { segredoN8n } from '@/lib/integracoes';
 import type { Etiqueta } from '@/lib/etiquetas';
 import { bancoDaEmpresa, central, ErroApi } from '@/lib/db';
 import { limparCor, type Cor } from '@/lib/cores';
@@ -816,7 +817,7 @@ export async function avisarFinalizado(u: Usuario, atendimentoId: string, telefo
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
     await fetch(url, {
       method: 'POST', signal: ctrl.signal,
-      headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
+      headers: { 'content-type': 'application/json', 'x-painel-segredo': await segredoN8n(u.empresa?.id) },
       body: JSON.stringify({ evento: 'atendimento_finalizado', atendimento_id: atendimentoId, telefone, empresa: u.empresa?.id ?? null, por: u.nome }),
     }).catch(() => undefined).finally(() => clearTimeout(t));
   } catch { /* o aviso é extra: falha aqui não muda nada na tela */ }

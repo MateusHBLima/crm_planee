@@ -21,6 +21,9 @@ services:
       - PAINEL_MFA_MASTER=${PAINEL_MFA_MASTER:-1}
       # Espelho da agenda da Feegow (09/10): "empresa=token", um par por empresa, separados por vírgula.
       - FEEGOW_TOKENS=${FEEGOW_TOKENS:-}
+      # Botão "Conectar WhatsApp" (cadastro incorporado da Meta, coexistência): app da Planee, uma vez para todos os clientes.
+      - META_APP_ID=${META_APP_ID:-}
+      - META_CADASTRO_CONFIG_ID=${META_CADASTRO_CONFIG_ID:-}
       - PAINEL_AGENDA=${PAINEL_AGENDA:-1}
     # DNS fixo (09/10): em 08/10 o DNS recursivo da Hetzner falhou por horas e o serviço deixou de achar o banco
     # (Supabase) e o n8n. Com resolvedores públicos, uma falha da Hetzner não derruba mais o serviço.

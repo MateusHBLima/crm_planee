@@ -31,9 +31,7 @@ Mudança na stack não chega pela imagem: no Portainer, abra cada stack (`painel
 O painel lê a agenda da Feegow (só leitura) e grava os agendamentos no CRM da empresa (decisão 33). Para ligar numa empresa:
 
 1. Banco da empresa: migração `018_agenda_espelho.sql` (na clínica, entre `set role painel_app; set search_path = painel;` e `reset role;`).
-2. Portainer → stack `painel` → variável `FEEGOW_TOKENS` = `neuro-essentia=<token da API da Feegow>` (mais empresas: separar por vírgula). O token não vai para o banco nem para o repositório.
-3. A stack precisa listar `FEEGOW_TOKENS` e `PAINEL_AGENDA` em `environment` (já está em `deploy/stack-painel.yml`; mudança na stack é pelo **Editor** do Portainer, igual ao DNS).
-4. Interno → Integrações da empresa: integração `feegow` **ativa**.
+2. Tela Empresas → cartão da empresa → **Integrações** → cole o token da API da Feegow → "Testar e salvar" (06/11, decisão 47). O painel testa na Feegow, guarda cifrado e liga a integração `feegow`. Sem Portainer. (Reserva antiga: `FEEGOW_TOKENS` na stack, que só vale para quem ainda não colou o token na tela.)
 5. Conferir: tela Agenda → "Ler a agenda agora" (só o master) mostra quantos agendamentos gravou.
 
 Variáveis opcionais: `PAINEL_AGENDA=0` desliga o espelho; `AGENDA_MINUTOS` (padrão 10) é o intervalo; `AGENDA_CHAMADAS` (padrão 80) é o limite de chamadas à Feegow por rodada; `FEEGOW_API_URL` troca o endereço da API (só testes).

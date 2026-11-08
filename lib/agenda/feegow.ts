@@ -1,14 +1,14 @@
 import 'server-only';
 
-// Cliente da API da Feegow (só leitura) para o espelho da agenda. O token NÃO fica no banco: vem da stack do painel,
-// que só o Mateus preenche no Portainer, na variável FEEGOW_TOKENS, um par "empresa=token" por empresa, separados por
-// vírgula (ex.: "neuro-essentia=<token>"). FEEGOW_TOKEN_<EMPRESA> (ex.: FEEGOW_TOKEN_TESTE) também vale, para os
-// testes e para uso local. FEEGOW_API_URL troca o endereço (testes usam uma Feegow falsa).
+// Cliente da API da Feegow (só leitura) para o espelho da agenda. O token de cada empresa é colado na tela Empresas
+// e fica cifrado no banco central (migração 033, lib/integracoes.ts). Reserva, para quem ainda não migrou: a stack do
+// painel, FEEGOW_TOKENS com pares "empresa=token" (ex.: "neuro-essentia=<token>") ou FEEGOW_TOKEN_<EMPRESA> (testes e
+// uso local). FEEGOW_API_URL troca o endereço (testes usam uma Feegow falsa).
 // Documentação: docs.feegow.com (cópia no projeto). Datas da API: DD-MM-YYYY.
 
 export const baseFeegow = () => (process.env.FEEGOW_API_URL || 'https://api.feegow.com/v1/api').replace(/\/+$/, '');
 export const nomeVariavelToken = (empresaId: string) => `FEEGOW_TOKEN_${empresaId.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
-export function tokenFeegow(empresaId: string): string | null {
+export function tokenFeegowDaStack(empresaId: string): string | null {
   const proprio = process.env[nomeVariavelToken(empresaId)]?.trim();
   if (proprio) return proprio;
   for (const par of (process.env.FEEGOW_TOKENS ?? '').split(/[,;\n]+/)) {

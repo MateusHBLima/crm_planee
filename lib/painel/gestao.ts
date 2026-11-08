@@ -1,4 +1,5 @@
 import 'server-only';
+import { situacaoIntegracoes, type SituacaoIntegracoes } from '@/lib/integracoes';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { central, ErroApi, transacao } from '@/lib/db';
@@ -69,6 +70,7 @@ export type LinhaEmpresa = {
   // Módulos (docs/modulos.md): situação de cada módulo do código nesta empresa e, se houver, o problema do banco
   // (sem_027, banco_de_outra_empresa, banco_indisponivel).
   modulos_estado: Record<string, EstadoModulo>; modulos_erro: string | null;
+  integracoes: SituacaoIntegracoes;
 };
 
 export async function listarEmpresas(u: Usuario): Promise<LinhaEmpresa[]> {
@@ -81,16 +83,23 @@ export async function listarEmpresas(u: Usuario): Promise<LinhaEmpresa[]> {
            coalesce((select array_agg(p.email order by p.email) from painel_vinculos v join painel_usuarios p on p.id = v.usuario_id
              where v.empresa_id = e.id and v.ativo and p.ativo and v.nivel = 'admin'), '{}') as admins
       from empresas e order by e.ativo desc, e.nome`);
-  const [numeros, estados] = await Promise.all([
+  const [numeros, estados, integracoes] = await Promise.all([
     listarNumeros(u),
     // Só lê o banco de quem tem módulo marcado; banco que não abre fica como "sem migração", com o motivo.
     Promise.all(r.rows.map((x) => estadosDosModulos({ id: x.id, banco_url_cifrado: x.banco_url_cifrado, modulos: x.modulos })
       .catch(() => Object.assign(new Map<string, EstadoModulo>(), { erro: 'banco_indisponivel' })))),
+    Promise.all(r.rows.map((x) => situacaoIntegracoes(x.id))),
   ]);
   return r.rows.map(({ banco_url_cifrado: _url, ...x }, i) => ({
     ...x, modulos: limparPermissoes(x.modulos), numeros: numeros.filter((n) => n.empresa_id === x.id),
-    modulos_estado: Object.fromEntries(estados[i]), modulos_erro: estados[i].erro ?? null,
+    modulos_estado: Object.fromEntries(estados[i]), modulos_erro: estados[i].erro ?? null, integracoes: integracoes[i],
   }));
+}
+
+// Registro (Planee) das integrações coladas na tela: só o que mudou, nunca o token nem o segredo.
+export async function registrarIntegracao(u: Usuario, empresa: string, acao: string, detalhe: unknown) {
+  exigirMaster(u);
+  await auditar(central(), u, empresa, acao, null, detalhe).catch(() => undefined);
 }
 
 export async function criarEmpresa(u: Usuario, dados: { id: unknown; nome: unknown; modulos: unknown }) {

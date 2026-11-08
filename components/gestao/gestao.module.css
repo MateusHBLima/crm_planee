@@ -81,3 +81,4 @@
 .modulosExtras { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .modulo { display: flex; flex-direction: column; gap: 6px; }
 .modulo > strong { font-size: 13px; color: var(--ink); }
+.conectarWhats { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 10px; }

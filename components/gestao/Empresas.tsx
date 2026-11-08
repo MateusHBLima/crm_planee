@@ -12,6 +12,7 @@ import type { NumeroWhats } from '@/lib/painel/numeros';
 import type { Resposta } from '@/lib/painel/acoes';
 import { Icone } from '@/components/Icone';
 import { NovaEmpresa } from './NovaEmpresa';
+import { ConectarWhatsApp, Integracoes, type AppMeta } from './Integracoes';
 import g from './gestao.module.css';
 
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -117,12 +118,13 @@ function FormNumero({ empresa, inicial, editando, ocupado, rodar, fechar }: {
   );
 }
 
-function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rodar: Rodar }) {
+function Numeros({ e, ocupado, rodar, meta }: { e: LinhaEmpresa; ocupado: boolean; rodar: Rodar; meta: AppMeta }) {
   const [editar, setEditar] = useState<string | null>(null); // phone_number_id, '' = novo
   return (
     <div className={g.bloco}>
       <h3 className={g.blocoTitulo}>Números de WhatsApp</h3>
-      {e.numeros.length === 0 && <p className={g.dica}>Nenhum número. Cadastre e clique em Conectar: o receptor aponta o número para o painel, continua entregando à IA da empresa e já pede o histórico.</p>}
+      <ConectarWhatsApp empresa={e.id} meta={meta} ocupado={ocupado} rodar={rodar} />
+      {e.numeros.length === 0 && <p className={g.dica}>Nenhum número ainda.</p>}
       {e.numeros.map((n) => (
         <div key={n.phone_number_id} className={`${g.numero} ${n.ativo ? '' : g.inativa}`} data-numero={n.phone_number_id}>
           <div className={g.linha}>
@@ -169,13 +171,13 @@ function Numeros({ e, ocupado, rodar }: { e: LinhaEmpresa; ocupado: boolean; rod
       ))}
       {editar === ''
         ? <FormNumero empresa={e.id} inicial={vazia} editando={false} ocupado={ocupado} rodar={rodar} fechar={() => setEditar(null)} />
-        : <div className={g.linha}><button type="button" className={g.botaoSec} disabled={ocupado} onClick={() => setEditar('')}>Adicionar número</button></div>}
+        : <div className={g.linha}><button type="button" className={g.botaoSec} disabled={ocupado} onClick={() => setEditar('')}>Adicionar número à mão (IDs e token)</button></div>}
     </div>
   );
 }
 
-function CartaoEmpresa({ e, ocupado, rodar }: {
-  e: LinhaEmpresa; ocupado: boolean; rodar: (fn: () => Promise<Resposta<LinhaEmpresa[]>>, ok: string, depois?: () => void) => void;
+function CartaoEmpresa({ e, ocupado, rodar, meta }: {
+  e: LinhaEmpresa; ocupado: boolean; rodar: (fn: () => Promise<Resposta<LinhaEmpresa[]>>, ok: string, depois?: () => void) => void; meta: AppMeta;
 }) {
   const [modulos, setModulos] = useState<string[]>(e.modulos);
   const [dominio, setDominio] = useState('');
@@ -267,7 +269,9 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
         )}
       </div>
 
-      <Numeros e={e} ocupado={ocupado} rodar={rodar} />
+      <Numeros e={e} ocupado={ocupado} rodar={rodar} meta={meta} />
+
+      <Integracoes e={e} ocupado={ocupado} rodar={rodar} />
 
       <div className={g.bloco}>
         <h3 className={g.blocoTitulo}>Banco de dados</h3>
@@ -285,7 +289,7 @@ function CartaoEmpresa({ e, ocupado, rodar }: {
   );
 }
 
-export function Empresas({ inicial, sufixo = 'planeelabia.com' }: { inicial: LinhaEmpresa[]; sufixo?: string }) {
+export function Empresas({ inicial, sufixo = 'planeelabia.com', meta = null }: { inicial: LinhaEmpresa[]; sufixo?: string; meta?: AppMeta }) {
   const [empresas, setEmpresas] = useState(inicial);
   const [aviso, setAviso] = useState<{ tipo: 'erro' | 'ok'; texto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
@@ -346,7 +350,7 @@ export function Empresas({ inicial, sufixo = 'planeelabia.com' }: { inicial: Lin
         </form>
       </details>
 
-      {empresas.map((e) => <CartaoEmpresa key={`${e.id}-${e.modulos.join()}`} e={e} ocupado={ocupado} rodar={rodar} />)}
+      {empresas.map((e) => <CartaoEmpresa key={`${e.id}-${e.modulos.join()}`} e={e} ocupado={ocupado} rodar={rodar} meta={meta} />)}
     </div>
   );
 }
