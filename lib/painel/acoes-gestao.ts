@@ -8,6 +8,7 @@ import { esquecerMigracoes } from '@/lib/modulos-servidor';
 import * as g from './gestao';
 import * as n from './numeros';
 import * as ne from './nova-empresa';
+import * as integ from '@/lib/integracoes';
 import type { Resposta } from './acoes';
 
 // Ações das telas Empresas e Equipe. Cada uma confere a sessão e o nível de novo no servidor.
@@ -75,6 +76,27 @@ export async function adicionarAdmin(empresa: string, nome: string, email: strin
 // Números de WhatsApp da empresa (master). Conectar e puxar o histórico só marcam o pedido: o receptor executa.
 export async function salvarNumero(empresa: string, dados: { phone_number_id: string; waba_id?: string; nome?: string; encaminhar_url?: string; eco_url?: string; token?: string; app_secret?: string }) {
   return comUsuario(async (u) => { await n.salvarNumero(u, empresa, dados); return g.listarEmpresas(u); });
+}
+// Botão "Conectar WhatsApp" (cadastro incorporado da Meta, 06/11): o receptor troca o código pelo token e conecta.
+export async function conectarPeloBotao(empresa: string, dados: { code: string; waba_id: string; phone_number_id: string; webhook_ia?: string; nome?: string }) {
+  return comUsuario(async (u) => { await n.cadastrarPeloBotao(u, empresa, dados); return g.listarEmpresas(u); });
+}
+// Integrações da empresa na tela (06/11): token da Feegow (testado antes de guardar) e segredo do n8n.
+export async function salvarTokenFeegow(empresa: string, token: string) {
+  return comUsuario(async (u) => {
+    if (u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee (master) faz isso.');
+    const r = await integ.salvarTokenFeegow(empresa, token, u.nome);
+    await g.registrarIntegracao(u, empresa, 'feegow_token', { profissionais: r.profissionais });
+    return { ...r, empresas: await g.listarEmpresas(u) };
+  });
+}
+export async function gerarSegredoN8n(empresa: string) {
+  return comUsuario(async (u) => {
+    if (u.nivel !== 'master') throw new ErroApi(403, 'Só a Planee (master) faz isso.');
+    const segredo = await integ.gerarSegredoN8n(empresa);
+    await g.registrarIntegracao(u, empresa, 'n8n_segredo', null);
+    return { segredo, empresas: await g.listarEmpresas(u) };
+  });
 }
 export async function pedirNoNumero(phoneNumberId: string, pedido: 'conectar' | 'historico' | 'ativar' | 'desativar') {
   return comUsuario(async (u) => { await n.pedirNoNumero(u, phoneNumberId, pedido); return g.listarEmpresas(u); });

@@ -119,7 +119,7 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 33. **Espelho da agenda da Feegow (09/10).**
     - **Só leitura, pela API da Feegow.** O painel não marca nem desmarca nada na Feegow.
     - **Os agendamentos vão para `servicos`**, o mesmo lugar dos que a Sara registra, com `sistema = 'feegow'` e o id do agendamento. Sara e espelho caem no mesmo registro; quem registrou primeiro pela Sara continua dela, e se o espelho gravou antes a Sara assume quando registrar.
-    - **Token só na stack** (`FEEGOW_TOKENS`, "empresa=token"), nunca no banco nem no repositório.
+    - ~~**Token só na stack** (`FEEGOW_TOKENS`, "empresa=token"), nunca no banco nem no repositório.~~ Substituída pela 47 (06/11): o token é colado na tela Empresas e fica cifrado no banco central; a stack vale só de reserva.
     - **A cada 10 minutos** relê de 3 dias atrás a 60 dias à frente. O histórico entra aos poucos (até 80 chamadas por rodada), do mais novo ao mais antigo, até um ano inteiro vazio.
     - **Paciente vira contato pelo telefone.** Sem telefone, vira contato só com o nome. Sem CPF.
     - **Status da clínica** (ids acima de 100) vai pelo nome que a clínica deu; os padrão da Feegow, pelo id.
@@ -179,6 +179,13 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
 45. **Quem leu a conversa (16/10, pedido do Mateus).** Quando alguém da equipe abre uma conversa com algo novo, o painel grava o nome em `wa_conversas.lida_por` (migração 026) e o cabeçalho mostra "Lida por <nome> · hh:mm". Na tela Registro entram "Abriu a conversa" (`ler_conversa`, uma linha por pessoa e conversa a cada 30 min) e "Marcou a conversa como não lida" (`marcar_nao_lida`), da equipe e do master. O master continua sem marcar como lida. Sem a 026 o painel funciona igual, só sem o nome.
 
 46. **Módulos por empresa (16/10, pedido do Mateus).** Cada cliente tem servidor, n8n e banco próprios, e nada de um cliente vai para o banco de outro (a área de legados da SSA nunca entra no banco da clínica). O que só alguns clientes usam vira **módulo**: marcado na tela Empresas (`empresas.modulos`, permissões `m.<módulo>.*`) **e** com o SQL dele rodado no banco daquela empresa (`supabase/modulos/<módulo>/`, registrado em `painel_migracoes`, migração 027). O SQL de módulo começa por `painel_exigir_empresa('<id>')` e aborta sem gravar nada em banco de outra empresa. Desligado: a API responde 404, o catálogo e a ficha não mostram; marcado sem o SQL: 409. O master passa a ter só os módulos que a empresa tem. As tabelas `painel_empresa` e `painel_migracoes` vão para todos os bancos de empresa (clínica e teste incluídos). Como funciona: `docs/modulos.md`.
+
+47. **Cliente novo sem Portainer (06/11, pedido do Mateus).** Tudo o que é de um cliente entra pela tela Empresas; a stack só tem o que é da plataforma inteira (uma vez para todos).
+    - **Token da Feegow na tela** (bloco Integrações): testado na Feegow antes de guardar, cifrado no banco central (`empresa_integracoes.token_cifrado`, migração 033), liga a integração `feegow` e o espelho da agenda sozinho. Token recusado não é guardado. `FEEGOW_TOKENS` fica de reserva até cada empresa migrar.
+    - **Segredo do n8n por empresa**: gerado na tela, mostrado uma vez, cifrado (`empresas.n8n_segredo_cifrado`). É o `x-painel-segredo` dos avisos e da aba Dúvidas daquela empresa. Sem ele, vale `N8N_WEBHOOK_SEGREDO` (as empresas antigas continuam funcionando).
+    - **"Conectar WhatsApp" com um clique** (cadastro incorporado da Meta, coexistência): o cliente escaneia o QR no WhatsApp Business; o painel recebe a conta (WABA), o número e um código de uso único, guarda o código cifrado e pede a conexão. O receptor troca o código pelo token (com a chave secreta do app, que só ele tem), guarda o token cifrado e segue a conexão de sempre (inscreve o app, aponta o número, puxa o histórico). O painel continua sem falar com a Meta (regra 7).
+    - **Da plataforma, uma vez:** `META_APP_ID` e `META_CADASTRO_CONFIG_ID` na stack do painel; a chave secreta do app da Planee já está em `META_APP_SECRET` do receptor.
+    - **Regra de entrega:** nada é "pronto" se a próxima empresa precisar de um passo fora da tela.
 
 ## Em aberto
 

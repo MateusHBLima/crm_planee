@@ -1,4 +1,5 @@
 import 'server-only';
+import { segredoN8n } from '@/lib/integracoes';
 import { baseReceptor, criarLinkMidia } from '@/lib/midia-link';
 import { bancoDaEmpresa, central, ErroApi, registrarErro, transacao } from '@/lib/db';
 import { atorDe, pode, type Usuario } from '@/lib/sessao';
@@ -597,7 +598,7 @@ async function avisarDevolvida(u: Usuario, numeroId: string, waId: string, url: 
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 3000);
   await fetch(url, {
     method: 'POST', signal: ctrl.signal,
-    headers: { 'content-type': 'application/json', 'x-painel-segredo': process.env.N8N_WEBHOOK_SEGREDO || '' },
+    headers: { 'content-type': 'application/json', 'x-painel-segredo': await segredoN8n(u.empresa?.id) },
     body: JSON.stringify({ evento: 'conversa_devolvida', empresa: u.empresa!.id, numero_id: numeroId, wa_id: waId, por: u.nome }),
   }).catch(() => undefined).finally(() => clearTimeout(t));
 }

@@ -1,5 +1,5 @@
 // Conexões: o banco central (fila de eventos e números) e o banco de dados de cada empresa (espelho).
-import { createDecipheriv, createHash } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { config } from './config.js';
 import { erroCurto, log } from './log.js';
@@ -37,6 +37,16 @@ export function decifrar(cifrado) {
   const d = createDecipheriv('aes-256-gcm', chave, Buffer.from(iv, 'base64'));
   d.setAuthTag(Buffer.from(tag, 'base64'));
   return Buffer.concat([d.update(Buffer.from(dados, 'base64')), d.final()]).toString('utf8');
+}
+
+// Mesmo formato, para guardar o token que o cadastro incorporado da Meta devolve (06/11).
+export function cifrar(texto) {
+  if (!config.chaveCifra || config.chaveCifra.length < 32) throw new Error('Falta PAINEL_CHAVE_CIFRA para guardar o token.');
+  const chave = createHash('sha256').update(config.chaveCifra).digest();
+  const iv = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', chave, iv);
+  const dados = Buffer.concat([c.update(String(texto), 'utf8'), c.final()]);
+  return ['v1', iv.toString('base64'), c.getAuthTag().toString('base64'), dados.toString('base64')].join(':');
 }
 
 // Banco de dados da empresa. Sem banco próprio, só as empresas de EMPRESA_BANCO_PADRAO usam o DATABASE_URL.

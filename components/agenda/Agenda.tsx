@@ -73,7 +73,7 @@ export function Agenda({ empresaId, master }: { empresaId: string; master: boole
     const r = await sincronizarAgendaAgora();
     if (!r.ok) { setAviso({ ok: false, texto: r.erro }); return; }
     const x = r.dados;
-    setAviso({ ok: x.situacao !== 'erro', texto: x.situacao === 'sem_token' ? 'Falta o token da Feegow na stack do painel (FEEGOW_TOKENS).' : x.situacao === 'ocupado' ? 'O espelho já está lendo a agenda agora.'
+    setAviso({ ok: x.situacao !== 'erro', texto: x.situacao === 'sem_token' ? 'Falta o token da Feegow: a Planee cola na tela Empresas.' : x.situacao === 'ocupado' ? 'O espelho já está lendo a agenda agora.'
       : `${x.gravados} agendamentos gravados, ${x.novos_contatos} contatos novos, ${x.chamadas} chamadas à Feegow${x.situacao === 'parcial' ? ' (continua na próxima rodada)' : ''}${x.erro ? ` · ${x.erro}` : ''}.` });
     await ler(dia);
   });

@@ -18,7 +18,7 @@ for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_fic
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
          supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/010_whatsapp_nome.sql supabase/migrations/011_whatsapp_cadastro.sql supabase/migrations/012_whatsapp_dono_prazo.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
          supabase/migrations/015_avisos_central.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql supabase/migrations/018_agenda_espelho.sql supabase/migrations/019_convite_link.sql supabase/migrations/020_midia_links_empresa.sql \
-         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql supabase/migrations/030_whatsapp_eco_url.sql supabase/migrations/032_etiquetas.sql; do
+         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql supabase/migrations/030_whatsapp_eco_url.sql supabase/migrations/032_etiquetas.sql supabase/migrations/033_integracoes_na_tela.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
@@ -64,6 +64,8 @@ export NEXT_PUBLIC_PAINEL_MODULO_TESTE=1 PAINEL_MODULOS_CACHE_MS=0
 # Aba Dúvidas (03/11): o agente falso do duvidas.js demora 6 s no caso da demora; aqui o limite é 3 s (produção: 60 s).
 # PWA: sem memória do crm_config "app", para o teste trocar e conferir na hora.
 export PAINEL_DUVIDAS_LIMITE_MS=3000 PAINEL_APP_CACHE_MS=0
+# Botão "Conectar WhatsApp" (06/11): IDs fictícios do app da Meta; o integracoes.js troca o SDK por um falso.
+export META_APP_ID=777000777 META_CADASTRO_CONFIG_ID=555000555 PAINEL_INTEGRACOES_CACHE_MS=0
 # Nova empresa (28/10): o endereço vira <apelido>.localhost, que o Chromium resolve sem DNS.
 export PAINEL_DOMINIO_EMPRESAS=localhost
 if curl -s -o /dev/null "$BASE_URL"; then echo "Porta $PORTA_APP ocupada: pare o app que está nela."; exit 1; fi
@@ -133,6 +135,9 @@ node "$T/empresa-api.js"
 
 echo "22/24 Nova empresa em um formulário só: banco do cliente (painel_app e schema painel), CRM, agente, chave, domínio, admin, número"
 node "$T/nova-empresa.js"
+
+echo "22b/24 Cliente novo sem Portainer: token da Feegow e segredo do n8n na tela, botão Conectar WhatsApp (cadastro incorporado)"
+node "$T/integracoes.js"
 
 echo "23/24 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
 node "$T/seguranca.js"

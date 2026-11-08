@@ -3,10 +3,11 @@ import type { Pool } from 'pg';
 import { bancoDaEmpresa, central, registrarErro, type RefEmpresa } from '@/lib/db';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
 import { randomUUID } from 'node:crypto';
-import { clienteFeegow, ErroFeegow, feegowDeIso, isoDeFeegow, marcadoEm, situacaoDoStatus, tokenFeegow, valorReais, type AgendamentoFeegow } from './feegow';
+import { clienteFeegow, ErroFeegow, feegowDeIso, isoDeFeegow, marcadoEm, situacaoDoStatus, valorReais, type AgendamentoFeegow } from './feegow';
+import { tokenFeegow } from '@/lib/integracoes';
 
 // Espelho da agenda da Feegow (09/10). Robô só de leitura: a cada rodada, para cada empresa com a integração
-// "feegow" ativa (Interno → Integrações) e o token na stack (FEEGOW_TOKENS), ele
+// "feegow" ativa e o token colado na tela Empresas (ou, de reserva, FEEGOW_TOKENS na stack), ele
 //   1. relê os próximos dias (3 dias atrás até 60 dias à frente) de cada profissional ativo;
 //   2. continua a carga do histórico, uma janela de 30 dias por vez, do mais novo para o mais antigo, até achar
 //      um ano inteiro vazio (ou 2015);
@@ -41,7 +42,7 @@ class SemOrcamento extends Error {}
 
 export async function sincronizarEmpresa(e: RefEmpresa, opcoes: { orcamento?: number } = {}): Promise<ResumoEspelho> {
   const resumo: ResumoEspelho = { empresa: e.id, situacao: 'ok', chamadas: 0, lidos: 0, gravados: 0, novos_contatos: 0, carga_ate: null, carga_completa: false };
-  const token = tokenFeegow(e.id);
+  const token = await tokenFeegow(e.id);
   if (!token) return { ...resumo, situacao: 'sem_token' };
   const db = bancoDaEmpresa(e);
   const tem = await db.query(`select to_regclass('agenda_espelho') is not null and to_regclass('servicos') is not null as tem`);

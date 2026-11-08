@@ -87,7 +87,7 @@ before(async () => {
   await admin.query('drop database if exists receptor_teste').catch(() => undefined);
   await admin.query('create database receptor_teste');
   await admin.end();
-  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql', '012_whatsapp_dono_prazo.sql', '030_whatsapp_eco_url.sql']) {
+  for (const f of ['001_crm_api.sql', '003_painel_login.sql', '004_central_empresas.sql', '007_whatsapp_central.sql', '008_whatsapp_dados.sql', '009_whatsapp_dono.sql', '011_whatsapp_cadastro.sql', '012_whatsapp_dono_prazo.sql', '030_whatsapp_eco_url.sql', '033_integracoes_na_tela.sql']) {
     execSync(`psql -q -v ON_ERROR_STOP=1 "${DB}" -f "${path.join(RAIZ, 'supabase/migrations', f)}"`, { stdio: 'pipe' });
   }
   await q(`insert into whatsapp_numeros (phone_number_id, empresa_id, nome, telefone, encaminhar_url) values ($1, 'teste', 'Número de teste', $2, 'http://127.0.0.1:3911/sara')`, [NUM, MEU]);
@@ -101,6 +101,12 @@ before(async () => {
   servidor(3912, (req, res, corpo) => { // Graph API
     graphPedidos.push({ metodo: req.method, url: req.url, auth: req.headers.authorization, corpo: corpo.toString() });
     const json = (st, o) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    // Cadastro incorporado (06/11): troca do código pelo token, sem cabeçalho; só o segredo do app certo (o 2º da lista) serve.
+    if (req.url.includes('/oauth/access_token')) {
+      const p = new URL(req.url, 'http://x').searchParams;
+      if (p.get('client_id') === '777000777' && p.get('client_secret') === SEGREDO_OUTRO_APP && p.get('code') === 'codigo-do-cadastro-ficticio-123') return json(200, { access_token: 'token-do-numero-novo', token_type: 'bearer' });
+      return json(400, { error: { code: 100, message: 'Invalid verification code format.' } });
+    }
     if (!['Bearer token-meta-falso', 'Bearer token-do-numero-novo'].includes(req.headers.authorization)) return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
     if (req.method === 'POST' && req.url.endsWith('/messages')) { // envio pela Inbox do painel
       const c = JSON.parse(corpo.toString() || '{}');
@@ -705,6 +711,29 @@ test('cadastro pelo painel: número novo com token e segredo próprios, conectar
   await q(`update whatsapp_numeros set token_cifrado = $2, conectar_pedido_em = now() where phone_number_id = $1`, [NUM2, cifrar('token-errado')]);
   const [e] = await ate(async () => { const x = await q('select conexao_erro from whatsapp_numeros where phone_number_id = $1 and conexao_erro is not null', [NUM2]); return x.length ? x : null; }, 15000) || [];
   assert.ok(e && e.conexao_erro.includes('190'), e && e.conexao_erro);
+});
+
+test('cadastro incorporado: o código vira token cifrado, o código some e o número conecta com o token novo', async () => {
+  const NUM5 = '100000000000005';
+  await q(`insert into whatsapp_numeros (phone_number_id, waba_id, empresa_id, nome, encaminhar_url, cadastro_codigo_cifrado, conectar_pedido_em)
+           values ($1, 'WABA_FICTICIA_5', 'teste', 'Número pelo botão', 'http://127.0.0.1:3911/ia-botao', $2, now())`,
+    [NUM5, cifrar(JSON.stringify({ code: 'codigo-do-cadastro-ficticio-123', app_id: '777000777' }))]);
+  const [n] = await ate(async () => { const r = await q('select * from whatsapp_numeros where phone_number_id = $1 and conectado_em is not null', [NUM5]); return r.length ? r : null; }, 15000) || [];
+  assert.ok(n, 'não conectou');
+  assert.equal(n.conexao_erro, null);
+  assert.equal(n.cadastro_codigo_cifrado, null, 'o código não foi apagado');
+  assert.ok(n.token_cifrado && !n.token_cifrado.includes('token-do-numero-novo'), 'token não guardado cifrado');
+  const troca = graphPedidos.filter((x) => x.url.includes('/oauth/access_token'));
+  assert.ok(troca.length >= 1 && troca.every((x) => !x.auth), 'a troca do código não aconteceu (ou foi com cabeçalho)');
+  assert.ok(graphPedidos.some((x) => x.auth === 'Bearer token-do-numero-novo' && x.metodo === 'POST' && x.url.includes('WABA_FICTICIA_5/subscribed_apps')), 'não conectou com o token novo');
+  // Código errado: o erro aparece na tela, o código é apagado e nada fica pela metade
+  const NUM6 = '100000000000006';
+  await q(`insert into whatsapp_numeros (phone_number_id, waba_id, empresa_id, nome, cadastro_codigo_cifrado, conectar_pedido_em)
+           values ($1, 'WABA_FICTICIA_6', 'teste', 'Código vencido', $2, now())`,
+    [NUM6, cifrar(JSON.stringify({ code: 'codigo-vencido-xxxxxxxxxxxx', app_id: '777000777' }))]);
+  const [e] = await ate(async () => { const x = await q('select conexao_erro, cadastro_codigo_cifrado, token_cifrado from whatsapp_numeros where phone_number_id = $1 and conexao_erro is not null', [NUM6]); return x.length ? x : null; }, 15000) || [];
+  assert.ok(e && e.conexao_erro.includes('não trocou o código'), e && e.conexao_erro);
+  assert.equal(e.cadastro_codigo_cifrado, null); assert.equal(e.token_cifrado, null);
 });
 
 test('conectar sem repasse cadastrado: quem recebe hoje vira o repasse, antes do override, e o histórico já é pedido', async () => {

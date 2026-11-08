@@ -6,7 +6,7 @@
 //   assumir     true quando a IA consulta o dono da conversa (GET /whatsapp/atendimento): só então a Inbox mostra
 //               "Assumir" (antes disso o botão prometia uma coisa que a IA não fazia).
 //   avisos_url  webhook da IA da empresa que recebe "conversa devolvida" e "atendimento finalizado" (cada empresa o
-//               seu; sem ele, nada é avisado). O segredo continua no N8N_WEBHOOK_SEGREDO da stack.
+//               seu; sem ele, nada é avisado). O segredo é o do n8n da empresa (tela Empresas, lib/integracoes.ts); sem ele, N8N_WEBHOOK_SEGREDO.
 
 export const AGENTE_PADRAO = 'IA';
 

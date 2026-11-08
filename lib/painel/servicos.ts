@@ -8,7 +8,7 @@ import { auditar } from './gestao';
 import { mascararTexto } from './crm';
 import { enviosDe, recusaDe, seloDosContatos, type Recusa, type Selo } from '@/lib/automaticas';
 import { numerosDoContato, pessoasDoNumero } from '@/lib/pessoas';
-import { tokenFeegow } from '@/lib/agenda/feegow';
+import { tokenFeegow } from '@/lib/integracoes';
 
 // Histórico do paciente e serviços/pagamentos para as telas do CRM (migração 013).
 // Ver serviços e comprovantes: pagamentos.ver. Conferir e registrar pagamento: pagamentos.conferir.
@@ -311,7 +311,7 @@ export async function filaComprovantes(u: Usuario, soContar = false): Promise<Fi
   }
   if (soContar) return { itens: [], faltaBaixar: [], total, podeConferir, marca: null, instalado: true, lidoEm };
   const comMarca = await temMarcaBaixa(banco);
-  const marca = comMarca && u.empresa && tokenFeegow(u.empresa.id) ? 'Feegow' : null;
+  const marca = comMarca && u.empresa && (await tokenFeegow(u.empresa.id)) ? 'Feegow' : null;
   const SEL = `select p.*, c.nome as contato_nome, c.telefone as contato_telefone, s.tipo as servico_tipo, s.inicio as servico_inicio, s.profissional as servico_profissional
        from pagamentos p join contatos c on c.id = p.contato_id left join servicos s on s.id = p.servico_id`;
   const [r, b] = await Promise.all([

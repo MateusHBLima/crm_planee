@@ -4,9 +4,12 @@
 //               na conta (WABA), aponta o número para este webhook (override), lê o nome verificado e, na primeira
 //               conexão, já pede o histórico;
 //   histórico → pede à Meta a agenda e as conversas da coexistência (vale nas 24 h depois da conexão no celular).
+// Cadastro incorporado (06/11): quando o número chega pelo botão "Conectar WhatsApp" do painel, vem com o código que a
+// Meta devolveu ao cliente. Antes de conectar, o receptor troca esse código pelo token do número (com a chave secreta
+// do app, que só o receptor tem), guarda o token cifrado e apaga o código. Nada de colar token na tela.
 // O resultado volta para whatsapp_numeros, e a tela do painel mostra. Nada aqui depende de Portainer.
 import { config } from './config.js';
-import { bancoDaEmpresa, central, decifrar } from './banco.js';
+import { bancoDaEmpresa, central, cifrar, decifrar } from './banco.js';
 import { graphApi } from './meta.js';
 import { recarregarRotas, todasAsRotas } from './rotas.js';
 import { erroCurto, log } from './log.js';
@@ -30,8 +33,32 @@ async function enderecoAtual(numero, token) {
   }
 }
 
+// Troca o código do cadastro incorporado pelo token do número. O código vale uma vez e por pouco tempo; com mais de um
+// app cadastrado (META_APP_SECRET com vários segredos), tenta cada segredo até um servir.
+async function tokenDoCadastro(n) {
+  let pedido;
+  try { pedido = JSON.parse(decifrar(n.cadastro_codigo_cifrado)); } catch { throw new Error('Código do cadastro ilegível. Clique em "Conectar WhatsApp" de novo.'); }
+  if (!pedido?.code || !pedido?.app_id) throw new Error('Código do cadastro incompleto. Clique em "Conectar WhatsApp" de novo.');
+  if (!config.appSecrets.length) throw new Error('Receptor sem META_APP_SECRET: não dá para trocar o código pelo token.');
+  let ultimo = 'sem resposta';
+  for (const segredo of config.appSecrets) {
+    const q = new URLSearchParams({ client_id: String(pedido.app_id), client_secret: segredo, code: String(pedido.code) });
+    const r = await fetch(`${config.graphUrl}/${config.graphVersao}/oauth/access_token?${q}`, { signal: AbortSignal.timeout(20000) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.access_token) {
+      await central().query(
+        `update whatsapp_numeros set token_cifrado = $2, cadastro_codigo_cifrado = null, atualizado_em = now() where phone_number_id = $1`,
+        [n.phone_number_id, cifrar(j.access_token)]);
+      return j.access_token;
+    }
+    ultimo = String(j.error?.message || r.status).slice(0, 160);
+  }
+  await central().query(`update whatsapp_numeros set cadastro_codigo_cifrado = null where phone_number_id = $1`, [n.phone_number_id]);
+  throw new Error(`A Meta não trocou o código do cadastro (${ultimo}). Clique em "Conectar WhatsApp" de novo.`);
+}
+
 async function conectar(n) {
-  const token = abrir(n.token_cifrado) || config.metaToken;
+  const token = (n.cadastro_codigo_cifrado ? await tokenDoCadastro(n) : null) || abrir(n.token_cifrado) || config.metaToken;
   if (!token) throw new Error('Número sem token da Meta. Cole o token no painel e peça de novo.');
   if (!config.verifyToken) throw new Error('Receptor sem META_VERIFY_TOKEN.');
   // Conectar nunca corta a IA da empresa: sem repasse cadastrado, quem recebe hoje passa a receber pelo receptor.
@@ -62,7 +89,7 @@ export async function conectarPendentes() {
     `update whatsapp_numeros n set conectar_pedido_em = null
       where n.phone_number_id in (select phone_number_id from whatsapp_numeros
                                    where ativo and conectar_pedido_em is not null limit 5 for update skip locked)
-      returning n.phone_number_id, n.waba_id, n.token_cifrado, n.encaminhar_url`);
+      returning n.phone_number_id, n.waba_id, n.token_cifrado, n.encaminhar_url, to_jsonb(n)->>'cadastro_codigo_cifrado' as cadastro_codigo_cifrado`);
   for (const n of r.rows) {
     try {
       const { telefone, nome, repasse } = await conectar(n);

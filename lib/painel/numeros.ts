@@ -119,3 +119,37 @@ export async function pedirNoNumero(u: Usuario, phoneNumberId: string, pedido: P
     throw e;
   }
 }
+
+// ---- "Conectar WhatsApp" pelo cadastro incorporado da Meta (06/11, coexistência) ----
+// O cliente escaneia o QR no WhatsApp Business do celular; a Meta devolve ao navegador a conta (WABA), o número e um
+// código de uso único. O painel não fala com a Meta (regra 7): guarda o código cifrado junto com o número e pede a
+// conexão. O receptor troca o código pelo token (com a chave secreta do app), guarda o token cifrado, inscreve o app,
+// aponta o número para o webhook e puxa o histórico. A Inbox começa a receber sem ninguém colar nada.
+export const appDaMeta = () => {
+  const appId = (process.env.META_APP_ID || '').trim();
+  const configId = (process.env.META_CADASTRO_CONFIG_ID || '').trim();
+  return /^\d{5,30}$/.test(appId) && /^\d{5,30}$/.test(configId) ? { appId, configId } : null;
+};
+
+export async function cadastrarPeloBotao(u: Usuario, empresa: string, d: { code: unknown; waba_id: unknown; phone_number_id: unknown; webhook_ia?: unknown; nome?: unknown }) {
+  exigirMaster(u);
+  const app = appDaMeta();
+  if (!app) throw new ErroApi(503, 'O botão ainda não foi configurado: faltam META_APP_ID e META_CADASTRO_CONFIG_ID na stack do painel.');
+  const code = String(d.code ?? '').trim();
+  if (!/^[A-Za-z0-9_\-.#]{20,2000}$/.test(code)) throw new ErroApi(400, 'A Meta não devolveu o código do cadastro. Tente de novo e conclua todas as telas.');
+  if (!ID_META.test(String(d.phone_number_id ?? '')) || !ID_META.test(String(d.waba_id ?? ''))) {
+    throw new ErroApi(400, 'A Meta não devolveu a conta e o número. Tente de novo e conclua todas as telas.');
+  }
+  if (!cifraConfigurada()) throw new ErroApi(503, 'Falta PAINEL_CHAVE_CIFRA no servidor para guardar o código.');
+  const id = String(d.phone_number_id);
+  await salvarNumero(u, empresa, { phone_number_id: id, waba_id: d.waba_id, nome: d.nome, encaminhar_url: d.webhook_ia });
+  try {
+    await central().query(`update whatsapp_numeros set cadastro_codigo_cifrado = $2, ativo = true where phone_number_id = $1`,
+      [id, cifrar(JSON.stringify({ code, app_id: app.appId }))]);
+  } catch (e) {
+    if (semTabela(e)) throw new ErroApi(503, 'O banco central ainda não tem a migração 033 (Conectar WhatsApp pelo botão).');
+    throw e;
+  }
+  await pedirNoNumero(u, id, 'conectar');
+  return { phone_number_id: id };
+}

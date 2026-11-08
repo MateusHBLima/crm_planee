@@ -22,6 +22,7 @@ import { PlaneeEmpresa } from '@/components/planee/PlaneeEmpresa';
 import { lerAgente } from '@/lib/painel/inbox';
 import { listarEmpresas, listarEquipe, listarLinksConvite } from '@/lib/painel/gestao';
 import { sufixoDominio } from '@/lib/painel/nova-empresa';
+import { appDaMeta } from '@/lib/painel/numeros';
 import { IDS_TELAS, telasDe } from '@/lib/telas';
 import { ErroApi } from '@/lib/db';
 import p from '../pagina.module.css';
@@ -171,7 +172,7 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'empresas') {
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <Empresas inicial={await listarEmpresas(usuario)} sufixo={sufixoDominio()} />
+        <Empresas inicial={await listarEmpresas(usuario)} sufixo={sufixoDominio()} meta={appDaMeta()} />
       </Shell>
     );
   }
