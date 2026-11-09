@@ -167,11 +167,14 @@ const RITA = '00000000-0000-4000-8000-000000000011';
   await g.p.click('#periodo-crm'); await g.p.click('[data-modo="mes"]'); await g.p.click(`[data-mes="${hoje.slice(0, 7)}"]`); await g.p.waitForTimeout(1800);
   ok('mês inteiro no calendário, em português', ((await g.p.textContent('#periodo-crm')) || '').includes(`${MESES[mes - 1]} de ${ano}`), await g.p.textContent('#periodo-crm'));
   ok('mês inteiro traz os cartões de hoje', (await g.p.locator('article', { hasText: 'Teste aviso do assunto dela' }).count()) === 1);
-  // Do dia 2 até hoje (do dia 1 seria o atalho "Este mês", que aparece com esse nome).
-  if (hoje.slice(8) > '02') {
+  // Do dia 2 até hoje (do dia 1 seria o atalho "Este mês", que aparece com esse nome). Se do dia 2 até hoje der
+  // exatamente 7 ou 30 dias (dia 8 ou 31), a tela mostra o atalho "Últimos 7/30 dias": aí começa no dia 3.
+  const diaHoje = Number(hoje.slice(8));
+  const ini = [7, 30].includes(diaHoje - 1) ? '03' : '02';
+  if (diaHoje > Number(ini)) {
     await g.p.click('#periodo-crm'); await g.p.click('[data-modo="intervalo"]');
-    await g.p.click(`[data-dia="${hoje.slice(0, 8)}02"]`); await g.p.click(`[data-dia="${hoje}"]`); await g.p.waitForTimeout(1800);
-    ok('intervalo "de… até…" em data brasileira', ((await g.p.textContent('#periodo-crm')) || '').includes(`02/${hoje.slice(5, 7)}/${ano} a ${hoje.slice(8)}/${hoje.slice(5, 7)}/${ano}`), await g.p.textContent('#periodo-crm'));
+    await g.p.click(`[data-dia="${hoje.slice(0, 8)}${ini}"]`); await g.p.click(`[data-dia="${hoje}"]`); await g.p.waitForTimeout(1800);
+    ok('intervalo "de… até…" em data brasileira', ((await g.p.textContent('#periodo-crm')) || '').includes(`${ini}/${hoje.slice(5, 7)}/${ano} a ${hoje.slice(8)}/${hoje.slice(5, 7)}/${ano}`), await g.p.textContent('#periodo-crm'));
   }
   await g.p.screenshot({ path: out + '43_filtro_data.png' });
   await g.p.click('#periodo-crm'); await g.p.click('button:has-text("Abertos agora")'); await g.p.waitForTimeout(1800);
