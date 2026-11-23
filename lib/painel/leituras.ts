@@ -4,6 +4,7 @@ import type { Usuario } from '@/lib/sessao';
 import * as crm from './crm';
 import * as sv from './servicos';
 import * as inbox from './inbox';
+import * as redes from './redes';
 import * as av from './avisos';
 import * as pl from './planee';
 import * as rs from './resultados';
@@ -50,6 +51,13 @@ export const LEITURAS: Record<string, (u: Usuario, q: URLSearchParams) => Promis
   conversa: (u, q) => {
     const antes = q.get('antes');
     return inbox.lerConversa(u, exigir(q, 'numero'), exigir(q, 'wa'), antes, { marcar: !antes && q.get('previa') !== '1' });
+  },
+  // Redes sociais na Inbox (034, 23/11): contas do seletor, lista de uma conta e conversa aberta.
+  redes: (u) => redes.contasDaInbox(u),
+  rede_conversas: (u, q) => redes.listarConversasRede(u, exigir(q, 'conta'), q.get('busca')),
+  rede_conversa: (u, q) => {
+    const antes = q.get('antes');
+    return redes.lerConversaRede(u, exigir(q, 'conta'), exigir(q, 'pessoa'), antes, { marcar: !antes });
   },
   // Avisos para a Planee, novidades e saúde (08/10). As da Planee conferem master lá dentro.
   planee_empresa: async (u) => ({ avisos: await av.meusAvisos(u), novidades: await pl.novidadesDaEmpresa(u) }),

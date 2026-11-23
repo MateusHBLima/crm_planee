@@ -3,6 +3,7 @@
 import { comUsuario } from './resposta';
 import * as inbox from './inbox';
 import * as crm from './crm';
+import * as redes from './redes';
 
 // Ações da Inbox. Cada uma confere a sessão, a empresa e a permissão (inbox.ver; para enviar, inbox.responder) no servidor.
 
@@ -62,4 +63,9 @@ export async function marcarNaoLida(numeroId: string, waId: string) {
 // Devolve o que continua em aberto.
 export async function finalizarPelaConversa(waId: string, ids: string[]) {
   return comUsuario((u) => crm.finalizarDoTelefone(u, waId, ids), 'inbox');
+}
+
+// Redes sociais (034, 23/11): resposta no direct pelo painel (permissão redes.responder), via n8n da conta.
+export async function enviarNaRede(contaId: string, pessoaId: string, texto: string) {
+  return comUsuario((u) => redes.enviarNaRede(u, contaId, pessoaId, texto), 'inbox');
 }

@@ -187,6 +187,12 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Da plataforma, uma vez:** `META_APP_ID` e `META_CADASTRO_CONFIG_ID` na stack do painel; a chave secreta do app da Planee já está em `META_APP_SECRET` do receptor.
     - **Regra de entrega:** nada é "pronto" se a próxima empresa precisar de um passo fora da tela.
 
+48. **Redes sociais na Inbox (23/11, pedido do Mateus).** A secretária fica só no WhatsApp. As redes sociais entram por um **seletor de canal** ao lado do título da Inbox (WhatsApp ▾ Instagram · @conta (não lidas)), que só aparece para quem tem `redes.ver` e quando a empresa tem conta conectada. `redes.responder` responde no direct. Quem tem só `redes.ver` abre a Inbox direto na rede.
+    - **Banco de cada empresa (migração 034):** `rs_contas` (conta conectada; `responder_url` = webhook do n8n que envia a resposta), `rs_conversas`, `rs_mensagens` (mesmo `mid` não duplica) e `rs_comentarios` (para a tela Comentários). Está na base de toda empresa (`supabase/base-empresa.txt`).
+    - **Quem grava é o n8n da empresa,** pela API (`/api/v1/redes/contas`, `/mensagens`, `/comentarios`, escopo `crm`). O painel não fala com a Meta, o Google nem o TikTok (regra 7).
+    - **Resposta pelo painel:** vai ao `responder_url` da conta com o `x-painel-segredo` da empresa; o n8n envia e devolve `{mid}`; o painel grava a mensagem na hora (o eco com o mesmo `mid` não duplica). Só dentro da janela de 24 h. Toda tentativa vai para o Registro, sem o texto.
+    - YouTube e TikTok não têm conversa, só comentário: ficam fora do seletor e vão para a tela Comentários (próxima entrega).
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).

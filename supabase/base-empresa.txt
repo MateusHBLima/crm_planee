@@ -24,3 +24,4 @@
 028_pagamento_baixado.sql
 029_api_idempotencia.sql
 032_etiquetas.sql
+034_redes_sociais.sql
