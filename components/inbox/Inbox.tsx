@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { ConversaAberta, Conversa, ListaConversas, Mensagem } from '@/lib/painel/inbox';
 import { abrirMidia, assumirConversa, devolverConversa, enviarMensagem, enviarMidia, finalizarPelaConversa, localizarMensagem, marcarNaoLida, renomearContato } from '@/lib/painel/acoes-inbox';
@@ -104,11 +104,12 @@ function criarDatas(fuso: string) {
 
 // podeFinalizar (crm.editar): botão Finalizar no cabeçalho, para os atendimentos em aberto do número (14/10).
 // podeVerCrm (crm.ver): botão Cartões, que abre na lateral os cartões em aberto do número, cada um levando ao CRM (22/10).
-export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; podeVerCrm?: boolean; podeProtocolo?: boolean; nome: string; empresaId?: string };
+// seletor (23/11): seletor de canal (WhatsApp ▾ Instagram), só para quem vê as redes sociais; fica ao lado do título.
+export type PropsInbox = { inicial: ListaConversas; mascarado: boolean; podeResponder: boolean; podeFinalizar?: boolean; podeVerCrm?: boolean; podeProtocolo?: boolean; nome: string; empresaId?: string; seletor?: ReactNode };
 
 const ETAPA_CARTAO: Record<string, string> = { aguardando: 'Aguardando equipe', em_atendimento: 'Em atendimento', pendente: 'Pendente interno' };
 
-export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, podeProtocolo = false, nome, empresaId = '' }: PropsInbox) {
+export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false, podeVerCrm = podeFinalizar, podeProtocolo = false, nome, empresaId = '', seletor }: PropsInbox) {
   const [lista, setLista] = useState(inicial);
   const agente = lista.agente || 'IA'; // lista guardada antes de 27/10 não traz o nome
   // Assumir só aparece onde a IA da empresa respeita (crm_config "agente".assumir, 27/10). Devolver continua.
@@ -457,7 +458,7 @@ export function Inbox({ inicial, mascarado, podeResponder, podeFinalizar = false
       <section className={c.lista} aria-label="Conversas">
         <div className={c.listaTopo}>
           <div className={c.listaTitulo}>
-            <h1 className={c.titulo}>Inbox</h1>
+            <span className={c.tituloCanal}><h1 className={c.titulo}>Inbox</h1>{seletor}</span>
             <span className={c.contagem}>
               {total === 1 ? '1 conversa' : `${total} conversas`}{naoLidas ? ` · ${naoLidas} ${naoLidas === 1 ? 'não lida' : 'não lidas'}` : ''}
             </span>

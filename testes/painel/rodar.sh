@@ -18,7 +18,7 @@ for f in supabase/migrations/001_crm_api.sql supabase/migrations/002_semente_fic
          supabase/migrations/006_convite_primeiro_acesso.sql supabase/migrations/007_whatsapp_central.sql \
          supabase/migrations/008_whatsapp_dados.sql supabase/migrations/009_whatsapp_dono.sql supabase/migrations/010_whatsapp_nome.sql supabase/migrations/011_whatsapp_cadastro.sql supabase/migrations/012_whatsapp_dono_prazo.sql supabase/migrations/013_servicos_pagamentos.sql supabase/migrations/014_comprovante_campos.sql \
          supabase/migrations/015_avisos_central.sql supabase/migrations/016_avisos_dados.sql supabase/migrations/017_automaticas.sql supabase/migrations/018_agenda_espelho.sql supabase/migrations/019_convite_link.sql supabase/migrations/020_midia_links_empresa.sql \
-         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql supabase/migrations/030_whatsapp_eco_url.sql supabase/migrations/032_etiquetas.sql supabase/migrations/033_integracoes_na_tela.sql; do
+         supabase/migrations/021_assunto_cor.sql supabase/migrations/022_avisos_por_assunto.sql supabase/migrations/023_funil_automatico.sql supabase/migrations/024_contato_telefones.sql supabase/migrations/025_contato_protocolo.sql supabase/migrations/026_conversa_lida_por.sql supabase/migrations/027_painel_empresa.sql supabase/migrations/028_pagamento_baixado.sql supabase/migrations/029_api_idempotencia.sql supabase/migrations/030_whatsapp_eco_url.sql supabase/migrations/032_etiquetas.sql supabase/migrations/033_integracoes_na_tela.sql supabase/migrations/034_redes_sociais.sql; do
   psql -q -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$f" >/dev/null
 done
 # Banco de dados próprio de uma segunda empresa (decisão 26): mesmo modelo, dados diferentes.
@@ -138,6 +138,9 @@ node "$T/nova-empresa.js"
 
 echo "22b/24 Cliente novo sem Portainer: token da Feegow e segredo do n8n na tela, botão Conectar WhatsApp (cadastro incorporado)"
 node "$T/integracoes.js"
+
+echo "22c/24 Redes sociais na Inbox (034): API do n8n, seletor WhatsApp ▾ Instagram, permissões, resposta pelo direct"
+node "$T/redes.js"
 
 echo "23/24 Segurança: cabeçalhos, Traefik, redirecionamento, CPF na API, sombra, conflito, limite de tentativas"
 node "$T/seguranca.js"

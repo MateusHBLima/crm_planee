@@ -156,6 +156,17 @@ Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com
 - **Ficha:** `contatos` traz todas as pessoas do número, com `papel` (o dono sem titular carregado vem como `responsavel`), `dono_do_numero` e `cpf_final`; serviços e pagamentos de todas elas.
 - **No painel:** o histórico do contato (cartão e ficha) mostra "Também neste número" e, para quem não é dono, "Usa o número … como dependente".
 
+## Redes sociais (migração 034, 23/11)
+
+Quem recebe da Meta (e depois do Google e do TikTok) é o n8n da empresa; ele grava aqui. Escopo `crm` para gravar, `leitura` para listar. A conta é criada sozinha na primeira mensagem ou comentário. `rede`: `instagram`, `facebook`, `tiktok` ou `youtube`.
+
+- `GET /api/v1/redes/contas`: contas conectadas (`responder` diz se o envio pelo painel está ligado; o endereço não volta).
+- `POST /api/v1/redes/contas` `{rede, conta_id, usuario?, nome?, responder_url?, ativa?}`: dados da conta. `responder_url` é o webhook do n8n que envia a resposta escrita no painel.
+- `POST /api/v1/redes/mensagens` `{rede, conta_id, pessoa:{id, usuario?, nome?}, mid, direcao, origem, tipo?, texto?, midia_url?, resposta_a?, enviada_em?, por?}`: um direct. `direcao` `entrada` (origem `contato`) ou `saida` (origem `ia`, `painel` ou `app` = equipe pelo app da rede). Mesmo `mid` devolve `repetido: true`. Entrada soma não lida; saída zera.
+- `POST /api/v1/redes/comentarios` `{rede, conta_id, comentario_id, texto?, comentado_em?, post?:{id, url, titulo}, autor?:{id, usuario, nome}, resposta_publica?, respondido_em?, respondido_por?, direct_enviado?, situacao?, erro?}`: um comentário e o que foi feito com ele. Mesmo `comentario_id` atualiza; com `resposta_publica`, a situação vira `respondido`.
+
+**Resposta pelo painel → n8n:** `POST <responder_url>` com o cabeçalho `x-painel-segredo` (segredo do n8n da empresa) e o corpo `{evento: "responder", empresa, rede, conta_id, pessoa_id, texto, id_envio, por}`. O n8n envia pela rede e responde `{mid}` (ou `{erro: "texto curto"}` com status de erro). O painel grava a mensagem com esse `mid`, origem `painel`.
+
 ## Painel → n8n
 
 Quando alguém finaliza um atendimento no painel, o painel avisa a IA da empresa (para ela poder retomar a conversa, tarefa 2.4): `POST` no `avisos_url` da configuração `agente` **da empresa** (27/10; antes era `N8N_WEBHOOK_PAINEL_RETOMAR`, um endereço só para todas as empresas) com cabeçalho `x-painel-segredo: <segredo do n8n da empresa>` (tela Empresas → Integrações; sem ele, `N8N_WEBHOOK_SEGREDO`) e corpo `{"evento":"atendimento_finalizado","atendimento_id","telefone","empresa","por"}`. Sem o endereço, nada é enviado. O aviso nunca atrasa nem derruba a tela. O mesmo endereço recebe `{"evento":"conversa_devolvida","empresa","numero_id","wa_id","por"}` quando alguém devolve uma conversa para a Sara na Inbox e a última mensagem é do contato (`docs/whatsapp.md`, item 11).

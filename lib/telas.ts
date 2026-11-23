@@ -51,7 +51,7 @@ export const ICONES: Record<string, string> = {
 // Equipe é do admin e do master; Configurações, Registro, Empresas e Interno, só do master (13/10: a clínica não vê
 // Configurações nem Registro).
 const TELAS: Tela[] = [
-  { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') },
+  { id: 'inbox', nome: 'Inbox', icone: 'inbox', descricao: 'Espelho do WhatsApp: conversas, lido e não lido, quem está atendendo. Fase 1.1.', exige: (u) => pode(u, 'inbox.ver') || pode(u, 'redes.ver') },
   { id: 'crm', nome: 'CRM', icone: 'crm', descricao: 'Quadro de atendimento por assunto e funil comercial. Fase 1.2.', exige: (u) => pode(u, 'crm.ver') },
   { id: 'protocolos', nome: 'Protocolos', icone: 'protocolo', descricao: 'Acompanhamento de protocolo: quem está em análise, em protocolo, em acompanhamento ou encerrado.', exige: (u) => pode(u, 'protocolos.ver') },
   { id: 'duvidas', nome: 'Dúvidas', icone: 'duvida', descricao: 'Pergunte sobre os sistemas da empresa; quem responde é o agente da empresa.', exige: (u) => pode(u, 'm.duvidas.ver') },

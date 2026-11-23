@@ -10,6 +10,9 @@ export type Nivel = 'master' | 'admin' | 'membro';
 const BASE = [
   { id: 'inbox.ver', nome: 'Ver a inbox', grupo: 'Atendimento' },
   { id: 'inbox.responder', nome: 'Responder pelo painel', grupo: 'Atendimento' },
+  // Redes sociais (23/11): a secretária fica só no WhatsApp; quem cuida das redes ganha estas duas.
+  { id: 'redes.ver', nome: 'Ver as redes sociais na Inbox (Instagram...)', grupo: 'Atendimento' },
+  { id: 'redes.responder', nome: 'Responder nas redes sociais', grupo: 'Atendimento' },
   { id: 'crm.ver', nome: 'Ver o CRM', grupo: 'CRM' },
   { id: 'crm.editar', nome: 'Assumir, mover e anotar atendimentos', grupo: 'CRM' },
   { id: 'crm.arquivar', nome: 'Arquivar atendimentos', grupo: 'CRM' },

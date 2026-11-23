@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { Shell } from '@/components/Shell';
 import { CrmTela } from '@/components/crm/CrmTela';
-import { InboxTela } from '@/components/inbox/InboxTela';
+import { InboxCanais } from '@/components/inbox/InboxCanais';
 import { Resultados } from '@/components/resultados/Resultados';
 import { Agenda } from '@/components/agenda/Agenda';
 import { Comprovantes } from '@/components/comprovantes/Comprovantes';
@@ -58,7 +58,8 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
   if (atual.id === 'inbox' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario} largo>
-        <InboxTela key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} podeVerCrm={pode(usuario, 'crm.ver')} podeProtocolo={pode(usuario, 'protocolos.ver')} nome={usuario.nome} />
+        <InboxCanais key={usuario.empresa.id} empresaId={usuario.empresa.id} mascarado={usuario.master} podeResponder={pode(usuario, 'inbox.responder')} podeFinalizar={pode(usuario, 'crm.editar') && pode(usuario, 'crm.ver')} podeVerCrm={pode(usuario, 'crm.ver')} podeProtocolo={pode(usuario, 'protocolos.ver')} nome={usuario.nome}
+          verWhats={pode(usuario, 'inbox.ver')} verRedes={pode(usuario, 'redes.ver')} podeResponderRedes={pode(usuario, 'redes.responder')} />
       </Shell>
     );
   }
