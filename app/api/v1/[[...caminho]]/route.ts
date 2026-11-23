@@ -7,6 +7,7 @@ import { ligadosDoEndereco } from '@/lib/modulos-servidor';
 import { catalogo } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 import * as auto from '@/lib/api/automaticas';
+import * as redes from '@/lib/api/redes';
 import { carregarPessoas } from '@/lib/api/pessoas';
 
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,13 @@ async function tratar(req: NextRequest, ctx: Ctx) {
     if (rec === 'automaticas' && (id === 'recusa' || id === 'envios')) {
       if (req.method !== 'POST') throw new ErroApi(405, `Use POST /api/v1/automaticas/${id}.`);
       return json(id === 'recusa' ? await auto.recusaAutomaticas(chave, await corpo(req)) : await auto.registrarEnvioAutomatico(chave, await corpo(req)));
+    }
+    // Redes sociais (migração 034): o n8n grava directs, comentários e contas conectadas.
+    if (rec === 'redes' && (id === 'contas' || id === 'mensagens' || id === 'comentarios')) {
+      if (id === 'contas' && req.method === 'GET') return json(await redes.listarContas(chave));
+      if (req.method !== 'POST') throw new ErroApi(405, `Use POST /api/v1/redes/${id}.`);
+      const d = await corpo(req);
+      return json(id === 'contas' ? await redes.salvarConta(chave, d) : id === 'mensagens' ? await redes.gravarMensagem(chave, d) : await redes.gravarComentario(chave, d));
     }
     // Várias pessoas no mesmo número (migração 024): carga do "Quem é quem" da IA, até 500 por chamada.
     if (rec === 'pessoas' && id === 'lote') {
