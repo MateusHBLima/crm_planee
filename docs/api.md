@@ -156,6 +156,22 @@ Mãe e filho no mesmo WhatsApp (decisão 38). O dono do número é o contato com
 - **Ficha:** `contatos` traz todas as pessoas do número, com `papel` (o dono sem titular carregado vem como `responsavel`), `dono_do_numero` e `cpf_final`; serviços e pagamentos de todas elas.
 - **No painel:** o histórico do contato (cartão e ficha) mostra "Também neste número" e, para quem não é dono, "Usa o número … como dependente".
 
+## Agenda própria (migração 035, 23/11)
+
+Para empresas sem sistema de agenda (a clínica do Dr. Amilton continua na Feegow). Só responde onde a agenda está ligada (`agenda.ver` na tela Empresas); senão, 404. Horários no fuso da empresa (`crm_config` `agenda`: `{fuso, antecedencia_min, limite_dias, passo_min}`; padrão São Paulo, 60 min de antecedência, 60 dias à frente, passo = duração do tipo).
+
+**Cadastro** pelos recursos genéricos (escopo `config`): `agenda_profissionais`, `agenda_salas`, `agenda_tipos` (`duracao_min`, `valor`, `modalidade`, `profissionais` = quem atende, vazio = todos), `agenda_grade` (`profissional_id`, `dia_semana` 0 = domingo, `inicio`, `fim` em HH:MM) e `agenda_bloqueios` (`profissional_id` vazio = todos, `inicio`, `fim` ISO).
+
+**Para a IA:**
+- `GET /api/v1/agenda`: profissionais, tipos (com duração e valor) e salas.
+- `GET /api/v1/agenda/horarios?tipo=<id>&profissional=<id opcional>&de=AAAA-MM-DD&ate=AAAA-MM-DD`: horários livres (até 62 dias por pedido), `[{profissional_id, profissional, inicio, fim}]`.
+- `POST /api/v1/agenda/agendamentos` `{tipo, inicio, telefone | contato_id, nome?, profissional?, origem?: "IA", observacao?, chave?}`: marca. Sem `profissional`, escolhe quem está livre. O contato é criado pelo telefone se não existir. Mesma `chave` devolve o que já existe (`repetido: true`). Recusa com 409 e `detalhe.codigo`: `ocupado`, `fora_da_grade` ou `bloqueado`.
+- `GET /api/v1/agenda/agendamentos?de&ate&telefone&contato_id&profissional&status`: lista.
+- `PATCH /api/v1/agenda/agendamentos/{id}` `{inicio?, profissional?, status?, observacao?}`: remarca (confere a vaga) ou muda o status (`agendado`, `confirmado`, `atendido`, `faltou`, `cancelado`).
+- `POST /api/v1/agenda/agendamentos/{id}/cancelar` `{motivo?}`.
+
+Cada agendamento vira também um serviço (`servicos`, `sistema = "agenda"`, `codigo_externo` = id do agendamento): aparece na ficha do contato, na Inbox e nos comprovantes, como os da Feegow.
+
 ## Redes sociais (migração 034, 23/11)
 
 Quem recebe da Meta (e depois do Google e do TikTok) é o n8n da empresa; ele grava aqui. Escopo `crm` para gravar, `leitura` para listar. A conta é criada sozinha na primeira mensagem ou comentário. `rede`: `instagram`, `facebook`, `tiktok` ou `youtube`.

@@ -19,7 +19,8 @@ const CAMPOS_CARTAO = { responsavel: true, vistas: true, documento: true, funil:
 const MANUAL = 'Manual (equipe)';
 
 // Inbox e CRM para todo modelo. Agendamentos e comprovantes de pagamento só na clínica (é onde a IA registra).
-const BASE: Permissao[] = ['inbox.ver', 'inbox.responder', 'crm.ver', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver', 'agente.config'];
+// Inbox, CRM e agenda própria vêm ligados em toda empresa nova (23/11, pedido do Mateus).
+const BASE: Permissao[] = ['inbox.ver', 'inbox.responder', 'crm.ver', 'crm.editar', 'crm.arquivar', 'crm.config', 'resultados.ver', 'agente.config', 'agenda.ver', 'agenda.editar', 'agenda.config'];
 
 export const MODELOS_CRM: Record<IdModelo, ModeloCrm> = {
   clinica: {

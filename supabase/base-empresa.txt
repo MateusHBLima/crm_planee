@@ -25,3 +25,4 @@
 029_api_idempotencia.sql
 032_etiquetas.sql
 034_redes_sociais.sql
+035_agenda_propria.sql

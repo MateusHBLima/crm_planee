@@ -20,6 +20,11 @@ const BASE = [
   { id: 'protocolos.ver', nome: 'Acompanhamento de protocolo', grupo: 'CRM' },
   { id: 'pagamentos.ver', nome: 'Ver agendamentos e comprovantes de pagamento', grupo: 'CRM' },
   { id: 'pagamentos.conferir', nome: 'Conferir comprovantes e registrar pagamentos', grupo: 'CRM' },
+  // Agenda própria (migração 035, 23/11): padrão em toda empresa nova; desligada onde não é usada (SSA, e a clínica,
+  // que fica na Feegow). Ligar = marcar agenda.ver na tela Empresas.
+  { id: 'agenda.ver', nome: 'Ver a agenda própria', grupo: 'Agenda' },
+  { id: 'agenda.editar', nome: 'Marcar, remarcar e cancelar na agenda', grupo: 'Agenda' },
+  { id: 'agenda.config', nome: 'Configurar a agenda (profissionais, tipos, horários)', grupo: 'Agenda' },
   { id: 'resultados.ver', nome: 'Ver resultados', grupo: 'Gestão' },
   { id: 'agente.config', nome: 'Configurar o agente de IA', grupo: 'Gestão' },
 ] as const;
@@ -38,6 +43,9 @@ const DA_BASE: Permissao[] = BASE.map((p) => p.id);
 // clínica). Marcar na tela Empresas.
 export const DA_EMPRESA: Partial<Record<Permissao, Permissao>> = { 'protocolos.ver': 'crm.ver' };
 export const ehDaEmpresa = (p: string) => Object.prototype.hasOwnProperty.call(DA_EMPRESA, p);
+// Ligadas por empresa (23/11): o master também só tem quando a empresa tem (a clínica segue na Feegow e sem redes
+// enquanto não forem marcadas na tela Empresas).
+const SO_COM_A_EMPRESA: readonly string[] = ['agenda.ver', 'agenda.editar', 'agenda.config', 'redes.ver', 'redes.responder'];
 
 // Modelos prontos que o admin aplica com um clique.
 export const MODELOS: Record<'secretaria' | 'gestor', { nome: string; permissoes: Permissao[] }> = {
@@ -62,7 +70,7 @@ export function efetivas(nivel: Nivel, modulosEmpresa: readonly string[], doVinc
   const doModuloLigado = (p: Permissao) => !ehPermissaoDeModulo(p) || ligados.has(moduloDaPermissao(p)?.id ?? '');
   if (nivel === 'master') {
     const temNaEmpresa = new Set(empresa);
-    return TODAS.filter((p) => ((DA_BASE.includes(p) && !ehDaEmpresa(p)) || temNaEmpresa.has(p)) && doModuloLigado(p));
+    return TODAS.filter((p) => ((DA_BASE.includes(p) && !ehDaEmpresa(p) && !SO_COM_A_EMPRESA.includes(p)) || temNaEmpresa.has(p)) && doModuloLigado(p));
   }
   if (nivel === 'admin') return empresa.filter(doModuloLigado);
   const minhas = new Set(doVinculo);

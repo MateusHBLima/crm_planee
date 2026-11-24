@@ -5,6 +5,7 @@ import type * as crm from './crm';
 import type * as sv from './servicos';
 import type * as inbox from './inbox';
 import type * as redes from './redes';
+import type * as ap from './agenda-propria';
 import type * as av from './avisos';
 import type * as pl from './planee';
 import type * as rs from './resultados';
@@ -45,6 +46,7 @@ export const carregarNotasDoContato = (id: string): R<typeof crm.notasDoContato>
 export const carregarHistorico = (id: string): R<typeof sv.historicoContato> => ler('historico', { id });
 export const carregarServico = (id: string): R<typeof sv.detalheServico> => ler('servico', { id });
 export const carregarAbertosDaConversa = (waId: string): R<typeof crm.abertosDoTelefone> => ler('abertos_conversa', { wa: waId });
+export const carregarAgendaPropria = (de: string, ate: string): R<typeof ap.lerAgendaPropria> => ler('agenda_propria', { de, ate });
 export const carregarContasRede = (): R<typeof redes.contasDaInbox> => ler('redes');
 export const carregarConversasRede = (conta: string, busca?: string): R<typeof redes.listarConversasRede> => ler('rede_conversas', { conta, busca });
 export const abrirConversaRede = (conta: string, pessoa: string, antes?: string | null): R<typeof redes.lerConversaRede> => ler('rede_conversa', { conta, pessoa, antes: antes ?? null });

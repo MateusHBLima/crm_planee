@@ -5,6 +5,7 @@ import { CrmTela } from '@/components/crm/CrmTela';
 import { InboxCanais } from '@/components/inbox/InboxCanais';
 import { Resultados } from '@/components/resultados/Resultados';
 import { Agenda } from '@/components/agenda/Agenda';
+import { AgendaPropria } from '@/components/agenda/AgendaPropria';
 import { Comprovantes } from '@/components/comprovantes/Comprovantes';
 import { Empresas } from '@/components/gestao/Empresas';
 import { Equipe } from '@/components/gestao/Equipe';
@@ -93,11 +94,12 @@ export default async function PaginaTela({ params }: { params: Promise<{ tela: s
     );
   }
 
-  // Agenda do dia (09/10): espelho da Feegow e agendamentos da Sara, pela leitura GET (lib/painel/agenda.ts).
+  // Agenda (23/11): com a agenda própria ligada (agenda.ver), a tela é ela; senão, o espelho da Feegow de 09/10
+  // (agendamentos da Sara, pela leitura GET de lib/painel/agenda.ts).
   if (atual.id === 'agenda' && usuario.empresa) {
     return (
       <Shell atual={atual.id} usuario={usuario}>
-        <Agenda key={usuario.empresa.id} empresaId={usuario.empresa.id} master={usuario.master} />
+        {pode(usuario, 'agenda.ver') ? <AgendaPropria key={usuario.empresa.id} /> : <Agenda key={usuario.empresa.id} empresaId={usuario.empresa.id} master={usuario.master} />}
       </Shell>
     );
   }

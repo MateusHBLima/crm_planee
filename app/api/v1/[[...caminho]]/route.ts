@@ -8,6 +8,7 @@ import { catalogo } from '@/lib/api/recursos';
 import * as s from '@/lib/api/servico';
 import * as auto from '@/lib/api/automaticas';
 import * as redes from '@/lib/api/redes';
+import * as agenda from '@/lib/api/agenda';
 import { carregarPessoas } from '@/lib/api/pessoas';
 
 export const dynamic = 'force-dynamic';
@@ -44,8 +45,9 @@ async function tratar(req: NextRequest, ctx: Ctx) {
     // Catálogo sem chave: lista os recursos dos módulos ligados na empresa deste endereço (docs/modulos.md),
     // no modelo do CRM dela (fora da clínica, sem agendamento, protocolo nem "paciente").
     if (partes.length === 0 && req.method === 'GET') {
-      const modelo = await modeloDoCrm(bancoDaEmpresa(await empresaDoDominio(host)));
-      return json(catalogo(await ligadosDoEndereco(host), modelo, empresa));
+      const doDominio = await empresaDoDominio(host);
+      const modelo = await modeloDoCrm(bancoDaEmpresa(doDominio));
+      return json(catalogo(await ligadosDoEndereco(host), modelo, empresa, await agenda.agendaLigada(doDominio)));
     }
     const chave = await autenticar(chaveDoCabecalho(req.headers.get('authorization')), host, `${req.method} /api/v1/${partes.join('/')}`.slice(0, 200));
     const [rec, id, ...resto] = partes;
@@ -56,6 +58,25 @@ async function tratar(req: NextRequest, ctx: Ctx) {
       return new NextResponse(new Uint8Array(a.dados), { headers: {
         'content-type': a.mime, 'content-disposition': `inline; filename="${encodeURIComponent(a.nome)}"`, 'cache-control': 'private, no-store',
       } });
+    }
+    // Agenda própria (migração 035): horários livres e agendamentos (o cadastro é pelos recursos agenda_*).
+    if (rec === 'agenda') {
+      const q = req.nextUrl.searchParams;
+      if (!id) { if (req.method !== 'GET') throw new ErroApi(405, 'Use GET /api/v1/agenda.'); return json(await agenda.resumoAgenda(chave)); }
+      if (id === 'horarios') { if (req.method !== 'GET') throw new ErroApi(405, 'Use GET /api/v1/agenda/horarios.'); return json(await agenda.listarHorarios(chave, q)); }
+      if (id === 'agendamentos') {
+        const [alvo, acao, ...mais] = resto;
+        if (mais.length) throw new ErroApi(404, 'Rota não existe. Veja GET /api/v1.');
+        if (!alvo) {
+          if (req.method === 'GET') return json(await agenda.listarAgendamentos(chave, q));
+          if (req.method === 'POST') return json(await agenda.criarAgendamento(chave, await corpo(req)));
+          throw new ErroApi(405, 'Use GET ou POST /api/v1/agenda/agendamentos.');
+        }
+        if (acao === 'cancelar' && req.method === 'POST') return json(await agenda.cancelarAgendamento(chave, alvo, await corpo(req).catch(() => ({}))));
+        if (!acao && req.method === 'PATCH') return json(await agenda.alterarAgendamento(chave, alvo, await corpo(req)));
+        throw new ErroApi(405, 'Use PATCH /api/v1/agenda/agendamentos/{id} ou POST .../{id}/cancelar.');
+      }
+      throw new ErroApi(404, 'Rota não existe. Veja GET /api/v1.');
     }
     if (!rec || resto.length) throw new ErroApi(404, 'Rota não existe. Veja GET /api/v1.');
     if (rec === 'servicos' && id === 'registrar') {
