@@ -162,6 +162,44 @@ Object.assign(RECURSOS, {
     },
     filtros: ['contato_id', 'telefone', 'papel', 'arquivado'], ordem: 'criado_em desc',
   },
+  // Agenda própria (migração 035, 23/11): cadastro. Horários livres e agendamentos ficam em /api/v1/agenda/...
+  agenda_profissionais: {
+    nome: 'agenda_profissionais', tabela: 'ag_profissionais', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'config',
+    descricao: 'Quem atende na agenda própria (profissional, técnico, sala de atendimento...).',
+    campos: { nome: 'nome exibido', descricao: 'especialidade ou cargo', cor: 'cor na agenda (#rrggbb)', email: 'e-mail (Google Agenda)', ordem: 'posição na lista' },
+    filtros: ['arquivado'], ordem: 'ordem, nome',
+  },
+  agenda_salas: {
+    nome: 'agenda_salas', tabela: 'ag_salas', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'config',
+    descricao: 'Salas ou locais de atendimento da agenda própria.',
+    campos: { nome: 'nome exibido', descricao: 'detalhe' },
+    filtros: ['arquivado'], ordem: 'nome',
+  },
+  agenda_tipos: {
+    nome: 'agenda_tipos', tabela: 'ag_tipos', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'config',
+    descricao: 'Tipos de atendimento da agenda própria, com duração e valor.',
+    campos: {
+      nome: 'nome exibido (ex.: Avaliação inicial)', duracao_min: 'duração em minutos (5 a 720)', valor: 'valor em reais',
+      cor: 'cor na agenda (#rrggbb)', modalidade: 'presencial | online | domicilio', descricao: 'texto para o link público',
+      profissionais: 'lista de ids de quem atende este tipo; vazio = todos', publico: 'true | false: aparece no link público', ordem: 'posição na lista',
+    },
+    filtros: ['modalidade', 'arquivado'], ordem: 'ordem, nome',
+  },
+  agenda_grade: {
+    nome: 'agenda_grade', tabela: 'ag_grade', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'config',
+    descricao: 'Grade semanal: em que dias e horários cada profissional atende (horário local da empresa).',
+    campos: {
+      profissional_id: 'id do profissional', dia_semana: '0 = domingo, 1 = segunda ... 6 = sábado',
+      inicio: 'hora de início (HH:MM)', fim: 'hora de fim (HH:MM)', sala_id: 'id da sala (opcional)',
+    },
+    filtros: ['profissional_id', 'dia_semana', 'arquivado'], ordem: 'dia_semana, inicio',
+  },
+  agenda_bloqueios: {
+    nome: 'agenda_bloqueios', tabela: 'ag_bloqueios', chave: 'id', idTipo: 'uuid', idObrigatorioNaCriacao: false, escrita: 'config',
+    descricao: 'Períodos sem atendimento (férias, feriado, compromisso). Sem profissional_id vale para todos.',
+    campos: { profissional_id: 'id do profissional (vazio = todos)', inicio: 'data e hora ISO', fim: 'data e hora ISO', motivo: 'motivo' },
+    filtros: ['profissional_id', 'arquivado'], ordem: 'inicio desc',
+  },
 } satisfies Record<string, Recurso>);
 
 export function recurso(nome: string): Recurso | undefined {
@@ -189,11 +227,12 @@ export type EmpresaDoCatalogo = { slug: string | null; nome: string | null; domi
 
 // Descrição para quem usa a API (pessoa ou IA). ligados = módulos ligados na empresa do endereço chamado: os
 // recursos dos outros módulos não aparecem. empresa vem no topo, para quem chama conferir antes de gravar.
-export function catalogo(ligados: ReadonlySet<string> = new Set(), modelo = 'clinica', empresa: EmpresaDoCatalogo | null = null) {
+export function catalogo(ligados: ReadonlySet<string> = new Set(), modelo = 'clinica', empresa: EmpresaDoCatalogo | null = null, agenda = true) {
   const clinica = modelo === 'clinica';
   const deModulos = modulosComParte().filter((m) => ligados.has(m.id));
   const recursos = [...Object.values(RECURSOS), ...deModulos.flatMap((m) => Object.values(parteDoModulo(m.id)!.recursos))]
     .filter((r) => clinica || !SO_CLINICA_RECURSOS.has(r.nome))
+    .filter((r) => agenda || !r.nome.startsWith('agenda_'))
     .map((r) => paraOModelo(r, clinica));
   return {
     empresa,
@@ -213,6 +252,10 @@ export function catalogo(ligados: ReadonlySet<string> = new Set(), modelo = 'cli
         'POST /api/v1/pessoas/lote {"origem"?,"itens":[{"telefone","papel":"proprio|dependente|familiar|mesmo_numero|equipe_fornecedor","nome"?,"cpf"?,"remover"?}]} — liga as pessoas aos números (até 500 por chamada, idempotente). CPF ou CNPJ só em contato sem documento; nunca volta na resposta. Escopo crm.']),
       'POST /api/v1/funil {"telefone","etapa_id","interesse"?,"valor"?,"nome"?,"chave"?} — move a oportunidade em aberto do telefone para a etapa (ou cria). Escopo crm.',
       ...(clinica ? ['POST /api/v1/servicos/registrar {"telefone","tipo","inicio","sistema","codigo_externo",...} — cria ou atualiza o agendamento pelo código do sistema. Escopo crm.'] : []),
+      ...(agenda ? [
+        'GET /api/v1/agenda — quem atende, tipos de atendimento (duração, valor) e o fuso. GET /api/v1/agenda/horarios?tipo=<id>&profissional=<id>?&de=AAAA-MM-DD&ate=AAAA-MM-DD — horários livres (até 62 dias). Escopo leitura.',
+        'POST /api/v1/agenda/agendamentos {"tipo","inicio","profissional"?,"telefone","nome"?,"observacao"?,"chave"?} — marca na agenda própria (sem profissional, escolhe quem está livre); 409 com detalhe.codigo ocupado | fora_da_grade | bloqueado. GET /api/v1/agenda/agendamentos?telefone=&de=&ate= lista; PATCH /api/v1/agenda/agendamentos/{id} {"inicio"?,"profissional"?,"status"?} remarca ou muda o status; POST /api/v1/agenda/agendamentos/{id}/cancelar {"motivo"?}. Escopo crm.',
+      ] : []),
       `POST /api/v1/pagamentos {"telefone",${clinica ? '"servico"?:{sistema,codigo_externo},' : ''}"valor","pago_em","arquivo":{nome,mime,base64},"wamid"?,"analise"?,"comprovante"?:{pagador,banco,id_pix,recebedor,recebedor_documento,emitido_em}} — anexa o comprovante. Mesmo wamid (ou mesmo id_pix para o mesmo contato e agendamento) devolve o que já existe com repetido=true. id_pix já usado por outro contato ou agendamento marca suspeito e abre o alerta. Escopo crm.`,
       'PATCH /api/v1/pagamentos/{id} {"analise":{"resultado":"ok|suspeito","motivos":[...]}} — resultado da análise; suspeito abre o alerta. Escopo crm.',
       'POST /api/v1/automaticas/recusa {"telefone" | "contato_id","parar":true|false,"motivo"?} — para ou libera as mensagens automáticas da pessoa (todos os cadastros do telefone). Marcar de novo mantém a data original. A ficha traz automaticas.permitidas. Escopo crm.',

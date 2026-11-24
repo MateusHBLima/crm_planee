@@ -7,6 +7,7 @@ import { transacao, ErroApi, empresaDoBancoPadrao } from '@/lib/db';
 import { avisoDoSistema } from '@/lib/avisos-sistema';
 import { resumoParaFicha } from '@/lib/automaticas';
 import { recurso as acharRecurso, type Recurso } from './recursos';
+import { exigirLigada as exigirAgenda } from './agenda-ligada';
 import { bancoDe, type Chave } from './auth';
 import { tentarArquivoDoWhatsApp } from './comprovante-whatsapp';
 import { chaveTelefone, normalizarTelefone, SQL_MESMO_TELEFONE } from '@/lib/telefone';
@@ -30,6 +31,7 @@ function exigirRecurso(nome: string): Recurso {
 async function recursoLigado(chave: Chave, nome: string): Promise<Recurso> {
   const r = exigirRecurso(nome);
   if (r.modulo) await exigirModulo(chave.empresa, r.modulo);
+  if (r.nome.startsWith('agenda_')) await exigirAgenda(chave);
   return r;
 }
 
@@ -533,7 +535,7 @@ export async function contatoDoTelefone(c: PoolClient, chave: Chave, telefone: u
   return novo.rows[0].id;
 }
 
-async function contatoDoCorpo(c: PoolClient, chave: Chave, d: Record<string, unknown>): Promise<string> {
+export async function contatoDoCorpo(c: PoolClient, chave: Chave, d: Record<string, unknown>): Promise<string> {
   if (d.contato_id !== undefined && d.contato_id !== null && d.contato_id !== '') {
     const id = String(d.contato_id);
     if (!UUID.test(id)) throw new ErroApi(400, 'contato_id inválido.');

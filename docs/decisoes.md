@@ -193,6 +193,13 @@ Decisões fechadas pelo Mateus. Não reabrir sem ele. Onde a especificação div
     - **Resposta pelo painel:** vai ao `responder_url` da conta com o `x-painel-segredo` da empresa; o n8n envia e devolve `{mid}`; o painel grava a mensagem na hora (o eco com o mesmo `mid` não duplica). Só dentro da janela de 24 h. Toda tentativa vai para o Registro, sem o texto.
     - YouTube e TikTok não têm conversa, só comentário: ficam fora do seletor e vão para a tela Comentários (próxima entrega).
 
+49. **Agenda própria (23/11, pedido do Mateus).** O painel tem agenda própria, para qualquer negócio (não só médico): profissionais, salas, tipos de atendimento (duração, valor, modalidade), grade semanal, bloqueios e agendamentos (migração 035, na base de toda empresa). A ideia de futuro é substituir a Feegow; por enquanto a clínica continua na Feegow e a agenda própria serve a quem não tem sistema (primeiro uso: a demo "Ana, da Clínica Exemplo").
+    - **Ligada por padrão** em toda empresa nova (`agenda.ver`, `agenda.editar`, `agenda.config`); desligada na SSA e na clínica. Ligar = marcar na tela Empresas.
+    - **A IA marca pela API** (`/api/v1/agenda/...`): horários livres pela grade, vaga conferida com trava do profissional (dois pedidos não pegam a mesma vaga), idempotência pela `chave`.
+    - **Cada agendamento é também um serviço** (`servicos`, `sistema = 'agenda'`), para a ficha, a Inbox e os comprovantes funcionarem igual aos da Feegow.
+    - **Tela** (tela Agenda): com `agenda.ver` na empresa, a tela é a agenda própria; sem, continua o espelho da Feegow. Semana (colunas = dias) ou Dia (colunas = profissionais), clicar no vazio marca, clicar no agendamento confirma, marca atendido ou falta, remarca ou cancela. "Configurar" (`agenda.config`) cadastra quem atende, tipos, horários de cada um, bloqueios e regras (antecedência, limite de dias, intervalo). A equipe pode marcar encaixe fora da grade; a IA não.
+    - Próximas entregas: link público de agendamento e sincronização com o Google Agenda.
+
 ## Em aberto
 
 - RLS e PostgREST no Supabase do cliente (só o console responde).
